@@ -3,12 +3,13 @@ import { allOperations } from '@keystone-6/core/access'
 import { checkbox, relationship, text } from '@keystone-6/core/fields'
 
 import { isSignedIn, permissions } from '../access'
+import { trackingFields } from './trackingFields'
 
 export const Role = list({
   access: {
     operation: {
       ...allOperations(permissions.canManageRoles),
-      query: isSignedIn,
+      query: () => true,
     },
   },
   ui: {
@@ -23,13 +24,15 @@ export const Role = list({
   },
   fields: {
     name: text({ validation: { isRequired: true } }),
-    canCreateTodos: checkbox({ defaultValue: false }),
-    canManageAllTodos: checkbox({ defaultValue: false }),
+    canCreateRecords: checkbox({ defaultValue: false }),
+    canManageAllRecords: checkbox({ defaultValue: false }),
     canSeeOtherPeople: checkbox({ defaultValue: false }),
     canEditOtherPeople: checkbox({ defaultValue: false }),
     canManagePeople: checkbox({ defaultValue: false }),
     canManageRoles: checkbox({ defaultValue: false }),
     canAccessDashboard: checkbox({ defaultValue: false }),
+    canManageOnboarding: checkbox({ defaultValue: false }),
+    isInstructor: checkbox({ defaultValue: false }),
     assignedTo: relationship({
       ref: 'User.role',
       many: true,
@@ -37,5 +40,7 @@ export const Role = list({
         itemView: { fieldMode: 'read' },
       },
     }),
+
+    ...trackingFields,
   },
 });

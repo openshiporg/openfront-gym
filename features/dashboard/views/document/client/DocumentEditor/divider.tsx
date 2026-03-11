@@ -6,19 +6,18 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/tooltip"
-import { useToolbarState } from "./toolbar-state"
+import { useSlate } from 'slate-react'
 import { insertDivider } from "./divider-shared"
 import { ToolbarButton, KeyboardInTooltip } from "./Toolbar"
+import { useToolbarState } from './toolbar-state'
 
 function DividerButton() {
-  const {
-    editor,
-    dividers: { isDisabled }
-  } = useToolbarState()
+  const editor = useSlate()
+  const { dividers } = useToolbarState()
   
   return (
     <ToolbarButton
-      isDisabled={isDisabled}
+      isDisabled={dividers.isDisabled}
       onMouseDown={event => {
         event.preventDefault()
         insertDivider(editor)

@@ -6,13 +6,15 @@ export type Session = {
     role: {
       id: string
       name: string
-      canCreateTodos: boolean
-      canManageAllTodos: boolean
+      canCreateRecords: boolean
+      canManageAllRecords: boolean
       canSeeOtherPeople: boolean
       canEditOtherPeople: boolean
       canManagePeople: boolean
       canManageRoles: boolean
       canAccessDashboard: boolean
+      canManageOnboarding: boolean
+      isInstructor: boolean
     }
   }
 }
@@ -26,34 +28,52 @@ export function isSignedIn({ session }: AccessArgs) {
 }
 
 export const permissions = {
-  canCreateTodos: ({ session }: AccessArgs) => session?.data.role?.canCreateTodos ?? false,
-  canManageAllTodos: ({ session }: AccessArgs) => session?.data.role?.canManageAllTodos ?? false,
+  canCreateRecords: ({ session }: AccessArgs) => session?.data.role?.canCreateRecords ?? false,
+  canManageAllRecords: ({ session }: AccessArgs) => session?.data.role?.canManageAllRecords ?? false,
   canManagePeople: ({ session }: AccessArgs) => session?.data.role?.canManagePeople ?? false,
   canManageRoles: ({ session }: AccessArgs) => session?.data.role?.canManageRoles ?? false,
+  canAccessDashboard: ({ session }: AccessArgs) => session?.data.role?.canAccessDashboard ?? false,
+  canManageOnboarding: ({ session }: AccessArgs) => session?.data.role?.canManageOnboarding ?? false,
+  isInstructor: ({ session }: AccessArgs) => session?.data.role?.isInstructor ?? false,
 }
 
 export const rules = {
-  canReadTodos: ({ session }: AccessArgs) => {
+  canReadRecords: ({ session }: AccessArgs) => {
     if (!session) return false
 
-    if (session.data.role?.canManageAllTodos) {
+    if (session.data.role?.canManageAllRecords) {
+      return true // Admins see everything
+    }
+
+    if (session.data.role?.isInstructor) {
+      // Instructors can see records (Classes/Bookings) linked to them
       return {
         OR: [
-          { assignedTo: { id: { equals: session.itemId } } },
-          { assignedTo: null, isPrivate: { equals: true } },
-          { NOT: { isPrivate: { equals: true } } },
-        ],
+          { instructor: { user: { id: { equals: session.itemId } } } },
+          { classSchedule: { instructor: { user: { id: { equals: session.itemId } } } } },
+          { member: { user: { id: { equals: session.itemId } } } }
+        ]
       }
     }
 
-    return { assignedTo: { id: { equals: session.itemId } } }
+    return { id: { equals: session.itemId } } // Default to self
   },
-  canManageTodos: ({ session }: AccessArgs) => {
+  canManageRecords: ({ session }: AccessArgs) => {
     if (!session) return false
 
-    if (session.data.role?.canManageAllTodos) return true
+    if (session.data.role?.canManageAllRecords) return true
 
-    return { assignedTo: { id: { equals: session.itemId } } }
+    if (session.data.role?.isInstructor) {
+      // Instructors can manage their own class instances (mark attendance)
+      return {
+        OR: [
+          { instructor: { user: { id: { equals: session.itemId } } } },
+          { classInstance: { instructor: { user: { id: { equals: session.itemId } } } } }
+        ]
+      }
+    }
+
+    return { id: { equals: session.itemId } }
   },
   canReadPeople: ({ session }: AccessArgs) => {
     if (!session) return false

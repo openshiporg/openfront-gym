@@ -77,7 +77,8 @@ function EmptyState() {
 export async function HomePage() {
   // Fetch admin meta server-side
   const adminMetaResponse = await getAdminMetaAction()
-  
+
+
   if (!adminMetaResponse.success) {
     console.error('Failed to fetch admin meta:', adminMetaResponse.error)
     return (
@@ -128,7 +129,7 @@ export async function HomePage() {
 
   return (
     <PageContainer title="Dashboard" header={header} breadcrumbs={breadcrumbs}>
-      <div className="w-full max-w-4xl p-4 md:p-6 flex flex-col gap-4">
+      <div className="w-full max-w-4xl p-4 md:p-6 flex flex-col gap-6">
         <div className="mb-4">
           <h2 className="tracking-wide uppercase font-medium mb-2 text-muted-foreground text-sm">
             Data Models

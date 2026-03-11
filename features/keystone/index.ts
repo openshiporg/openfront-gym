@@ -5,6 +5,7 @@ import { models } from "./models";
 import { statelessSessions } from "@keystone-6/core/session";
 import { extendGraphqlSchema } from "./mutations";
 import { sendPasswordResetEmail } from "./lib/mail";
+import { permissions } from "./access";
 
 const databaseURL = process.env.DATABASE_URL || "file:./keystone.db";
 
@@ -32,13 +33,14 @@ const { withAuth } = createAuth({
       role: {
         create: {
           name: "Admin",
-          canCreateTodos: true,
-          canManageAllTodos: true,
+          canCreateRecords: true,
+          canManageAllRecords: true,
           canSeeOtherPeople: true,
           canEditOtherPeople: true,
           canManagePeople: true,
           canManageRoles: true,
           canAccessDashboard: true,
+          canManageOnboarding: true,
         },
       },
     },
@@ -52,18 +54,21 @@ const { withAuth } = createAuth({
   sessionData: `
     name
     email
+    onboardingStatus
     role {
       id
       name
-      canCreateTodos
-      canManageAllTodos
+      canCreateRecords
+      canManageAllRecords
       canSeeOtherPeople
       canEditOtherPeople
       canManagePeople
       canManageRoles
       canAccessDashboard
+      canManageOnboarding
+      isInstructor
     }
-  `,
+  `
 });
 
 export default withAuth(
@@ -87,7 +92,7 @@ export default withAuth(
       },
     },
     ui: {
-      isAccessAllowed: ({ session }) => session?.data.role?.canAccessDashboard ?? false,
+      isAccessAllowed: ({ session }) => permissions.canAccessDashboard({ session }),
     },
     session: statelessSessions(sessionConfig),
     graphql: {

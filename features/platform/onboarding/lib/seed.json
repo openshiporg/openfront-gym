@@ -1,0 +1,131 @@
+{
+  "membershipTiers": [
+    {
+      "handle": "basic-monthly",
+      "name": "Basic Monthly",
+      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Access to gym during regular hours", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "monthlyPrice": 29.99,
+      "annualPrice": 299.99,
+      "classCreditsPerMonth": 4,
+      "accessHours": "6am-10pm",
+      "guestPasses": 0,
+      "personalTrainingSessions": 0,
+      "freezeAllowed": false,
+      "contractLength": 0
+    },
+    {
+      "handle": "premium-monthly",
+      "name": "Premium Monthly",
+      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Full access with unlimited group classes", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "monthlyPrice": 49.99,
+      "annualPrice": 499.99,
+      "classCreditsPerMonth": -1,
+      "accessHours": "24/7",
+      "guestPasses": 2,
+      "personalTrainingSessions": 1,
+      "freezeAllowed": true,
+      "contractLength": 0
+    },
+    {
+      "handle": "elite-monthly",
+      "name": "Elite Monthly",
+      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "All-inclusive premium experience with personal training", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "monthlyPrice": 79.99,
+      "annualPrice": 799.99,
+      "classCreditsPerMonth": -1,
+      "accessHours": "24/7",
+      "guestPasses": 5,
+      "personalTrainingSessions": 4,
+      "freezeAllowed": true,
+      "contractLength": 0
+    }
+  ],
+  "classTypes": [
+    {
+      "handle": "yoga",
+      "name": "Yoga",
+      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Mind and body wellness through yoga practice. Suitable for all levels.", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "difficulty": "beginner",
+      "duration": 60,
+      "equipmentNeeded": ["Yoga mat", "Blocks", "Strap"],
+      "caloriesBurn": 200
+    },
+    {
+      "handle": "spin",
+      "name": "Spin Class",
+      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "High-intensity indoor cycling for cardio fitness", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "difficulty": "intermediate",
+      "duration": 45,
+      "equipmentNeeded": ["Spin bike"],
+      "caloriesBurn": 500
+    },
+    {
+      "handle": "hiit",
+      "name": "HIIT",
+      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "High-Intensity Interval Training for maximum calorie burn", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "difficulty": "advanced",
+      "duration": 30,
+      "equipmentNeeded": ["Dumbbells", "Kettlebells", "Jump rope"],
+      "caloriesBurn": 400
+    },
+    {
+      "handle": "pilates",
+      "name": "Pilates",
+      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Core strength and flexibility training", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "difficulty": "beginner",
+      "duration": 60,
+      "equipmentNeeded": ["Pilates mat", "Resistance bands"],
+      "caloriesBurn": 250
+    },
+    {
+      "handle": "zumba",
+      "name": "Zumba",
+      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Dance fitness party with Latin-inspired moves", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "difficulty": "beginner",
+      "duration": 60,
+      "equipmentNeeded": [],
+      "caloriesBurn": 400
+    },
+    {
+      "handle": "boxing",
+      "name": "Boxing",
+      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Combat fitness and boxing technique training", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "difficulty": "intermediate",
+      "duration": 45,
+      "equipmentNeeded": ["Boxing gloves", "Hand wraps", "Heavy bag"],
+      "caloriesBurn": 600
+    }
+  ],
+  "instructors": [
+    {
+      "handle": "sarah-johnson",
+      "firstName": "Sarah",
+      "lastName": "Johnson",
+      "email": "sarah@fitprogym.com",
+      "bio": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Certified yoga instructor with 10 years of experience. Passionate about helping students find balance and strength through mindful movement.", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "specialties": ["Yoga", "Pilates"],
+      "certifications": ["RYT-500", "Pilates Mat Certification"],
+      "isActive": true
+    },
+    {
+      "handle": "mike-rodriguez",
+      "firstName": "Mike",
+      "lastName": "Rodriguez",
+      "email": "mike@fitprogym.com",
+      "bio": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Former professional boxer and certified personal trainer. Specializes in high-intensity training and boxing technique.", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "specialties": ["HIIT", "Boxing"],
+      "certifications": ["NASM-CPT", "Boxing Coach Level 2"],
+      "isActive": true
+    },
+    {
+      "handle": "emily-chen",
+      "firstName": "Emily",
+      "lastName": "Chen",
+      "email": "emily@fitprogym.com",
+      "bio": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "High-energy instructor specializing in cardio fitness and dance. Loves bringing the party to the gym floor!", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "specialties": ["Spin", "Zumba"],
+      "certifications": ["ACE Certified", "Spinning Instructor"],
+      "isActive": true
+    }
+  ]
+}

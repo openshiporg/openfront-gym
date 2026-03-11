@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { AiConfigProvider } from '../hooks/use-ai-config'
 import { QueryProvider } from '../providers/QueryProvider'
+import { OnboardingPanel } from '@/features/platform/onboarding/components/OnboardingPanel'
 
 // Shared Message type
 interface Message {
@@ -27,15 +28,12 @@ interface Message {
 }
 
 interface ChatModeContextType {
-  // Shared messages state
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  // Shared loading states
   loading: boolean;
   setLoading: (loading: boolean) => void;
   sending: boolean;
   setSending: (sending: boolean) => void;
-  // User data for personalization
   user?: any;
 }
 
@@ -57,11 +55,7 @@ interface DashboardLayoutProps {
 
 function FloatingChatButton() {
   const { toggleSidebar, open, isMobile } = useSidebarWithSide('right')
-
-  // On mobile, sidebar is always overlaid, so don't show chevron when "open"
-  // Only show chevron when sidebar is actually visible on screen (desktop + open)
   const showChevron = open && !isMobile
-
   const Icon = showChevron ? ChevronRight : Sparkles;
 
   return (
@@ -81,20 +75,37 @@ function FloatingChatButton() {
 }
 
 function DashboardLayoutContent({ children, adminMeta, authenticatedItem }: DashboardLayoutProps) {
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
+
   return (
     <>
-      <Sidebar adminMeta={adminMeta} user={authenticatedItem} />
+      <Sidebar adminMeta={adminMeta} user={authenticatedItem} onOpenDialog={() => setIsOnboardingOpen(true)} />
       <SidebarInset className="min-w-0">
         {children}
       </SidebarInset>
       <RightSidebar side="right" />
       <FloatingChatButton />
+
+      {isOnboardingOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
+          <div className="mx-auto mt-16 max-w-4xl px-4">
+            <div className="rounded-xl border bg-background p-4 shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Onboarding Setup</h3>
+                <Button variant="outline" size="sm" onClick={() => setIsOnboardingOpen(false)}>
+                  Close
+                </Button>
+              </div>
+              <OnboardingPanel />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
 
 function ChatModeProvider({ children, user }: { children: React.ReactNode; user?: any }) {
-  // Shared chat state
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)

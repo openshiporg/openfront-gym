@@ -7,24 +7,23 @@ import {
 import { useMemo } from 'react'
 import { Transforms } from 'slate'
 import { Code } from 'lucide-react'
-import { useToolbarState } from './toolbar-state'
+import { useSlate } from 'slate-react'
 import { ToolbarButton, KeyboardInTooltip } from './Toolbar'
+import { useToolbarState } from './toolbar-state'
 
 export * from './code-block-shared'
 
 function CodeButton() {
-  const {
-    editor,
-    code: { isDisabled, isSelected },
-  } = useToolbarState()
+  const editor = useSlate()
+  const { code } = useToolbarState()
 
   return (
     <ToolbarButton
-      isSelected={isSelected}
-      isDisabled={isDisabled}
+      isSelected={code.isSelected}
+      isDisabled={code.isDisabled}
       onMouseDown={event => {
         event.preventDefault()
-        if (isSelected) {
+        if (code.isSelected) {
           Transforms.unwrapNodes(editor, { match: node => (node as any).type === 'code' })
         } else {
           Transforms.wrapNodes(editor, { type: 'code', children: [{ text: '' }] })

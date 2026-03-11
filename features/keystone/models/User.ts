@@ -1,14 +1,15 @@
 import { list } from '@keystone-6/core'
 import { allOperations, denyAll } from '@keystone-6/core/access'
-import { checkbox, password, relationship, text } from '@keystone-6/core/fields'
+import { checkbox, password, relationship, text, timestamp, select } from '@keystone-6/core/fields'
 
 import { isSignedIn, permissions, rules } from '../access'
 import type { Session } from '../access'
+import { trackingFields } from './trackingFields'
 
 export const User = list({
   access: {
     operation: {
-      ...allOperations(isSignedIn),
+      query: () => true,
       create: (args) => {
         // Allow public sign-ups if environment variable is set to true
         if (process.env.PUBLIC_SIGNUPS_ALLOWED === 'true') {
@@ -17,6 +18,7 @@ export const User = list({
         // Otherwise, require canManagePeople permission
         return permissions.canManagePeople(args);
       },
+      update: isSignedIn,
       delete: permissions.canManagePeople,
     },
     filter: {
@@ -28,7 +30,7 @@ export const User = list({
     hideCreate: args => !permissions.canManagePeople(args),
     hideDelete: args => !permissions.canManagePeople(args),
     listView: {
-      initialColumns: ['name', 'email', 'role', 'tasks'],
+      initialColumns: ['name', 'email', 'role', 'membership'],
     },
     itemView: {
       defaultFieldMode: ({ session, item }) => {
@@ -77,20 +79,58 @@ export const User = list({
         },
       },
     }),
-    tasks: relationship({
-      ref: 'Todo.assignedTo',
+
+    // Gym-specific relationships
+    membership: relationship({
+      ref: 'Membership.member',
+      many: false,
+    }),
+
+    // NOTE: ClassBooking now references Member model instead of User
+    // classBookings: relationship({
+    //   ref: 'ClassBooking.member',
+    //   many: true,
+    // }),
+
+    payments: relationship({
+      ref: 'MembershipPayment.member',
       many: true,
-      access: {
-        create: permissions.canManageAllTodos,
-        update: ({ session, item }) =>
-          permissions.canManageAllTodos({ session }) || session?.itemId === item.id,
-      },
+    }),
+
+    // Stripe integration
+    stripeCustomerId: text({
       ui: {
-        createView: {
-          fieldMode: args => (permissions.canManageAllTodos(args) ? 'edit' : 'hidden'),
-        },
-        // itemView: { fieldMode: 'read' },
+        description: "Stripe Customer ID",
       },
     }),
+
+    phone: text({
+      ui: {
+        description: "Member phone number",
+      },
+    }),
+
+    emergencyContact: text({
+      ui: {
+        description: "Emergency contact name and phone",
+      },
+    }),
+
+    onboardingStatus: select({
+      type: 'string',
+      options: [
+        { label: 'Not Started', value: 'not_started' },
+        { label: 'In Progress', value: 'in_progress' },
+        { label: 'Completed', value: 'completed' },
+        { label: 'Dismissed', value: 'dismissed' },
+      ],
+      defaultValue: 'not_started',
+      validation: { isRequired: true },
+      ui: {
+        description: 'Tracks dashboard onboarding state for this user',
+      },
+    }),
+
+    ...trackingFields,
   },
 });

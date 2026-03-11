@@ -10,7 +10,25 @@ import {
   Text,
   Transforms,
 } from 'slate'
-import { type ElementFromValidation } from '../structure-validation'
+
+// Element type for known block types (simplified from deleted structure-validation.ts)
+type ElementType = 
+  | 'paragraph' 
+  | 'heading' 
+  | 'blockquote' 
+  | 'code' 
+  | 'divider' 
+  | 'layout' 
+  | 'layout-area'
+  | 'ordered-list'
+  | 'unordered-list'
+  | 'list-item'
+  | 'list-item-content'
+  | 'link'
+  | 'relationship'
+  | 'component-block'
+  | 'component-block-prop'
+  | 'component-inline-prop'
 
 export type Mark =
   | 'bold'
@@ -40,9 +58,14 @@ export const modifierKeyText = IS_MAC ? '⌘' : 'Ctrl'
 
 export function isElementActive(
   editor: Editor,
-  format: Exclude<ElementFromValidation, { text: string }>['type']
+  format: ElementType,
+  selection?: Location | null
 ) {
+  if (selection === null) return false
+  const at = selection ?? editor.selection
+  if (!at) return false
   const [match] = Editor.nodes(editor, {
+    at,
     match: n => n.type === format,
   })
 

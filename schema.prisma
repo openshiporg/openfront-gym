@@ -12,69 +12,441 @@ generator client {
 }
 
 model User {
-  id                      String    @id @default(cuid())
-  name                    String    @default("")
-  email                   String    @unique @default("")
-  password                String
-  role                    Role?     @relation("User_role", fields: [roleId], references: [id])
-  roleId                  String?   @map("role")
-  tasks                   Todo[]    @relation("Todo_assignedTo")
-  passwordResetToken      String?
-  passwordResetIssuedAt   DateTime?
-  passwordResetRedeemedAt DateTime?
+  id                                 String              @id @default(cuid())
+  name                               String              @default("")
+  email                              String              @unique @default("")
+  password                           String
+  role                               Role?               @relation("User_role", fields: [roleId], references: [id])
+  roleId                             String?             @map("role")
+  membership                         Membership?         @relation("Membership_member")
+  payments                           MembershipPayment[] @relation("MembershipPayment_member")
+  stripeCustomerId                   String              @default("")
+  phone                              String              @default("")
+  emergencyContact                   String              @default("")
+  onboardingStatus                   String              @default("not_started")
+  createdAt                          DateTime            @default(now())
+  updatedAt                          DateTime            @default(now()) @updatedAt
+  passwordResetToken                 String?
+  passwordResetIssuedAt              DateTime?
+  passwordResetRedeemedAt            DateTime?
+  from_Member_user                   Member[]            @relation("Member_user")
+  from_MembershipPayment_processedBy MembershipPayment[] @relation("MembershipPayment_processedBy")
+  from_AttendanceRecord_markedBy     AttendanceRecord[]  @relation("AttendanceRecord_markedBy")
+  from_Instructor_user               Instructor[]        @relation("Instructor_user")
 
   @@index([roleId])
 }
 
 model Role {
-  id                 String  @id @default(cuid())
-  name               String  @default("")
-  canCreateTodos     Boolean @default(false)
-  canManageAllTodos  Boolean @default(false)
-  canSeeOtherPeople  Boolean @default(false)
-  canEditOtherPeople Boolean @default(false)
-  canManagePeople    Boolean @default(false)
-  canManageRoles     Boolean @default(false)
-  canAccessDashboard Boolean @default(false)
-  assignedTo         User[]  @relation("User_role")
+  id                  String   @id @default(cuid())
+  name                String   @default("")
+  canCreateRecords    Boolean  @default(false)
+  canManageAllRecords Boolean  @default(false)
+  canSeeOtherPeople   Boolean  @default(false)
+  canEditOtherPeople  Boolean  @default(false)
+  canManagePeople     Boolean  @default(false)
+  canManageRoles      Boolean  @default(false)
+  canAccessDashboard  Boolean  @default(false)
+  canManageOnboarding Boolean  @default(false)
+  isInstructor        Boolean  @default(false)
+  assignedTo          User[]   @relation("User_role")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @default(now()) @updatedAt
 }
 
-model Todo {
-  id                   String      @id @default(cuid())
-  label                String      @default("")
-  description          Json        @default("[{\"type\":\"paragraph\",\"children\":[{\"text\":\"\"}]}]")
-  isComplete           Boolean     @default(false)
-  status               String?     @default("todo")
-  priority             Int?        @default(1)
-  tags                 Json        @default("[]")
-  dueDate              DateTime?
-  weight               Float?      @default(1)
-  budget               Decimal?    @default("0.00") @postgresql.Decimal(10, 2)
-  isPrivate            Boolean     @default(false)
-  largeNumber          BigInt?
-  metadata             Json?
-  secretNote           String?
-  coverImage_id        String?
-  coverImage_filesize  Int?
-  coverImage_width     Int?
-  coverImage_height    Int?
-  coverImage_extension String?
-  todoImages           TodoImage[] @relation("Todo_todoImages")
-  assignedTo           User?       @relation("Todo_assignedTo", fields: [assignedToId], references: [id])
-  assignedToId         String?     @map("assignedTo")
+model Member {
+  id                        String             @id @default(cuid())
+  name                      String             @default("")
+  email                     String             @unique @default("")
+  phone                     String             @default("")
+  dateOfBirth               DateTime?
+  joinDate                  DateTime           @default(now())
+  membershipTier            MembershipTier?    @relation("Member_membershipTier", fields: [membershipTierId], references: [id])
+  membershipTierId          String?            @map("membershipTier")
+  emergencyContactName      String             @default("")
+  emergencyContactPhone     String             @default("")
+  healthNotes               Json?              @default("{\"conditions\":[],\"injuries\":[],\"notes\":\"\"}")
+  profilePhoto_id           String?
+  profilePhoto_filesize     Int?
+  profilePhoto_width        Int?
+  profilePhoto_height       Int?
+  profilePhoto_extension    String?
+  status                    String             @default("active")
+  user                      User?              @relation("Member_user", fields: [userId], references: [id])
+  userId                    String?            @map("user")
+  bookings                  ClassBooking[]     @relation("ClassBooking_member")
+  checkIns                  CheckIn[]          @relation("CheckIn_member")
+  payments                  GymPayment[]       @relation("GymPayment_member")
+  workoutLogs               WorkoutLog[]       @relation("WorkoutLog_member")
+  subscriptions             Subscription[]     @relation("Subscription_member")
+  waitlistEntries           Waitlist[]         @relation("Waitlist_member")
+  attendanceRecords         AttendanceRecord[] @relation("AttendanceRecord_member")
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @default(now()) @updatedAt
+  from_PaymentMethod_member PaymentMethod[]    @relation("PaymentMethod_member")
 
-  @@index([assignedToId])
+  @@index([membershipTierId])
+  @@index([userId])
 }
 
-model TodoImage {
-  id              String  @id @default(cuid())
-  image_id        String?
-  image_filesize  Int?
-  image_width     Int?
-  image_height    Int?
-  image_extension String?
-  imagePath       String  @default("")
-  altText         String  @default("")
-  todos           Todo[]  @relation("Todo_todoImages")
-  metadata        Json?
+model MembershipTier {
+  id                               String         @id @default(cuid())
+  name                             String         @default("")
+  description                      Json           @default("[{\"type\":\"paragraph\",\"children\":[{\"text\":\"\"}]}]")
+  monthlyPrice                     Float
+  annualPrice                      Float
+  classCreditsPerMonth             Int            @default(0)
+  accessHours                      String         @default("limited")
+  guestPasses                      Int?           @default(0)
+  personalTrainingSessions         Int?           @default(0)
+  freezeAllowed                    Boolean        @default(false)
+  contractLength                   Int?           @default(0)
+  stripeMonthlyPriceId             String         @default("")
+  stripeAnnualPriceId              String         @default("")
+  stripeProductId                  String         @default("")
+  price                            Int?
+  billingInterval                  String?        @default("monthly")
+  features                         Json?          @default("[]")
+  maxClassBookings                 Int?           @default(0)
+  hasGuestPrivileges               Boolean        @default(false)
+  accessHoursJson                  Json?          @default("{\"type\":\"limited\",\"hours\":\"6am-10pm\"}")
+  createdAt                        DateTime       @default(now())
+  updatedAt                        DateTime       @default(now()) @updatedAt
+  from_Member_membershipTier       Member[]       @relation("Member_membershipTier")
+  from_Membership_tier             Membership[]   @relation("Membership_tier")
+  from_Subscription_membershipTier Subscription[] @relation("Subscription_membershipTier")
+}
+
+model Membership {
+  id                    String              @id @default(cuid())
+  member                User?               @relation("Membership_member", fields: [memberId], references: [id])
+  memberId              String?             @unique @map("member")
+  tier                  MembershipTier?     @relation("Membership_tier", fields: [tierId], references: [id])
+  tierId                String?             @map("tier")
+  status                String              @default("active")
+  startDate             DateTime
+  billingCycle          String              @default("monthly")
+  nextBillingDate       DateTime?
+  autoRenew             Boolean             @default(true)
+  classCreditsRemaining Int?                @default(0)
+  freezeStartDate       DateTime?
+  freezeEndDate         DateTime?
+  payments              MembershipPayment[] @relation("MembershipPayment_membership")
+  stripeSubscriptionId  String?             @unique
+  cancelReason          String              @default("")
+  cancelledAt           DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @default(now()) @updatedAt
+
+  @@index([tierId])
+}
+
+model MembershipPayment {
+  id                    String      @id @default(cuid())
+  member                User?       @relation("MembershipPayment_member", fields: [memberId], references: [id])
+  memberId              String?     @map("member")
+  membership            Membership? @relation("MembershipPayment_membership", fields: [membershipId], references: [id])
+  membershipId          String?     @map("membership")
+  amount                Float
+  paymentType           String      @default("membership")
+  status                String      @default("pending")
+  paymentDate           DateTime    @default(now())
+  paymentMethod         String?     @default("credit-card")
+  stripePaymentIntentId String      @default("")
+  stripeChargeId        String      @default("")
+  stripeInvoiceId       String      @default("")
+  receiptNumber         String      @default("")
+  receiptUrl            String      @default("")
+  description           String      @default("")
+  notes                 String      @default("")
+  isRecurring           Boolean     @default(false)
+  refundedAt            DateTime?
+  refundAmount          Float?
+  refundReason          String      @default("")
+  processedBy           User?       @relation("MembershipPayment_processedBy", fields: [processedById], references: [id])
+  processedById         String?     @map("processedBy")
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @default(now()) @updatedAt
+
+  @@index([memberId])
+  @@index([membershipId])
+  @@index([receiptNumber])
+  @@index([processedById])
+}
+
+model Subscription {
+  id                   String          @id @default(cuid())
+  member               Member?         @relation("Subscription_member", fields: [memberId], references: [id])
+  memberId             String?         @map("member")
+  membershipTier       MembershipTier? @relation("Subscription_membershipTier", fields: [membershipTierId], references: [id])
+  membershipTierId     String?         @map("membershipTier")
+  status               String          @default("active")
+  startDate            DateTime        @default(now())
+  nextBillingDate      DateTime?
+  cancelledAt          DateTime?
+  pausedAt             DateTime?
+  paymentMethod        PaymentMethod?  @relation("Subscription_paymentMethod", fields: [paymentMethodId], references: [id])
+  paymentMethodId      String?         @map("paymentMethod")
+  billingHistory       GymPayment[]    @relation("GymPayment_subscription")
+  stripeSubscriptionId String          @unique @default("")
+  stripeCustomerId     String          @default("")
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @default(now()) @updatedAt
+
+  @@index([memberId])
+  @@index([membershipTierId])
+  @@index([paymentMethodId])
+}
+
+model GymPayment {
+  id                    String        @id @default(cuid())
+  member                Member?       @relation("GymPayment_member", fields: [memberId], references: [id])
+  memberId              String?       @map("member")
+  subscription          Subscription? @relation("GymPayment_subscription", fields: [subscriptionId], references: [id])
+  subscriptionId        String?       @map("subscription")
+  amount                Int
+  status                String        @default("pending")
+  paymentDate           DateTime      @default(now())
+  metadata              Json?         @default("{}")
+  stripePaymentIntentId String        @default("")
+  stripeChargeId        String        @default("")
+  stripeInvoiceId       String        @default("")
+  receiptNumber         String        @default("")
+  description           String        @default("")
+  refundedAt            DateTime?
+  refundAmount          Int?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @default(now()) @updatedAt
+
+  @@index([memberId])
+  @@index([subscriptionId])
+  @@index([receiptNumber])
+}
+
+model PaymentMethod {
+  id                    String         @id @default(cuid())
+  member                Member?        @relation("PaymentMethod_member", fields: [memberId], references: [id])
+  memberId              String?        @map("member")
+  type                  String         @default("card")
+  last4                 String         @default("")
+  brand                 String         @default("")
+  isDefault             Boolean        @default(false)
+  stripePaymentMethodId String         @unique @default("")
+  expiryMonth           String         @default("")
+  expiryYear            String         @default("")
+  subscriptions         Subscription[] @relation("Subscription_paymentMethod")
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @default(now()) @updatedAt
+
+  @@index([memberId])
+}
+
+model CheckIn {
+  id                  String    @id @default(cuid())
+  member              Member?   @relation("CheckIn_member", fields: [memberId], references: [id])
+  memberId            String?   @map("member")
+  checkInTime         DateTime  @default(now())
+  checkOutTime        DateTime?
+  location            Location? @relation("CheckIn_location", fields: [locationId], references: [id])
+  locationId          String?   @map("location")
+  method              String    @default("app")
+  isGuest             Boolean   @default(false)
+  guestName           String    @default("")
+  membershipValidated Boolean   @default(false)
+  validationNotes     String    @default("")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @default(now()) @updatedAt
+
+  @@index([memberId])
+  @@index([locationId])
+}
+
+model Location {
+  id                    String    @id @default(cuid())
+  name                  String    @default("")
+  address               String    @default("")
+  phone                 String    @default("")
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @default(now()) @updatedAt
+  from_CheckIn_location CheckIn[] @relation("CheckIn_location")
+}
+
+model WorkoutLog {
+  id          String       @id @default(cuid())
+  member      Member?      @relation("WorkoutLog_member", fields: [memberId], references: [id])
+  memberId    String?      @map("member")
+  date        DateTime     @default(now())
+  title       String       @default("")
+  duration    Int?
+  notes       String       @default("")
+  workoutSets WorkoutSet[] @relation("WorkoutSet_workoutLog")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @default(now()) @updatedAt
+
+  @@index([memberId])
+}
+
+model WorkoutSet {
+  id           String      @id @default(cuid())
+  workoutLog   WorkoutLog? @relation("WorkoutSet_workoutLog", fields: [workoutLogId], references: [id])
+  workoutLogId String?     @map("workoutLog")
+  exercise     Exercise?   @relation("WorkoutSet_exercise", fields: [exerciseId], references: [id])
+  exerciseId   String?     @map("exercise")
+  setNumber    Int
+  reps         Int?
+  weight       Float?
+  duration     Int?
+  restTime     Int?
+  notes        String      @default("")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @default(now()) @updatedAt
+
+  @@index([workoutLogId])
+  @@index([exerciseId])
+}
+
+model Exercise {
+  id                       String       @id @default(cuid())
+  name                     String       @default("")
+  category                 String
+  muscleGroup              Json?        @default("[]")
+  equipment                String       @default("")
+  description              String       @default("")
+  videoUrl                 String       @default("")
+  difficulty               String?      @default("beginner")
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @default(now()) @updatedAt
+  from_WorkoutSet_exercise WorkoutSet[] @relation("WorkoutSet_exercise")
+}
+
+model Waitlist {
+  id              String         @id @default(cuid())
+  member          Member?        @relation("Waitlist_member", fields: [memberId], references: [id])
+  memberId        String?        @map("member")
+  classSchedule   ClassSchedule? @relation("Waitlist_classSchedule", fields: [classScheduleId], references: [id])
+  classScheduleId String?        @map("classSchedule")
+  position        Int?
+  addedAt         DateTime       @default(now())
+  notifiedAt      DateTime?
+  status          String         @default("waiting")
+  expiresAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @default(now()) @updatedAt
+
+  @@index([memberId])
+  @@index([classScheduleId])
+}
+
+model AttendanceRecord {
+  id              String         @id @default(cuid())
+  booking         ClassBooking?  @relation("AttendanceRecord_booking", fields: [bookingId], references: [id])
+  bookingId       String?        @map("booking")
+  classSchedule   ClassSchedule? @relation("AttendanceRecord_classSchedule", fields: [classScheduleId], references: [id])
+  classScheduleId String?        @map("classSchedule")
+  member          Member?        @relation("AttendanceRecord_member", fields: [memberId], references: [id])
+  memberId        String?        @map("member")
+  attended        Boolean        @default(false)
+  markedAt        DateTime?
+  markedBy        User?          @relation("AttendanceRecord_markedBy", fields: [markedById], references: [id])
+  markedById      String?        @map("markedBy")
+  noShowReason    String         @default("")
+  lateArrival     Boolean        @default(false)
+  minutesLate     Int?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @default(now()) @updatedAt
+
+  @@index([bookingId])
+  @@index([classScheduleId])
+  @@index([memberId])
+  @@index([markedById])
+}
+
+model ClassType {
+  id              String   @id @default(cuid())
+  name            String   @default("")
+  description     Json     @default("[{\"type\":\"paragraph\",\"children\":[{\"text\":\"\"}]}]")
+  difficulty      String   @default("all-levels")
+  duration        Int      @default(60)
+  equipmentNeeded Json     @default("[]")
+  caloriesBurn    Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+}
+
+model ClassSchedule {
+  id                                  String             @id @default(cuid())
+  name                                String             @default("")
+  description                         String             @default("")
+  instructor                          Instructor?        @relation("ClassSchedule_instructor", fields: [instructorId], references: [id])
+  instructorId                        String?            @map("instructor")
+  dayOfWeek                           String
+  startTime                           String             @default("")
+  endTime                             String             @default("")
+  maxCapacity                         Int                @default(20)
+  isActive                            Boolean            @default(true)
+  instances                           ClassInstance[]    @relation("ClassInstance_classSchedule")
+  createdAt                           DateTime           @default(now())
+  updatedAt                           DateTime           @default(now()) @updatedAt
+  from_Waitlist_classSchedule         Waitlist[]         @relation("Waitlist_classSchedule")
+  from_AttendanceRecord_classSchedule AttendanceRecord[] @relation("AttendanceRecord_classSchedule")
+
+  @@index([instructorId])
+}
+
+model ClassBooking {
+  id                            String             @id @default(cuid())
+  classInstance                 ClassInstance?     @relation("ClassBooking_classInstance", fields: [classInstanceId], references: [id])
+  classInstanceId               String?            @map("classInstance")
+  member                        Member?            @relation("ClassBooking_member", fields: [memberId], references: [id])
+  memberId                      String?            @map("member")
+  memberName                    String             @default("")
+  memberEmail                   String             @default("")
+  memberPhone                   String             @default("")
+  notes                         String             @default("")
+  status                        String             @default("confirmed")
+  waitlistPosition              Int?
+  bookedAt                      DateTime           @default(now())
+  cancelledAt                   DateTime?
+  createdAt                     DateTime           @default(now())
+  updatedAt                     DateTime           @default(now()) @updatedAt
+  from_AttendanceRecord_booking AttendanceRecord[] @relation("AttendanceRecord_booking")
+
+  @@index([classInstanceId])
+  @@index([memberId])
+}
+
+model Instructor {
+  id             String          @id @default(cuid())
+  user           User?           @relation("Instructor_user", fields: [userId], references: [id])
+  userId         String?         @map("user")
+  bio            Json            @default("[{\"type\":\"paragraph\",\"children\":[{\"text\":\"\"}]}]")
+  specialties    Json?           @default("[]")
+  certifications Json?           @default("[]")
+  photo          String          @default("")
+  isActive       Boolean         @default(true)
+  classSchedules ClassSchedule[] @relation("ClassSchedule_instructor")
+  classInstances ClassInstance[] @relation("ClassInstance_instructor")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now()) @updatedAt
+
+  @@index([userId])
+}
+
+model ClassInstance {
+  id                 String         @id @default(cuid())
+  classSchedule      ClassSchedule? @relation("ClassInstance_classSchedule", fields: [classScheduleId], references: [id])
+  classScheduleId    String?        @map("classSchedule")
+  date               DateTime
+  instructor         Instructor?    @relation("ClassInstance_instructor", fields: [instructorId], references: [id])
+  instructorId       String?        @map("instructor")
+  maxCapacity        Int?
+  isCancelled        Boolean        @default(false)
+  cancellationReason String         @default("")
+  bookings           ClassBooking[] @relation("ClassBooking_classInstance")
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @default(now()) @updatedAt
+
+  @@index([classScheduleId])
+  @@index([instructorId])
 }

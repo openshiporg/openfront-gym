@@ -14,13 +14,15 @@ import { Input } from '@/components/ui/input'
 import { Button, buttonVariants } from '@/components/ui/button'
 
 import { ToolbarButton } from './Toolbar'
-import { useToolbarState } from './toolbar-state'
+import { useSlate } from 'slate-react'
+import { Editor, Range } from 'slate'
 import { wrapLink } from './link-shared'
 import { KeyboardInTooltip } from './Toolbar'
 import { Link2, Trash2, ExternalLink } from 'lucide-react'
 import { useElementWithSetNodes } from './utils-hooks'
 import { isValidURL } from './isValidURL'
 import { useForceValidation } from './utils-hooks'
+import { useToolbarState } from './toolbar-state'
 
 export * from './link-shared'
 
@@ -133,15 +135,13 @@ export const LinkElement = ({
 }
 
 const LinkButton = () => {
-  const {
-    editor,
-    links: { isDisabled, isSelected },
-  } = useToolbarState()
-  
+  const editor = useSlate()
+  const { links } = useToolbarState()
+
   return (
     <ToolbarButton
-      isSelected={isSelected}
-      isDisabled={isDisabled}
+      isSelected={links.isSelected}
+      isDisabled={links.isDisabled}
       onMouseDown={event => {
         event.preventDefault()
         wrapLink(editor, '')
