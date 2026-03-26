@@ -1,16 +1,13 @@
-import { Metadata } from "next"
-import { MapPin, Phone, Mail, Clock } from "lucide-react"
+import { Metadata } from "next";
+import { MapPin, Phone, Mail, Clock } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Contact Us - Openfront Gym",
   description: "Get in touch with Openfront Gym. Visit us, call us, or send us a message.",
-}
+};
 
 export async function generateMetadata(): Promise<Metadata> {
-  return {
-    title: "Contact Us - Openfront Gym",
-    description: "Get in touch with Openfront Gym. Visit us, call us, or send us a message.",
-  }
+  return metadata;
 }
 
 const contactInfo = [
@@ -22,235 +19,86 @@ const contactInfo = [
   {
     icon: Phone,
     title: "Phone",
-    details: ["(415) 555-0123", "Mon-Fri: 6am - 10pm"],
+    details: ["(415) 555-0123", "Front desk: 6am – 10pm"],
   },
   {
     icon: Mail,
     title: "Email",
     details: ["info@openfrontgym.com", "support@openfrontgym.com"],
   },
-]
-
-const hours = [
-  { day: "Monday - Friday", hours: "5:00 AM - 11:00 PM" },
-  { day: "Saturday", hours: "6:00 AM - 10:00 PM" },
-  { day: "Sunday", hours: "7:00 AM - 9:00 PM" },
-  { day: "Holidays", hours: "8:00 AM - 6:00 PM" },
-]
+  {
+    icon: Clock,
+    title: "Hours",
+    details: ["Mon–Fri 5:00 AM – 11:00 PM", "Sat–Sun 6:00 AM – 10:00 PM"],
+  },
+];
 
 export async function ContactPage() {
   return (
-    <div className="container py-8 md:py-12">
-      {/* Hero Section */}
-      <div className="mb-12 text-center max-w-3xl mx-auto">
-        <h1 className="text-4xl font-bold mb-4">Contact Us</h1>
-        <p className="text-lg text-muted-foreground">
-          We're here to help you on your fitness journey. Reach out with any questions or schedule a visit.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-        {/* Left Column - Contact Info & Hours */}
-        <div className="space-y-8">
-          {/* Contact Information */}
+    <div className="min-h-screen bg-[#131313] px-4 pb-24 pt-14 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <header className="mb-14 grid gap-8 lg:grid-cols-[1fr_0.7fr] lg:items-end">
           <div>
-            <h2 className="text-2xl font-bold mb-6">Get in Touch</h2>
-            <div className="space-y-6">
-              {contactInfo.map((item) => {
-                const Icon = item.icon
-                return (
-                  <div key={item.title} className="flex gap-4">
-                    <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold mb-1">{item.title}</h3>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Direct line</p>
+            <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
+              Contact
+              <br />
+              the gym
+            </h1>
+          </div>
+          <p className="max-w-md border-l-2 border-[#ffb59e] pl-6 text-base leading-relaxed text-[#c4c7c7]">
+            Reach the front desk, confirm facility details, ask about memberships, or book a tour of the training environment.
+          </p>
+        </header>
+
+        <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+          <section className="space-y-4">
+            {contactInfo.map((item, index) => {
+              const Icon = item.icon;
+              return (
+                <div key={item.title} className={`${index % 2 === 0 ? "bg-[#1c1b1b]" : "bg-[#0e0e0e] border border-white/10"} flex gap-5 p-6`}>
+                  <Icon className="mt-1 h-5 w-5 shrink-0 text-[#ffb59e]" />
+                  <div>
+                    <h2 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.03em] text-white">
+                      {item.title}
+                    </h2>
+                    <div className="mt-3 space-y-1 text-sm leading-relaxed text-[#c4c7c7]">
                       {item.details.map((detail) => (
-                        <p key={detail} className="text-muted-foreground text-sm">
-                          {detail}
-                        </p>
+                        <p key={detail}>{detail}</p>
                       ))}
                     </div>
                   </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Hours */}
-          <div className="bg-card border rounded-lg p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Clock className="w-5 h-5 text-primary" />
-              <h2 className="text-xl font-bold">Hours of Operation</h2>
-            </div>
-            <div className="space-y-3">
-              {hours.map((schedule) => (
-                <div key={schedule.day} className="flex justify-between items-center py-2 border-b last:border-0">
-                  <span className="font-medium">{schedule.day}</span>
-                  <span className="text-muted-foreground">{schedule.hours}</span>
                 </div>
-              ))}
-            </div>
-            <p className="text-sm text-muted-foreground mt-4">
-              * Premium members have 24/7 access via key card
-            </p>
-          </div>
+              );
+            })}
+          </section>
 
-          {/* Map Embed */}
-          <div className="bg-muted rounded-lg h-64 overflow-hidden border">
-            <iframe
-              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3153.0194344434437!2d-122.41941548468143!3d37.77492997975903!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x8085809c6c8f4459%3A0xb10ed6d9b5050fa5!2sUnion%20Square%2C%20San%20Francisco%2C%20CA!5e0!3m2!1sen!2sus!4v1234567890123"
-              width="100%"
-              height="100%"
-              style={{ border: 0 }}
-              allowFullScreen
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              title="Openfront Gym Location"
-            />
-          </div>
-
-          {/* Parking Information */}
-          <div className="bg-card border rounded-lg p-6">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-primary" />
-              Parking Information
-            </h3>
-            <div className="space-y-2 text-sm">
-              <p className="text-muted-foreground">
-                • Free parking for members in our underground garage
-              </p>
-              <p className="text-muted-foreground">
-                • 2-hour validation for guests at front desk
-              </p>
-              <p className="text-muted-foreground">
-                • Bike racks available at main entrance
-              </p>
-              <p className="text-muted-foreground">
-                • Accessible parking spaces near entrance
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column - Contact Form */}
-        <div>
-          <div className="bg-card border rounded-lg p-8">
-            <h2 className="text-2xl font-bold mb-6">Send Us a Message</h2>
-            <form className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="firstName" className="block text-sm font-medium mb-2">
-                    First Name *
-                  </label>
-                  <input
-                    type="text"
-                    id="firstName"
-                    name="firstName"
-                    required
-                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="lastName" className="block text-sm font-medium mb-2">
-                    Last Name *
-                  </label>
-                  <input
-                    type="text"
-                    id="lastName"
-                    name="lastName"
-                    required
-                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
-                  />
-                </div>
+          <section className="bg-[#1c1b1b] p-8">
+            <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Inquiry form</p>
+            <h2 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase tracking-[-0.05em] text-white">
+              Send a message
+            </h2>
+            <form className="mt-8 space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <input className="h-12 border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="First name" />
+                <input className="h-12 border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="Last name" />
               </div>
-
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium mb-2">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  required
-                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="phone" className="block text-sm font-medium mb-2">
-                  Phone
-                </label>
-                <input
-                  type="tel"
-                  id="phone"
-                  name="phone"
-                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="subject" className="block text-sm font-medium mb-2">
-                  Subject *
-                </label>
-                <select
-                  id="subject"
-                  name="subject"
-                  required
-                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
-                >
-                  <option value="">Select a subject</option>
-                  <option value="membership">Membership Inquiry</option>
-                  <option value="classes">Class Information</option>
-                  <option value="personal-training">Personal Training</option>
-                  <option value="facility-tour">Schedule a Tour</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="message" className="block text-sm font-medium mb-2">
-                  Message *
-                </label>
-                <textarea
-                  id="message"
-                  name="message"
-                  rows={5}
-                  required
-                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-md font-semibold transition-colors"
-              >
-                Send Message
+              <input className="h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="Email" type="email" />
+              <input className="h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="Phone" type="tel" />
+              <select className="h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-[#7df4ff]">
+                <option>Membership inquiry</option>
+                <option>Class information</option>
+                <option>Schedule a tour</option>
+                <option>General support</option>
+              </select>
+              <textarea className="min-h-[160px] w-full border border-white/10 bg-[#0e0e0e] px-4 py-3 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="How can we help?" />
+              <button type="submit" className="inline-flex bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95">
+                Send message
               </button>
             </form>
-          </div>
-
-          {/* Quick Links */}
-          <div className="mt-8 bg-muted/50 rounded-lg p-6">
-            <h3 className="font-semibold mb-4">Quick Links</h3>
-            <div className="space-y-2">
-              <a href="/memberships" className="block text-sm text-primary hover:underline">
-                View Membership Plans
-              </a>
-              <a href="/classes" className="block text-sm text-primary hover:underline">
-                Browse Class Schedule
-              </a>
-              <a href="/facilities" className="block text-sm text-primary hover:underline">
-                Explore Our Facilities
-              </a>
-              <a href="/instructors" className="block text-sm text-primary hover:underline">
-                Meet Our Instructors
-              </a>
-            </div>
-          </div>
+          </section>
         </div>
       </div>
     </div>
-  )
+  );
 }

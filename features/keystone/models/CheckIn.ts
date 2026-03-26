@@ -98,18 +98,22 @@ export const CheckIn = list({
     ...trackingFields,
   },
   hooks: {
-    // Validate membership before allowing check-in
-    async beforeOperation({ operation, resolvedData, context, item }) {
+    async beforeOperation({ operation, resolvedData, context }) {
       if (operation === 'create' && resolvedData.member) {
-        // Use sudo context to bypass access control for validation
         const sudoContext = context.sudo();
 
-        // Get member with membership details
         const member = await sudoContext.query.Member.findOne({
           where: { id: resolvedData.member.connect.id },
           query: `
             id
             status
+            user {
+              id
+              membership {
+                id
+                status
+              }
+            }
             subscriptions(where: { status: { equals: "active" } }) {
               id
               status
@@ -125,12 +129,13 @@ export const CheckIn = list({
           throw new Error(`Cannot check in: Member status is ${member.status}`);
         }
 
-        // Validate at least one active subscription exists
-        if (!member.subscriptions || member.subscriptions.length === 0) {
-          throw new Error('Cannot check in: No active membership subscription found');
+        const hasActiveMembership = member.user?.membership?.status === 'active';
+        const hasActiveSubscription = !!member.subscriptions?.length;
+
+        if (!hasActiveMembership && !hasActiveSubscription) {
+          throw new Error('Cannot check in: No active membership or subscription found');
         }
 
-        // Mark as validated
         resolvedData.membershipValidated = true;
       }
     },

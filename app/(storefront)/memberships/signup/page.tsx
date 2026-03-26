@@ -1,14 +1,8 @@
-import { MembershipSignupPage } from "@/features/storefront/screens/MembershipSignupPage"
-import { Metadata } from "next"
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Sign Up - Openfront Gym",
-  description: "Join Openfront Gym and start your fitness journey today.",
-}
-
-export default async function SignupPage(props: {
-  searchParams: Promise<{ tier?: string }>
+export default async function Page(props: {
+  searchParams: Promise<{ tier?: string }>;
 }) {
-  const searchParams = await props.searchParams
-  return <MembershipSignupPage tier={searchParams.tier} />
+  const { tier } = await props.searchParams;
+  redirect(tier ? `/join?tier=${tier}` : "/join");
 }

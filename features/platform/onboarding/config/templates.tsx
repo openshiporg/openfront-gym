@@ -18,7 +18,7 @@ export const GYM_TEMPLATES: Record<'full' | 'minimal' | 'custom', GymTemplate> =
   full: {
     name: 'Complete Setup',
     description:
-      'Start with a fully configured gym including multiple membership plans, class types, and instructors.',
+      'Creates 3 membership plans, 6 class types, 3 instructors, 15 weekly schedules, upcoming class instances, and a demo member account so every storefront page works immediately.',
     icon: <Building2 className="h-5 w-5" />,
     membershipTiers: ['basic-monthly', 'premium-monthly', 'elite-monthly'],
     classTypes: ['yoga', 'spin', 'hiit', 'pilates', 'zumba', 'boxing'],
@@ -32,7 +32,7 @@ export const GYM_TEMPLATES: Record<'full' | 'minimal' | 'custom', GymTemplate> =
   minimal: {
     name: 'Basic Setup',
     description:
-      'Start with just the essentials - one membership plan, one class type, and one instructor.',
+      'Essentials only — one membership plan, one class type, one instructor, and a demo member to test sign-in.',
     icon: <Package className="h-5 w-5" />,
     membershipTiers: ['basic-monthly'],
     classTypes: ['yoga'],
@@ -46,7 +46,7 @@ export const GYM_TEMPLATES: Record<'full' | 'minimal' | 'custom', GymTemplate> =
   custom: {
     name: 'Custom Setup',
     description:
-      'Customize your setup with your own JSON templates for each section.',
+      'Customize your gym setup using your own JSON templates for each section.',
     icon: <CircleCheck className="h-5 w-5" />,
     membershipTiers: ['basic-monthly'],
     classTypes: ['yoga'],

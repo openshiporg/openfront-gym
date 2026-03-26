@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Link from "next/link"
-import { User, LogOut, Settings, Calendar } from "lucide-react"
+import Link from "next/link";
+import { ChevronDown, User, Calendar, LogOut, LayoutDashboard, GraduationCap } from "lucide-react";
+import { signOut } from "@/features/storefront/lib/data/user";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,116 +10,100 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+} from "@/components/ui/dropdown-menu";
 
 type AuthNavProps = {
   user?: {
-    id: string
-    name: string
-    email: string
-    role?: {
-      isInstructor?: boolean
-    }
-  } | null
-}
+    id: string;
+    name: string;
+    email: string;
+    role?: { isInstructor?: boolean; canAccessDashboard?: boolean } | null;
+  } | null;
+};
 
 export default function AuthNav({ user }: AuthNavProps) {
   if (!user) {
     return (
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <Link
-          href="/auth/signin"
-          className="hidden sm:block text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          href="/account"
+          className="hidden text-sm font-bold uppercase tracking-widest text-[#e5e2e1] transition-colors hover:text-[#ffb59e] sm:inline-flex"
         >
-          Sign In
+          Sign in
         </Link>
         <Link
-          href="/memberships"
-          className="bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-lg shadow-primary/20"
+          href="/join"
+          className="inline-flex items-center bg-[#ffb59e] px-5 py-2 text-xs font-bold uppercase tracking-[0.2em] text-[#3a0b00] transition-transform active:scale-95"
         >
-          Join Now
+          Join now
         </Link>
       </div>
-    )
+    );
   }
 
   const initials = user.name
     .split(" ")
     .map((n) => n[0])
     .join("")
-    .toUpperCase()
     .slice(0, 2)
+    .toUpperCase();
 
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-3">
       <Link
         href="/schedule"
-        className="hidden sm:inline-flex bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-lg shadow-primary/20"
+        className="hidden border border-[#ffb59e] px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-[#ffb59e] transition-colors hover:bg-[#ffb59e]/10 sm:inline-flex"
       >
-        Book Class
+        Book now
       </Link>
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-            <Avatar className="h-10 w-10">
-              <AvatarFallback className="bg-primary text-primary-foreground">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-          </Button>
+          <button className="flex items-center gap-3 rounded-none px-1 py-1 text-[#e5e2e1] transition-colors hover:text-[#ffb59e]">
+            <span className="flex h-9 w-9 items-center justify-center border border-white/15 bg-[#1c1b1b] text-xs font-bold uppercase">
+              {initials}
+            </span>
+            <span className="hidden text-sm font-bold uppercase tracking-tight sm:block">
+              {user.name.split(" ")[0]}
+            </span>
+            <ChevronDown className="h-4 w-4 text-[#c4c7c7]" />
+          </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56" align="end" forceMount>
+
+        <DropdownMenuContent align="end" className="w-64 rounded-none border-white/10 bg-[#1c1b1b] text-[#e5e2e1]">
           <DropdownMenuLabel className="font-normal">
-            <div className="flex flex-col space-y-1">
-              <p className="text-sm font-medium leading-none">{user.name}</p>
-              <p className="text-xs leading-none text-muted-foreground">
-                {user.email}
-              </p>
-            </div>
+            <p className="font-bold uppercase tracking-tight text-white">{user.name}</p>
+            <p className="mt-1 text-xs uppercase tracking-widest text-[#c4c7c7]">{user.email}</p>
           </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link href="/account" className="cursor-pointer">
-              <User className="mr-2 h-4 w-4" />
-              <span>My Account</span>
-            </Link>
+          <DropdownMenuSeparator className="bg-white/10" />
+
+          <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
+            <Link href="/account"><User className="mr-2 h-4 w-4" /> My account</Link>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/schedule" className="cursor-pointer">
-              <Calendar className="mr-2 h-4 w-4" />
-              <span>My Bookings</span>
-            </Link>
+          <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
+            <Link href="/account/bookings"><Calendar className="mr-2 h-4 w-4" /> My bookings</Link>
           </DropdownMenuItem>
           {user.role?.isInstructor && (
-            <DropdownMenuItem asChild>
-              <Link href="/account/instructor" className="cursor-pointer">
-                <Calendar className="mr-2 h-4 w-4" />
-                <span>Instructor Console</span>
-              </Link>
+            <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
+              <Link href="/account/instructor"><GraduationCap className="mr-2 h-4 w-4" /> Instructor console</Link>
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem asChild>
-            <Link href="/account/settings" className="cursor-pointer">
-              <Settings className="mr-2 h-4 w-4" />
-              <span>Settings</span>
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <form action="/api/auth/signout" method="POST">
-              <button
-                type="submit"
-                className="w-full flex items-center cursor-pointer text-red-600"
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                <span>Sign Out</span>
+          {user.role?.canAccessDashboard && (
+            <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
+              <Link href="/dashboard"><LayoutDashboard className="mr-2 h-4 w-4" /> Admin dashboard</Link>
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator className="bg-white/10" />
+          <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
+            <form action={signOut} className="w-full">
+              <button type="submit" className="flex w-full items-center text-sm text-[#ffb4ab]">
+                <LogOut className="mr-2 h-4 w-4" /> Sign out
               </button>
             </form>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-  )
+  );
 }

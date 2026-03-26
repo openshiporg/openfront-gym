@@ -1,1 +1,3 @@
-import { BillingDashboardPage } from '@/features/platform/billing/screens'\n\nexport default BillingDashboardPage
+import { BillingDashboardPage } from '@/features/platform/billing/screens'
+
+export default BillingDashboardPage

@@ -1,73 +1,73 @@
-import Link from "next/link"
-import { Logo } from "@/features/dashboard/components/Logo"
-import { Github, Twitter, Instagram, ArrowRight } from "lucide-react"
+import Link from "next/link";
+
+const COLS = [
+  {
+    heading: "Train",
+    links: [
+      { label: "Classes", href: "/classes" },
+      { label: "Schedule", href: "/schedule" },
+      { label: "Instructors", href: "/instructors" },
+    ],
+  },
+  {
+    heading: "Membership",
+    links: [
+      { label: "Plans", href: "/memberships" },
+      { label: "Join", href: "/join" },
+      { label: "Account", href: "/account" },
+    ],
+  },
+  {
+    heading: "Info",
+    links: [
+      { label: "Facilities", href: "/facilities" },
+      { label: "Contact", href: "/contact" },
+    ],
+  },
+];
 
 export default function Footer() {
   return (
-    <footer className="bg-black text-white border-t border-white/5">
-      <div className="container mx-auto px-6 py-20">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-16">
-          <div className="md:col-span-4">
-            <Logo className="mb-8" />
-            <p className="text-zinc-500 max-w-xs text-sm leading-relaxed mb-8">
-              A high-performance training collective dedicated to the pursuit of absolute discipline and physical excellence.
-            </p>
-            <div className="flex gap-4">
-              {[Instagram, Twitter, Github].map((Icon, i) => (
-                <Link key={i} href="#" className="h-10 w-10 flex items-center justify-center border border-white/10 hover:border-violet-600 hover:text-violet-500 transition-colors">
-                  <Icon className="h-4 w-4" />
-                </Link>
-              ))}
+    <footer className="border-t border-white/10 bg-[#0e0e0e] py-14">
+      <div className="mx-auto flex max-w-7xl flex-col gap-12 px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col justify-between gap-10 md:flex-row md:items-start">
+          <div>
+            <div className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.08em] text-white">
+              Monolith
             </div>
-          </div>
-          
-          <div className="md:col-span-2">
-            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-600 mb-6">Disciplines</h4>
-            <ul className="space-y-4 text-sm font-bold uppercase tracking-widest">
-              <li><Link href="/classes" className="hover:text-violet-500">HIIT</Link></li>
-              <li><Link href="/classes" className="hover:text-violet-500">Strength</Link></li>
-              <li><Link href="/classes" className="hover:text-violet-500">Recovery</Link></li>
-              <li><Link href="/classes" className="hover:text-violet-500">Boxing</Link></li>
-            </ul>
+            <p className="mt-4 max-w-sm text-sm leading-relaxed text-[#c4c7c7]">
+              High-discipline coaching, engineered class programming, and membership access built for people who train with intent.
+            </p>
           </div>
 
-          <div className="md:col-span-2">
-            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-600 mb-6">Platform</h4>
-            <ul className="space-y-4 text-sm font-bold uppercase tracking-widest">
-              <li><Link href="/memberships" className="hover:text-violet-500">Plans</Link></li>
-              <li><Link href="/schedule" className="hover:text-violet-500">Schedule</Link></li>
-              <li><Link href="/account" className="hover:text-violet-500">Portal</Link></li>
-              <li><Link href="/facilities" className="hover:text-violet-500">Labs</Link></li>
-            </ul>
-          </div>
-
-          <div className="md:col-span-4">
-            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-600 mb-6">Join the Transmission</h4>
-            <p className="text-zinc-500 text-sm mb-6">Get weekly performance protocols and lab updates.</p>
-            <form className="flex">
-              <input 
-                type="email" 
-                placeholder="EMAIL ADDRESS" 
-                className="flex-1 bg-zinc-900 border border-white/5 px-4 text-xs font-bold uppercase tracking-widest focus:outline-none focus:border-violet-600"
-              />
-              <button className="bg-white text-black px-6 py-3 hover:bg-violet-600 hover:text-white transition-colors">
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </form>
+          <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
+            {COLS.map((col) => (
+              <div key={col.heading}>
+                <h4 className="font-[family-name:var(--font-space-grotesk)] text-xs font-bold uppercase tracking-[0.2em] text-[#ffb59e]">
+                  {col.heading}
+                </h4>
+                <ul className="mt-5 space-y-3">
+                  {col.links.map((link) => (
+                    <li key={link.label}>
+                      <Link
+                        href={link.href}
+                        className="text-xs font-medium uppercase tracking-[0.18em] text-[#c4c7c7] transition-colors hover:text-[#ffb59e]"
+                      >
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         </div>
-        
-        <div className="mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-700">
-            &copy; {new Date().getFullYear()} OPENFRONT GYM. ALL RIGHTS RESERVED.
-          </p>
-          <div className="flex gap-8 text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-700">
-            <Link href="#" className="hover:text-zinc-400">Privacy</Link>
-            <Link href="#" className="hover:text-zinc-400">Terms</Link>
-            <Link href="#" className="hover:text-zinc-400">Liability</Link>
-          </div>
+
+        <div className="flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-[10px] uppercase tracking-[0.25em] text-[#c4c7c7]/60 md:flex-row">
+          <p>© {new Date().getFullYear()} Openfront Gym. All rights reserved.</p>
+          <p>Built for disciplined training.</p>
         </div>
       </div>
     </footer>
-  )
+  );
 }

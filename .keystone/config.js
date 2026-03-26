@@ -508,8 +508,14 @@ var Member = (0, import_core3.list)({
         type: import_core3.graphql.object()({
           name: "MemberCurrentTier",
           fields: {
-            id: import_core3.graphql.field({ type: import_core3.graphql.ID }),
-            name: import_core3.graphql.field({ type: import_core3.graphql.String })
+            id: import_core3.graphql.field({
+              type: import_core3.graphql.ID,
+              resolve: (source) => source.id
+            }),
+            name: import_core3.graphql.field({
+              type: import_core3.graphql.String,
+              resolve: (source) => source.name
+            })
           }
         }),
         async resolve(item, args, context) {
@@ -1323,8 +1329,7 @@ var CheckIn = (0, import_core10.list)({
     ...trackingFields
   },
   hooks: {
-    // Validate membership before allowing check-in
-    async beforeOperation({ operation, resolvedData, context, item }) {
+    async beforeOperation({ operation, resolvedData, context }) {
       if (operation === "create" && resolvedData.member) {
         const sudoContext = context.sudo();
         const member = await sudoContext.query.Member.findOne({
@@ -1332,6 +1337,13 @@ var CheckIn = (0, import_core10.list)({
           query: `
             id
             status
+            user {
+              id
+              membership {
+                id
+                status
+              }
+            }
             subscriptions(where: { status: { equals: "active" } }) {
               id
               status
@@ -1344,8 +1356,10 @@ var CheckIn = (0, import_core10.list)({
         if (member.status !== "active") {
           throw new Error(`Cannot check in: Member status is ${member.status}`);
         }
-        if (!member.subscriptions || member.subscriptions.length === 0) {
-          throw new Error("Cannot check in: No active membership subscription found");
+        const hasActiveMembership = member.user?.membership?.status === "active";
+        const hasActiveSubscription = !!member.subscriptions?.length;
+        if (!hasActiveMembership && !hasActiveSubscription) {
+          throw new Error("Cannot check in: No active membership or subscription found");
         }
         resolvedData.membershipValidated = true;
       }
@@ -2489,43 +2503,55 @@ async function checkClassAvailability(root, args, context) {
     reason: available ? null : "Class is at capacity"
   };
 }
-async function bookClass(root, args, context) {
-  const { classInstanceId, memberId } = args;
-  const availability = await checkClassAvailability(
-    root,
-    { classInstanceId },
-    context
-  );
-  const member = await context.query.User.findOne({
-    where: { id: memberId },
-    query: "id name email"
+async function getMemberAndUser(context, memberId) {
+  const members = await context.query.Member.findMany({
+    where: { id: { equals: memberId } },
+    take: 1,
+    query: "id name email phone user { id name email }"
   });
-  if (!member) {
-    throw new Error("Member not found");
-  }
-  const membership = await context.query.Membership.findMany({
+  const member = members[0];
+  if (!member) throw new Error("Member not found");
+  if (!member.user?.id) throw new Error("Member is not linked to a user account");
+  return {
+    member,
+    userId: member.user.id,
+    userName: member.user.name || member.name,
+    userEmail: member.user.email || member.email
+  };
+}
+async function getActiveMembershipForUser(context, userId) {
+  const memberships = await context.query.Membership.findMany({
     where: {
-      member: { id: { equals: memberId } },
+      member: { id: { equals: userId } },
       status: { equals: "active" }
     },
+    take: 1,
     query: "id classCreditsRemaining tier { classCreditsPerMonth }"
   });
-  if (!membership.length) {
+  return memberships[0];
+}
+async function bookClass(root, args, context) {
+  const { classInstanceId, memberId } = args;
+  const availability = await checkClassAvailability(root, { classInstanceId }, context);
+  const { member, userId, userName, userEmail } = await getMemberAndUser(context, memberId);
+  const memberMembership = await getActiveMembershipForUser(context, userId);
+  if (!memberMembership) {
     throw new Error("No active membership found");
   }
-  const memberMembership = membership[0];
   const hasUnlimitedCredits = memberMembership.tier?.classCreditsPerMonth === -1;
-  const hasCredits = hasUnlimitedCredits || memberMembership.classCreditsRemaining > 0;
+  const creditsRemaining = memberMembership.classCreditsRemaining ?? 0;
+  const hasCredits = hasUnlimitedCredits || creditsRemaining > 0;
   if (!hasCredits) {
     throw new Error("No class credits remaining");
   }
   const status = availability.available ? "confirmed" : "waitlist";
   const booking = await context.query.ClassBooking.createOne({
     data: {
-      member: { connect: { id: memberId } },
+      member: { connect: { id: member.id } },
       classInstance: { connect: { id: classInstanceId } },
-      memberName: member.name,
-      memberEmail: member.email,
+      memberName: userName,
+      memberEmail: userEmail,
+      memberPhone: member.phone ?? null,
       status,
       waitlistPosition: status === "waitlist" ? availability.waitlistPosition : null,
       bookedAt: (/* @__PURE__ */ new Date()).toISOString()
@@ -2536,28 +2562,22 @@ async function bookClass(root, args, context) {
     await context.query.Membership.updateOne({
       where: { id: memberMembership.id },
       data: {
-        classCreditsRemaining: memberMembership.classCreditsRemaining - 1
+        classCreditsRemaining: creditsRemaining - 1
       }
     });
   }
   return {
     booking,
-    creditsRemaining: hasUnlimitedCredits ? -1 : memberMembership.classCreditsRemaining - (status === "confirmed" ? 1 : 0)
+    creditsRemaining: hasUnlimitedCredits ? -1 : creditsRemaining - (status === "confirmed" ? 1 : 0)
   };
 }
 async function checkIn(root, args, context) {
   const { memberId, bookingId, classInstanceId } = args;
-  const membership = await context.query.Membership.findMany({
-    where: {
-      member: { id: { equals: memberId } },
-      status: { equals: "active" }
-    },
-    query: "id classCreditsRemaining tier { classCreditsPerMonth }"
-  });
-  if (!membership.length) {
+  const { member, userId, userName, userEmail } = await getMemberAndUser(context, memberId);
+  const memberMembership = await getActiveMembershipForUser(context, userId);
+  if (!memberMembership) {
     throw new Error("No active membership found");
   }
-  const memberMembership = membership[0];
   const now = (/* @__PURE__ */ new Date()).toISOString();
   if (bookingId) {
     const booking = await context.query.ClassBooking.updateOne({
@@ -2575,28 +2595,22 @@ async function checkIn(root, args, context) {
   }
   if (classInstanceId) {
     const hasUnlimitedCredits = memberMembership.tier?.classCreditsPerMonth === -1;
-    const hasCredits = hasUnlimitedCredits || memberMembership.classCreditsRemaining > 0;
+    const creditsRemaining = memberMembership.classCreditsRemaining ?? 0;
+    const hasCredits = hasUnlimitedCredits || creditsRemaining > 0;
     if (!hasCredits) {
       throw new Error("No class credits remaining for walk-in");
     }
-    const availability = await checkClassAvailability(
-      root,
-      { classInstanceId },
-      context
-    );
+    const availability = await checkClassAvailability(root, { classInstanceId }, context);
     if (!availability.available) {
       throw new Error("Class is at capacity, cannot process walk-in");
     }
-    const member = await context.query.User.findOne({
-      where: { id: memberId },
-      query: "id name email"
-    });
     const booking = await context.query.ClassBooking.createOne({
       data: {
-        member: { connect: { id: memberId } },
+        member: { connect: { id: member.id } },
         classInstance: { connect: { id: classInstanceId } },
-        memberName: member?.name,
-        memberEmail: member?.email,
+        memberName: userName,
+        memberEmail: userEmail,
+        memberPhone: member.phone ?? null,
         status: "confirmed",
         bookedAt: now
       },
@@ -2606,7 +2620,7 @@ async function checkIn(root, args, context) {
       await context.query.Membership.updateOne({
         where: { id: memberMembership.id },
         data: {
-          classCreditsRemaining: memberMembership.classCreditsRemaining - 1
+          classCreditsRemaining: creditsRemaining - 1
         }
       });
     }
@@ -2614,7 +2628,7 @@ async function checkIn(root, args, context) {
       success: true,
       booking,
       message: "Walk-in check-in successful",
-      creditsRemaining: hasUnlimitedCredits ? -1 : memberMembership.classCreditsRemaining - 1
+      creditsRemaining: hasUnlimitedCredits ? -1 : creditsRemaining - 1
     };
   }
   return {
@@ -2631,34 +2645,35 @@ async function promoteFromWaitlist(root, args, context) {
     },
     orderBy: [{ bookedAt: "asc" }],
     take: 1,
-    query: "id member { id } classInstance { id }"
+    query: "id member { id user { id } } classInstance { id }"
   });
   if (!waitlistBookings.length) {
     return { promoted: false, message: "No members on waitlist" };
   }
   const bookingToPromote = waitlistBookings[0];
-  const membership = await context.query.Membership.findMany({
-    where: {
-      member: { id: { equals: bookingToPromote.member.id } },
-      status: { equals: "active" }
-    },
-    query: "id classCreditsRemaining tier { classCreditsPerMonth }"
-  });
-  if (!membership.length) {
+  const linkedUserId = bookingToPromote.member?.user?.id;
+  if (!linkedUserId) {
+    return { promoted: false, message: "Waitlisted member is not linked to a user account" };
+  }
+  const memberMembership = await getActiveMembershipForUser(context, linkedUserId);
+  if (!memberMembership) {
     return { promoted: false, message: "Member no longer has active membership" };
   }
-  const memberMembership = membership[0];
   const hasUnlimitedCredits = memberMembership.tier?.classCreditsPerMonth === -1;
+  const creditsRemaining = memberMembership.classCreditsRemaining ?? 0;
+  if (!hasUnlimitedCredits && creditsRemaining <= 0) {
+    return { promoted: false, message: "Member has no class credits remaining" };
+  }
   const promotedBooking = await context.query.ClassBooking.updateOne({
     where: { id: bookingToPromote.id },
-    data: { status: "confirmed" },
+    data: { status: "confirmed", waitlistPosition: null },
     query: "id status member { id name email }"
   });
   if (!hasUnlimitedCredits) {
     await context.query.Membership.updateOne({
       where: { id: memberMembership.id },
       data: {
-        classCreditsRemaining: memberMembership.classCreditsRemaining - 1
+        classCreditsRemaining: creditsRemaining - 1
       }
     });
   }
@@ -2678,45 +2693,47 @@ async function kioskCheckIn(root, args, context) {
       attendanceId: null
     };
   }
-  let member;
+  let member = null;
   if (memberId) {
-    member = await context.query.User.findOne({
-      where: { id: memberId },
+    const members = await context.query.Member.findMany({
+      where: { id: { equals: memberId } },
+      take: 1,
       query: `
         id
         name
         email
-        membership {
+        user {
           id
-          status
-          tier {
-            name
+          membership {
+            id
+            status
+            tier { name }
+            classCreditsRemaining
           }
-          classCreditsRemaining
         }
       `
     });
+    member = members[0];
   } else if (pin) {
-    const users = await context.query.User.findMany({
-      where: {
-        email: { contains: pin }
-      },
+    const members = await context.query.Member.findMany({
+      where: { email: { contains: pin, mode: "insensitive" } },
+      take: 1,
       query: `
         id
         name
         email
-        membership {
+        user {
           id
-          status
-          tier {
-            name
+          membership {
+            id
+            status
+            tier { name }
+            classCreditsRemaining
           }
-          classCreditsRemaining
         }
-      `,
-      take: 1
+      `
     });
-    member = users[0];
+    member = members[0];
   }
   if (!member) {
     return {
@@ -2726,7 +2743,8 @@ async function kioskCheckIn(root, args, context) {
       attendanceId: null
     };
   }
-  if (!member.membership) {
+  const membership = member.user?.membership;
+  if (!membership) {
     return {
       success: false,
       message: "No membership found. Please see front desk.",
@@ -2739,15 +2757,15 @@ async function kioskCheckIn(root, args, context) {
       attendanceId: null
     };
   }
-  if (member.membership.status !== "active") {
+  if (membership.status !== "active") {
     return {
       success: false,
-      message: `Membership is ${member.membership.status}. Please see front desk.`,
+      message: `Membership is ${membership.status}. Please see front desk.`,
       member: {
         id: member.id,
         name: member.name,
         email: member.email,
-        membership: member.membership
+        membership
       },
       attendanceId: null
     };
@@ -2760,7 +2778,7 @@ async function kioskCheckIn(root, args, context) {
       id: member.id,
       name: member.name,
       email: member.email,
-      membership: member.membership
+      membership
     },
     attendanceId
   };

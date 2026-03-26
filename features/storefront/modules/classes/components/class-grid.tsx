@@ -1,119 +1,96 @@
-import Link from "next/link"
-import { Clock, Flame, Dumbbell } from "lucide-react"
-import { getClassTypes, type ClassTypeData } from "@/features/storefront/lib/data/classes"
+import Link from "next/link";
+import { getClassTypes, type ClassTypeData } from "@/features/storefront/lib/data/classes";
 
-// Function to get description text from document field
 function getDescriptionText(description: any): string {
   if (!description?.document?.[0]?.children?.[0]?.text) {
-    return "Join us for this exciting fitness class.";
+    return "Structured training built for real progression.";
   }
   return description.document[0].children[0].text;
 }
 
-// Function to map difficulty to category label
-function getDifficultyLabel(difficulty: string): string {
-  const labels: Record<string, string> = {
-    'beginner': 'Beginner',
-    'intermediate': 'Intermediate',
-    'advanced': 'Advanced',
-    'all-levels': 'All Levels',
-  };
-  return labels[difficulty] || 'All Levels';
-}
+const difficultyMap: Record<string, string> = {
+  beginner: "Balanced",
+  intermediate: "Intense",
+  advanced: "Elite",
+  "all-levels": "Mixed",
+};
 
-// Function to get difficulty color
-function getDifficultyColor(difficulty: string): string {
-  const colors: Record<string, string> = {
-    'beginner': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    'intermediate': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    'advanced': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    'all-levels': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  };
-  return colors[difficulty] || 'bg-primary/10 text-primary';
-}
-
-export default async function ClassGrid() {
+export default async function ClassGrid({
+  difficulty,
+  duration,
+}: {
+  difficulty?: string;
+  duration?: string;
+}) {
   const classTypes = await getClassTypes();
 
-  // If no class types in database, show placeholder message
-  if (classTypes.length === 0) {
+  const filtered = classTypes.filter((classType: ClassTypeData) => {
+    const difficultyOk = !difficulty || difficulty === "all" || classType.difficulty === difficulty;
+    const durationOk =
+      !duration ||
+      duration === "all" ||
+      (duration === "75" ? classType.duration >= 75 : classType.duration === Number(duration));
+    return difficultyOk && durationOk;
+  });
+
+  if (!filtered.length) {
     return (
-      <div className="text-center py-12 bg-muted/30 rounded-lg">
-        <p className="text-muted-foreground">
-          No classes available at the moment. Check back soon!
-        </p>
+      <div className="bg-[#1c1b1b] px-6 py-14 text-sm uppercase tracking-[0.14em] text-[#c4c7c7]">
+        No classes match the current filter set.
       </div>
     );
   }
 
-  const classes = classTypes.map((classType: ClassTypeData) => ({
-    id: classType.id,
-    name: classType.name,
-    difficulty: classType.difficulty,
-    category: getDifficultyLabel(classType.difficulty),
-    duration: classType.duration,
-    description: getDescriptionText(classType.description),
-    caloriesBurn: classType.caloriesBurn || 0,
-    equipmentNeeded: classType.equipmentNeeded || [],
-  }));
-
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {classes.map((gymClass) => (
-        <div
-          key={gymClass.id}
-          className="group bg-card border rounded-xl overflow-hidden hover:shadow-xl transition-all hover:-translate-y-1"
+    <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+      {filtered.map((classType, index) => (
+        <article
+          key={classType.id}
+          className={`group relative overflow-hidden ${index % 2 === 1 ? "md:mt-12" : ""} ${
+            index % 2 === 0 ? "bg-[#1c1b1b]" : "border border-white/10 bg-[#0e0e0e]"
+          }`}
         >
-          {/* Class header with gradient */}
-          <div className="bg-gradient-to-br from-primary/10 to-primary/5 p-6 pb-4">
-            <div className="flex justify-between items-start mb-3">
-              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${getDifficultyColor(gymClass.difficulty)}`}>
-                {gymClass.category}
-              </span>
-              {gymClass.caloriesBurn > 0 && (
-                <div className="flex items-center gap-1 text-sm font-bold">
-                  <Flame className="w-4 h-4 text-orange-500" />
-                  {gymClass.caloriesBurn}
-                </div>
-              )}
-            </div>
-            <h3 className="font-bold text-xl mb-2 group-hover:text-primary transition-colors">
-              {gymClass.name}
-            </h3>
+          <div className="absolute right-0 top-0 bg-[#ffb59e] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.24em] text-[#3a0b00]">
+            {difficultyMap[classType.difficulty] ?? "Balanced"}
           </div>
-
-          {/* Class content */}
-          <div className="p-6 pt-4">
-            <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-              {gymClass.description}
+          <div className="p-8">
+            <h3 className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.05em] text-white">
+              {classType.name}
+            </h3>
+            <p className="mt-4 text-sm leading-relaxed text-[#c4c7c7]">
+              {getDescriptionText(classType.description)}
             </p>
 
-            {/* Meta info */}
-            <div className="flex items-center gap-4 mb-4 pb-4 border-b">
-              <div className="flex items-center gap-1.5 text-sm">
-                <Clock className="w-4 h-4 text-primary" />
-                <span>{gymClass.duration} min</span>
+            <div className="mt-8 grid grid-cols-2 gap-y-5 border-t border-white/10 pt-8">
+              <div>
+                <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Duration</span>
+                <span className="mt-1 block font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase text-white">
+                  {classType.duration} min
+                </span>
               </div>
-              {gymClass.equipmentNeeded && gymClass.equipmentNeeded.length > 0 && (
-                <div className="flex items-center gap-1.5 text-sm">
-                  <Dumbbell className="w-4 h-4 text-primary" />
-                  <span className="text-muted-foreground text-xs">
-                    {gymClass.equipmentNeeded.length} items
-                  </span>
-                </div>
-              )}
+              <div>
+                <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Estimated burn</span>
+                <span className="mt-1 block font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase text-[#7df4ff]">
+                  {classType.caloriesBurn ? `~${classType.caloriesBurn}` : "—"}
+                </span>
+              </div>
+              <div className="col-span-2">
+                <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Equipment</span>
+                <span className="mt-1 block text-xs uppercase tracking-[0.14em] text-[#e5e2e1]">
+                  {classType.equipmentNeeded?.length ? classType.equipmentNeeded.join(", ") : "Bodyweight / studio equipment"}
+                </span>
+              </div>
             </div>
 
-            {/* Action button */}
             <Link
-              href={`/schedule`}
-              className="w-full bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2.5 rounded-lg text-sm font-semibold inline-flex items-center justify-center transition-colors"
+              href="/schedule"
+              className="mt-8 inline-flex bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95"
             >
-              View Schedule
+              See schedule
             </Link>
           </div>
-        </div>
+        </article>
       ))}
     </div>
-  )
+  );
 }

@@ -1,6 +1,7 @@
 /**
- * dashboardLayout - Client component that receives server-side data
- * Follows Dashboard1's pattern: server layout fetches data, client layout provides it
+ * DashboardLayout — client component that receives server-side data
+ * Canonical pattern: Sidebar footer has OnboardingCards → clicking opens OnboardingDialog at layout level
+ * Matches openfront and openfront-restaurant exactly.
  */
 
 'use client'
@@ -17,7 +18,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { AiConfigProvider } from '../hooks/use-ai-config'
 import { QueryProvider } from '../providers/QueryProvider'
-import { OnboardingPanel } from '@/features/platform/onboarding/components/OnboardingPanel'
+import OnboardingDialog from '@/features/platform/onboarding/components/OnboardingDialog'
 
 // Shared Message type
 interface Message {
@@ -75,32 +76,25 @@ function FloatingChatButton() {
 }
 
 function DashboardLayoutContent({ children, adminMeta, authenticatedItem }: DashboardLayoutProps) {
-  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
+  const [isOnboardingDialogOpen, setIsOnboardingDialogOpen] = React.useState(false)
 
   return (
     <>
-      <Sidebar adminMeta={adminMeta} user={authenticatedItem} onOpenDialog={() => setIsOnboardingOpen(true)} />
+      <Sidebar
+        adminMeta={adminMeta}
+        user={authenticatedItem}
+        onOpenDialog={() => setIsOnboardingDialogOpen(true)}
+      />
       <SidebarInset className="min-w-0">
         {children}
       </SidebarInset>
       <RightSidebar side="right" />
       <FloatingChatButton />
-
-      {isOnboardingOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
-          <div className="mx-auto mt-16 max-w-4xl px-4">
-            <div className="rounded-xl border bg-background p-4 shadow-2xl">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Onboarding Setup</h3>
-                <Button variant="outline" size="sm" onClick={() => setIsOnboardingOpen(false)}>
-                  Close
-                </Button>
-              </div>
-              <OnboardingPanel />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* OnboardingDialog is owned by the layout — not the sidebar — so it renders above the sidebar overlay */}
+      <OnboardingDialog
+        isOpen={isOnboardingDialogOpen}
+        onClose={() => setIsOnboardingDialogOpen(false)}
+      />
     </>
   )
 }

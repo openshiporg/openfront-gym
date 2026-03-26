@@ -164,9 +164,10 @@ export async function getAvailableSpots(scheduleId: string): Promise<{ available
   };
 }
 
-// Get class schedules with availability info
+// Get class schedules with availability info, including next upcoming instance ID
 export async function getSchedulesWithAvailability() {
   const context = keystoneContext.sudo();
+  const now = new Date().toISOString();
 
   const schedules = await context.query.ClassSchedule.findMany({
     where: {
@@ -187,23 +188,35 @@ export async function getSchedulesWithAvailability() {
       endTime
       maxCapacity
       isActive
+      instances(
+        where: { date: { gte: "${now}" }, isCancelled: { equals: false } }
+        orderBy: [{ date: asc }]
+        take: 1
+      ) {
+        id
+        date
+      }
     `,
   });
 
-  // Calculate availability for each schedule
+  // Calculate availability for each schedule using next instance booking count
   const schedulesWithAvailability = await Promise.all(
     schedules.map(async (schedule: any) => {
+      const nextInstance = schedule.instances?.[0] ?? null;
       const { available, total } = await getAvailableSpots(schedule.id);
       return {
         ...schedule,
         spotsAvailable: available,
         totalCapacity: total,
+        nextInstanceId: nextInstance?.id ?? null,
+        nextInstanceDate: nextInstance?.date ?? null,
       };
     })
   );
 
   return schedulesWithAvailability;
 }
+
 
 // Get class type by ID with full details
 export async function getClassTypeById(id: string) {

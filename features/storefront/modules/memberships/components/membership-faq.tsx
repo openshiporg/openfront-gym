@@ -1,74 +1,66 @@
-"use client"
+"use client";
 
-import { useState } from "react"
+import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 
-const faqs = [
+const FAQS = [
   {
-    question: "How do class credits work?",
-    answer: "Class credits are included with your membership and reset each month. Each class costs 1 credit to book. Premium members get 15 credits, while Basic members get 5. Unused credits don't roll over to the next month.",
+    q: "How do class credits work?",
+    a: "Credits are included with selected plans and reset each billing cycle. Each booked class consumes one credit unless your tier includes unlimited classes.",
   },
   {
-    question: "Can I freeze my membership?",
-    answer: "Yes, you can freeze your membership for up to 3 months per year. During the freeze period, you won't be charged, but you also won't have access to classes or facilities.",
+    q: "Can I freeze my membership?",
+    a: "Yes. Eligible plans can be frozen for a limited period each year. During a freeze, facility and class access are paused and billing rules depend on your plan policy.",
   },
   {
-    question: "What's your cancellation policy?",
-    answer: "You can cancel your membership anytime with 30 days notice. Annual memberships can be cancelled after 3 months with a prorated refund of unused months.",
+    q: "What is the cancellation policy?",
+    a: "Monthly memberships typically require notice before the next billing cycle. Annual commitments may carry different terms depending on the tier configuration.",
   },
   {
-    question: "Can I upgrade or downgrade my plan?",
-    answer: "Yes, you can change your plan at any time. Upgrades take effect immediately, and downgrades take effect at the start of your next billing cycle.",
+    q: "Can I upgrade or downgrade later?",
+    a: "Yes. Tier changes can be made later and should flow through billing, access, and class entitlement logic from your account and Stripe-backed membership state.",
   },
   {
-    question: "Do you offer family plans?",
-    answer: "Yes! Add family members to any plan for 50% off the monthly rate. Each family member gets their own class credits and can book independently.",
+    q: "Do you support access-only memberships?",
+    a: "Yes. A plan can include full facility access while including zero class credits, making it suitable for gyms that separate floor access from class access.",
   },
   {
-    question: "What if I miss a class?",
-    answer: "You can cancel a booking up to 2 hours before the class starts for a full credit refund. Late cancellations or no-shows will not receive a credit refund.",
+    q: "What happens if I miss a class?",
+    a: "Cancellation and no-show policy can vary by gym. In the current product direction, class access, credits, and future attendance policy will all tie back to your membership tier and booking state.",
   },
-]
+];
 
 export default function MembershipFAQ() {
-  const [openIndex, setOpenIndex] = useState<number | null>(null)
+  const [open, setOpen] = useState<number | null>(0);
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <h2 className="text-2xl font-bold text-center mb-8">
-        Frequently Asked Questions
-      </h2>
-      <div className="space-y-4">
-        {faqs.map((faq, index) => (
-          <div key={index} className="border rounded-lg">
-            <button
-              onClick={() => setOpenIndex(openIndex === index ? null : index)}
-              className="w-full flex items-center justify-between p-4 text-left"
-            >
-              <span className="font-medium">{faq.question}</span>
-              <svg
-                className={`w-5 h-5 text-muted-foreground transition-transform ${
-                  openIndex === index ? "rotate-180" : ""
-                }`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+    <div className="text-[#e5e2e1]">
+      <div className="mb-8">
+        <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Protocol & access</p>
+        <h2 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase tracking-[-0.06em] text-white">
+          Questions
+        </h2>
+      </div>
+      <div className="divide-y divide-white/10">
+        {FAQS.map((faq, i) => {
+          const isOpen = open === i;
+          return (
+            <div key={faq.q} className="py-5">
+              <button
+                type="button"
+                onClick={() => setOpen(isOpen ? null : i)}
+                className="flex w-full items-center justify-between gap-6 text-left"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-            </button>
-            {openIndex === index && (
-              <div className="px-4 pb-4">
-                <p className="text-sm text-muted-foreground">{faq.answer}</p>
-              </div>
-            )}
-          </div>
-        ))}
+                <span className="font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase tracking-[-0.03em] text-white">
+                  {faq.q}
+                </span>
+                <ChevronDown className={`h-5 w-5 shrink-0 text-[#ffb59e] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+              </button>
+              {isOpen && <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[#c4c7c7]">{faq.a}</p>}
+            </div>
+          );
+        })}
       </div>
     </div>
-  )
+  );
 }

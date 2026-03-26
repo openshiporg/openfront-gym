@@ -1,3 +1,9 @@
-import { MainLayout } from "@/features/storefront/screens/MainLayout"
+import StorefrontServer from "@/features/storefront/screens/StorefrontServer";
 
-export default MainLayout
+export default function StorefrontLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <StorefrontServer>{children}</StorefrontServer>;
+}

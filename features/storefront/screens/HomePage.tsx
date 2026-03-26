@@ -1,4 +1,4 @@
-import { Metadata } from "next"
+import { type Metadata } from "next"
 import Hero from "@/features/storefront/modules/home/components/hero"
 import FeaturedClasses from "@/features/storefront/modules/home/components/featured-classes"
 import TodaysSchedule from "@/features/storefront/modules/home/components/todays-schedule"
@@ -7,26 +7,24 @@ import Testimonials from "@/features/storefront/modules/home/components/testimon
 import MembershipCTA from "@/features/storefront/modules/home/components/membership-cta"
 
 export const metadata: Metadata = {
-  title: "Openfront Gym - Transform Your Body, Elevate Your Mind",
-  description: "Join our community of fitness enthusiasts. Book classes, track your progress, and achieve your fitness goals.",
+  title: "Openfront Gym — Expert Coaching, Flexible Memberships",
+  description:
+    "Join a community-first gym with expert-coached group fitness classes, flexible memberships, and a schedule that works around you.",
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  return {
-    title: "Openfront Gym - Transform Your Body, Elevate Your Mind",
-    description: "Join our community of fitness enthusiasts. Book classes, track your progress, and achieve your fitness goals.",
-  }
+  return metadata
 }
 
 export async function HomePage() {
   return (
-    <>
+    <div className="min-h-screen">
       <Hero />
       <FeaturedClasses />
       <TodaysSchedule />
       <InstructorSpotlight />
       <Testimonials />
       <MembershipCTA />
-    </>
+    </div>
   )
 }

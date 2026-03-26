@@ -1,95 +1,68 @@
-import Link from "next/link"
-import { getClassTypes } from "@/features/storefront/lib/data/classes"
-import { ArrowUpRight, Flame, Timer, Gauge } from "lucide-react"
+import Link from "next/link";
+import { getClassTypes } from "@/features/storefront/lib/data/classes";
+
+const DIFFICULTY_LABEL: Record<string, string> = {
+  beginner: "Balanced",
+  intermediate: "Intense",
+  advanced: "Elite",
+  "all-levels": "Balanced",
+};
 
 export default async function FeaturedClasses() {
-  const classTypes = await getClassTypes()
-
-  // Get first 4 class types to feature
-  const featuredClasses = classTypes.slice(0, 4)
-
-  if (featuredClasses.length === 0) {
-    return null
-  }
+  const classTypes = await getClassTypes();
+  const featured = classTypes.slice(0, 4);
+  if (!featured.length) return null;
 
   return (
-    <section className="bg-[#050505] py-24 text-white">
-      <div className="container mx-auto px-6">
-        <div className="mb-16 flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
-          <div>
-            <div className="mb-4 inline-flex items-center gap-2">
-              <div className="h-px w-8 bg-violet-600" />
-              <span className="text-xs font-black uppercase tracking-[0.3em] text-violet-500">
-                Discipline Blocks
-              </span>
-            </div>
-            <h2 className="text-4xl font-black uppercase italic leading-none tracking-tighter md:text-6xl">
-              Elite <span className="text-zinc-500">Programming</span>
-            </h2>
-          </div>
-          <Link
-            href="/schedule"
-            className="group flex items-center gap-2 border-b-2 border-white/10 pb-1 text-sm font-bold uppercase tracking-widest transition-all hover:border-violet-600"
-          >
-            Full Catalog
-            <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-1 group-hover:translate-x-1" />
-          </Link>
+    <section className="bg-[#131313] px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-14 grid gap-8 md:grid-cols-[1.2fr_0.8fr] md:items-end">
+          <h2 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase tracking-[-0.08em] text-white sm:text-6xl">
+            Disciplines of
+            <br />
+            evolution
+          </h2>
+          <p className="max-w-md text-sm leading-relaxed text-[#c4c7c7] sm:text-base">
+            Strength, conditioning, mobility, and coached formats built from the class catalog already in Openfront Gym.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-px bg-white/5 md:grid-cols-2 lg:grid-cols-4">
-          {featuredClasses.map((classType) => (
-            <div
-              key={classType.id}
-              className="group relative overflow-hidden bg-[#0a0a0a] p-10 transition-colors hover:bg-[#0f0f0f]"
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          {featured.map((ct, index) => (
+            <Link
+              key={ct.id}
+              href="/classes"
+              className={`group relative overflow-hidden bg-[#1c1b1b] p-8 transition-colors hover:bg-[#2a2a2a] ${index % 2 === 1 ? "md:mt-10" : ""}`}
             >
-              {/* Background gradient on hover */}
-              <div className="absolute -bottom-1/2 -left-1/2 h-full w-full bg-violet-600/5 blur-[100px] transition-opacity opacity-0 group-hover:opacity-100" />
-              
-              <div className="relative z-10">
-                <div className="mb-8 flex items-center justify-between">
-                  <div className="flex h-12 w-12 items-center justify-center border border-white/10 bg-white/5 font-black group-hover:border-violet-500/50 group-hover:text-violet-500">
-                    {classType.name.charAt(0)}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                    <Gauge className="h-3 w-3" />
-                    {classType.difficulty || 'Pro'}
-                  </div>
+              <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#ffb59e_0%,#e44400_100%)] opacity-70" />
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffb59e]">
+                    {DIFFICULTY_LABEL[ct.difficulty] ?? "Balanced"}
+                  </p>
+                  <h3 className="mt-4 font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.05em] text-white">
+                    {ct.name}
+                  </h3>
                 </div>
-
-                <h3 className="mb-4 text-2xl font-black uppercase italic tracking-tight transition-colors group-hover:text-violet-400">
-                  {classType.name}
-                </h3>
-
-                <div className="mb-10 grid grid-cols-2 gap-4 border-l border-white/5 pl-4">
-                  <div className="flex flex-col gap-1">
-                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">
-                      <Timer className="h-3 w-3" /> Duration
-                    </span>
-                    <span className="text-sm font-black tabular-nums tracking-tight">
-                      {classType.duration} MIN
-                    </span>
+                <div className="text-right">
+                  <div className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black text-white">
+                    {ct.duration}
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">
-                      <Flame className="h-3 w-3" /> Intensity
-                    </span>
-                    <span className="text-sm font-black tabular-nums tracking-tight">
-                      {classType.caloriesBurn || '600'} CAL
-                    </span>
-                  </div>
+                  <div className="text-[10px] uppercase tracking-[0.24em] text-[#c4c7c7]">min</div>
                 </div>
-
-                <Link
-                  href={`/classes/${classType.id}`}
-                  className="inline-flex h-10 items-center gap-2 bg-white px-6 text-xs font-black uppercase tracking-widest text-black transition-all hover:bg-violet-600 hover:text-white"
-                >
-                  Book Session
-                </Link>
               </div>
-            </div>
+              <p className="mt-5 max-w-md text-sm leading-relaxed text-[#c4c7c7]">
+                {ct.caloriesBurn
+                  ? `Estimated burn around ${ct.caloriesBurn} calories. Structured coaching, real progression, and clear scheduling.`
+                  : "Structured coaching, real progression, and clear scheduling for members and drop-in athletes."}
+              </p>
+              <div className="mt-8 inline-flex items-center border-b border-[#ffb59e] pb-1 text-xs font-bold uppercase tracking-[0.22em] text-[#ffb59e] transition-all group-hover:tracking-[0.26em]">
+                Explore class
+              </div>
+            </Link>
           ))}
         </div>
       </div>
     </section>
-  )
+  );
 }

@@ -48,6 +48,14 @@ export const platformNavItems: PlatformNavItem[] = [
     icon: Calendar,
     group: 'standalone'
   },
+  {
+    title: 'Check-in',
+    href: '/platform/check-in',
+    color: 'amber',
+    description: 'Front desk search and manual member check-ins.',
+    icon: UserCheck,
+    group: 'standalone'
+  },
 
   // Gym Management
   {
@@ -55,6 +63,14 @@ export const platformNavItems: PlatformNavItem[] = [
     href: '/platform/members',
     color: 'blue',
     description: 'Manage member profiles, statuses, and history.',
+    icon: Users,
+    group: 'management'
+  },
+  {
+    title: 'Rosters',
+    href: '/platform/rosters',
+    color: 'orange',
+    description: 'Open class rosters and mark attendance.',
     icon: Users,
     group: 'management'
   },

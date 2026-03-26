@@ -1,12 +1,10 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Link from "next/link"
-import { Clock, Users, MapPin } from "lucide-react"
-import ClassBookingModal from "./class-booking-modal"
+import { useState } from "react";
+import ClassBookingModal from "./class-booking-modal";
 
-const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-const fullDays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAYS_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 type ScheduleItem = {
   day: number;
@@ -19,152 +17,100 @@ type ScheduleItem = {
   id: string;
   difficulty?: string;
   room?: string;
-}
+};
 
-type WeeklyScheduleProps = {
-  scheduleData?: ScheduleItem[];
-}
-
-export default function WeeklySchedule({ scheduleData = [] }: WeeklyScheduleProps) {
-  const today = new Date().getDay()
-  const [selectedDay, setSelectedDay] = useState(today)
-  const [view, setView] = useState<'list' | 'grid'>('list')
-  const [bookingModalOpen, setBookingModalOpen] = useState(false)
-  const [selectedClass, setSelectedClass] = useState<ScheduleItem | null>(null)
+export default function WeeklySchedule({ scheduleData = [] }: { scheduleData?: ScheduleItem[] }) {
+  const today = new Date().getDay();
+  const [selectedDay, setSelectedDay] = useState(today);
+  const [bookingModalOpen, setBookingModalOpen] = useState(false);
+  const [selectedClass, setSelectedClass] = useState<ScheduleItem | null>(null);
 
   const dayClasses = scheduleData
     .filter((c) => c.day === selectedDay)
-    .sort((a, b) => a.time.localeCompare(b.time))
-
-  const getStatusColor = (spots: number, capacity: number) => {
-    const percentage = (spots / capacity) * 100
-    if (percentage > 50) return 'text-green-600'
-    if (percentage > 20) return 'text-yellow-600'
-    return 'text-red-600'
-  }
-
-  const handleBookClass = (gymClass: ScheduleItem) => {
-    setSelectedClass(gymClass)
-    setBookingModalOpen(true)
-  }
-
-  const handleBookingSuccess = () => {
-    // Refresh the schedule data
-    // This will be handled by the router.refresh() in the modal
-  }
+    .sort((a, b) => a.time.localeCompare(b.time));
 
   return (
     <div>
-      {/* Day selector */}
-      <div className="mb-6">
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {weekDays.map((day, index) => {
-            const isToday = index === today
-            const isSelected = selectedDay === index
-            return (
-              <button
-                key={day}
-                onClick={() => setSelectedDay(index)}
-                className={`relative px-6 py-3 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${
-                  isSelected
-                    ? "bg-primary text-primary-foreground shadow-lg"
-                    : "bg-muted hover:bg-muted/80"
-                }`}
-              >
-                {day}
-                {isToday && !isSelected && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
-                )}
-              </button>
-            )
-          })}
-        </div>
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {DAYS_SHORT.map((label, i) => {
+          const active = i === selectedDay;
+          return (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setSelectedDay(i)}
+              className={`flex h-20 w-20 shrink-0 flex-col items-center justify-center transition-colors ${
+                active ? "bg-[#353535] text-[#ffb59e] border-b-4 border-[#ffb59e]" : "bg-[#1c1b1b] text-[#c4c7c7] hover:bg-[#2a2a2a]"
+              }`}
+            >
+              <span className="text-[10px] font-bold uppercase tracking-[0.24em]">{label}</span>
+              <span className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black tracking-[-0.06em]">
+                {scheduleData.filter((c) => c.day === i).length}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Selected day heading */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="mt-10 mb-8 flex items-end justify-between gap-6">
         <div>
-          <h2 className="text-2xl font-bold">{fullDays[selectedDay]}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {dayClasses.length} {dayClasses.length === 1 ? 'class' : 'classes'} scheduled
+          <h2 className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.05em] text-white">
+            {DAYS_FULL[selectedDay]}
+          </h2>
+          <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">
+            {dayClasses.length === 0 ? "No sessions programmed" : `${dayClasses.length} sessions live`}
           </p>
         </div>
       </div>
 
-      {/* Class list */}
       {dayClasses.length === 0 ? (
-        <div className="text-center py-12 bg-muted/30 rounded-lg">
-          <p className="text-muted-foreground">No classes scheduled for this day.</p>
+        <div className="bg-[#1c1b1b] px-6 py-16 text-center text-sm uppercase tracking-[0.16em] text-[#c4c7c7]">
+          No classes scheduled for this day.
         </div>
       ) : (
-        <div className="space-y-3">
-          {dayClasses.map((gymClass) => (
-            <div
-              key={`${gymClass.id}-${gymClass.time}`}
-              className="group bg-card border rounded-lg p-5 hover:shadow-md transition-all"
-            >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-start gap-4 flex-1">
-                  {/* Time */}
-                  <div className="text-center min-w-[80px]">
-                    <div className="text-xl font-bold">{gymClass.time}</div>
-                    <div className="text-xs text-muted-foreground flex items-center justify-center gap-1 mt-1">
-                      <Clock className="w-3 h-3" />
-                      {gymClass.duration} min
-                    </div>
-                  </div>
-
-                  {/* Class info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-bold text-lg">{gymClass.name}</h3>
-                      {gymClass.difficulty && (
-                        <span className="text-xs font-semibold px-2 py-0.5 bg-primary/10 text-primary rounded-full">
-                          {gymClass.difficulty}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      with {gymClass.instructor}
-                    </p>
-                    {gymClass.room && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <MapPin className="w-3 h-3" />
-                        {gymClass.room}
-                      </div>
-                    )}
+        <div className="space-y-4">
+          {dayClasses.map((cls, index) => {
+            const isFull = cls.spots <= 0;
+            return (
+              <div key={`${cls.id}-${cls.time}`} className={`flex flex-col md:flex-row md:items-center ${index === 0 ? "bg-[#1c1b1b]" : "bg-[#0e0e0e] border border-white/10"}`}>
+                <div className={`w-full md:w-44 px-8 py-6 ${index === 0 ? "bg-[#00eefc] text-[#00363a]" : "bg-transparent text-white md:border-r md:border-white/10"}`}>
+                  <div className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black tracking-[-0.06em]">{cls.time}</div>
+                  <div className={`text-[10px] font-bold uppercase tracking-[0.22em] ${index === 0 ? "text-[#004f54]" : "text-[#c4c7c7]"}`}>
+                    {cls.duration} min
                   </div>
                 </div>
-
-                {/* Availability and action */}
-                <div className="flex items-center gap-4 md:flex-row-reverse">
+                <div className="flex flex-1 flex-col justify-between gap-6 px-8 py-6 md:flex-row md:items-center">
+                  <div>
+                    <h3 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.04em] text-white">
+                      {cls.name}
+                    </h3>
+                    <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2 text-xs uppercase tracking-[0.18em] text-[#c4c7c7]">
+                      <span>{cls.instructor}</span>
+                      <span>{isFull ? "Waitlist only" : `${cls.spots} spots left`}</span>
+                      <span>{cls.capacity} total capacity</span>
+                    </div>
+                  </div>
                   <button
-                    onClick={() => handleBookClass(gymClass)}
-                    className={`px-6 py-2.5 rounded-md text-sm font-semibold transition-colors whitespace-nowrap ${
-                      gymClass.spots >= 0
-                        ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                        : "bg-muted text-muted-foreground cursor-not-allowed"
+                    type="button"
+                    onClick={() => {
+                      setSelectedClass(cls);
+                      setBookingModalOpen(true);
+                    }}
+                    className={`px-8 py-4 text-xs font-bold uppercase tracking-[0.22em] transition-transform active:scale-95 ${
+                      isFull
+                        ? "border border-[#ffb59e] text-[#ffb59e] hover:bg-[#ffb59e]/10"
+                        : "bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] text-[#3a0b00]"
                     }`}
                   >
-                    {gymClass.spots > 0 ? "Book Class" : "Join Waitlist"}
+                    {isFull ? "Join waitlist" : "Book slot"}
                   </button>
-                  <div className="text-right">
-                    <div className={`text-sm font-semibold ${getStatusColor(gymClass.spots, gymClass.capacity)}`}>
-                      <Users className="w-4 h-4 inline mr-1" />
-                      {gymClass.spots} spots left
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      of {gymClass.capacity}
-                    </div>
-                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* Booking Modal */}
       {selectedClass && (
         <ClassBookingModal
           isOpen={bookingModalOpen}
@@ -178,11 +124,11 @@ export default function WeeklySchedule({ scheduleData = [] }: WeeklyScheduleProp
             spots: selectedClass.spots,
             capacity: selectedClass.capacity,
             difficulty: selectedClass.difficulty,
-            date: fullDays[selectedDay],
+            date: DAYS_FULL[selectedDay],
           }}
-          onBookingSuccess={handleBookingSuccess}
+          onBookingSuccess={() => {}}
         />
       )}
     </div>
-  )
+  );
 }

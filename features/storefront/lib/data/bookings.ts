@@ -1,159 +1,85 @@
 import { keystoneContext } from "@/features/keystone/context";
 
-export type BookingData = {
-  id: string;
-  classInstance: {
-    id: string;
-    date: string;
-    classSchedule: {
-      name: string;
-      startTime: string;
-      endTime: string;
-    };
-    instructor: {
-      user: {
-        name: string;
-      };
-    } | null;
-  };
-  status: string;
-  waitlistPosition: number | null;
-  bookedAt: string;
-  cancelledAt: string | null;
-};
+const BOOKING_QUERY = `
+  id
+  status
+  waitlistPosition
+  bookedAt
+  cancelledAt
+  classInstance {
+    id
+    date
+    classSchedule {
+      name
+      startTime
+      endTime
+    }
+    instructor {
+      user { name }
+    }
+  }
+`;
 
-export async function getUserBookings(userId: string): Promise<BookingData[]> {
-  const context = keystoneContext.sudo();
-
-  const bookings = await context.query.ClassBooking.findMany({
-    where: {
-      member: { id: { equals: userId } },
-    },
-    orderBy: [{ bookedAt: 'desc' }],
-    query: `
-      id
-      classInstance {
-        id
-        date
-        classSchedule {
-          name
-          startTime
-          endTime
-        }
-        instructor {
-          user {
-            name
-          }
-        }
-      }
-      status
-      waitlistPosition
-      bookedAt
-      cancelledAt
-    `,
-  });
-
-  return bookings as BookingData[];
-}
-
-export async function getUpcomingBookings(userId: string): Promise<BookingData[]> {
+/**
+ * Upcoming bookings for a user (by User.id).
+ * ClassBooking.member → Member → user relation.
+ */
+export async function getUpcomingBookings(userId: string) {
   const context = keystoneContext.sudo();
   const now = new Date().toISOString();
 
-  const bookings = await context.query.ClassBooking.findMany({
+  return context.query.ClassBooking.findMany({
     where: {
-      member: { id: { equals: userId } },
-      status: { in: ['confirmed', 'waitlist'] },
-      classInstance: {
-        date: { gte: now },
-      },
+      member: { user: { id: { equals: userId } } },
+      status: { in: ["confirmed", "waitlist"] },
+      classInstance: { date: { gte: now } },
     },
-    orderBy: [{ bookedAt: 'asc' }],
-    query: `
-      id
-      classInstance {
-        id
-        date
-        classSchedule {
-          name
-          startTime
-          endTime
-        }
-        instructor {
-          user {
-            name
-          }
-        }
-      }
-      status
-      waitlistPosition
-      bookedAt
-      cancelledAt
-    `,
+    orderBy: [{ bookedAt: "asc" }],
+    query: BOOKING_QUERY,
   });
-
-  return bookings as BookingData[];
 }
 
-export async function getBookingHistory(userId: string): Promise<BookingData[]> {
+/** Past / cancelled bookings. */
+export async function getBookingHistory(userId: string) {
   const context = keystoneContext.sudo();
   const now = new Date().toISOString();
 
-  const bookings = await context.query.ClassBooking.findMany({
+  return context.query.ClassBooking.findMany({
     where: {
-      member: { id: { equals: userId } },
+      member: { user: { id: { equals: userId } } },
       OR: [
-        { status: { equals: 'cancelled' } },
-        {
-          classInstance: {
-            date: { lt: now },
-          },
-        },
+        { status: { equals: "cancelled" } },
+        { classInstance: { date: { lt: now } } },
       ],
     },
-    orderBy: [{ bookedAt: 'desc' }],
+    orderBy: [{ bookedAt: "desc" }],
     take: 20,
-    query: `
-      id
-      classInstance {
-        id
-        date
-        classSchedule {
-          name
-          startTime
-          endTime
-        }
-        instructor {
-          user {
-            name
-          }
-        }
-      }
-      status
-      waitlistPosition
-      bookedAt
-      cancelledAt
-    `,
+    query: BOOKING_QUERY,
   });
+}
 
-  return bookings as BookingData[];
+/** All bookings (upcoming + past). */
+export async function getUserBookings(userId: string) {
+  const context = keystoneContext.sudo();
+
+  return context.query.ClassBooking.findMany({
+    where: {
+      member: { user: { id: { equals: userId } } },
+    },
+    orderBy: [{ bookedAt: "desc" }],
+    query: BOOKING_QUERY,
+  });
 }
 
 export async function cancelBooking(bookingId: string): Promise<boolean> {
-  const context = keystoneContext.sudo();
-
   try {
+    const context = keystoneContext.sudo();
     await context.query.ClassBooking.updateOne({
       where: { id: bookingId },
-      data: {
-        status: 'cancelled',
-        cancelledAt: new Date().toISOString(),
-      },
+      data: { status: "cancelled", cancelledAt: new Date().toISOString() },
     });
-
     return true;
-  } catch (error) {
-    console.error('Error cancelling booking:', error);
+  } catch {
     return false;
   }
 }

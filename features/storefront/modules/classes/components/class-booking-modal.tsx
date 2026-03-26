@@ -1,219 +1,129 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Clock, Users, Calendar, Flame, User, X } from "lucide-react"
-import { toast } from "sonner"
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Clock, Users, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { bookClass } from "@/features/storefront/lib/actions/classes";
 
 type ClassBookingModalProps = {
-  isOpen: boolean
-  onClose: () => void
+  isOpen: boolean;
+  onClose: () => void;
   classData: {
-    id: string
-    name: string
-    instructor: string
-    time: string
-    duration: number
-    spots: number
-    capacity: number
-    difficulty?: string
-    date?: string
-  }
-  onBookingSuccess?: () => void
-}
+    id: string;          // ClassInstance.id
+    name: string;
+    instructor: string;
+    time: string;
+    duration: number;
+    spots: number;
+    capacity: number;
+    difficulty?: string;
+    date?: string;
+  };
+  onBookingSuccess?: () => void;
+};
 
 export default function ClassBookingModal({
   isOpen,
   onClose,
   classData,
-  onBookingSuccess
+  onBookingSuccess,
 }: ClassBookingModalProps) {
-  const [isBooking, setIsBooking] = useState(false)
-  const router = useRouter()
+  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
-  const handleBookClass = async () => {
-    setIsBooking(true)
-
-    try {
-      // TODO: Get authenticated user ID
-      const userId = "temp-user-id" // This will be replaced with actual auth
-
-      const response = await fetch("/api/graphql", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          query: `
-            mutation BookClass($classInstanceId: ID!, $memberId: ID!) {
-              bookClass(classInstanceId: $classInstanceId, memberId: $memberId) {
-                booking {
-                  id
-                  status
-                  waitlistPosition
-                }
-                creditsRemaining
-              }
-            }
-          `,
-          variables: {
-            classInstanceId: classData.id,
-            memberId: userId,
-          },
-        }),
-      })
-
-      const result = await response.json()
-
-      if (result.errors) {
-        throw new Error(result.errors[0].message)
-      }
-
-      const { booking, creditsRemaining } = result.data.bookClass
-
-      if (booking.status === "waitlist") {
-        toast.success(`Added to waitlist at position ${booking.waitlistPosition}`, {
-          description: "We'll notify you if a spot opens up.",
-        })
+  const handleBook = () => {
+    startTransition(async () => {
+      const res = await bookClass(classData.id);
+      if (res.success) {
+        setResult({ success: true, message: `Booked! You have ${res.creditsRemaining === -1 ? "unlimited" : res.creditsRemaining} credit(s) remaining.` });
+        router.refresh();
+        onBookingSuccess?.();
       } else {
-        toast.success("Class booked successfully!", {
-          description: `You have ${creditsRemaining === -1 ? 'unlimited' : creditsRemaining} credits remaining.`,
-        })
+        setResult({ success: false, message: res.error });
       }
+    });
+  };
 
-      onBookingSuccess?.()
-      onClose()
-      router.refresh()
-    } catch (error: any) {
-      console.error("Booking error:", error)
+  const handleClose = () => {
+    setResult(null);
+    onClose();
+  };
 
-      if (error.message.includes("No active membership")) {
-        toast.error("No active membership found", {
-          description: "Please purchase a membership to book classes.",
-          action: {
-            label: "View Memberships",
-            onClick: () => router.push("/memberships"),
-          },
-        })
-      } else if (error.message.includes("No class credits")) {
-        toast.error("No class credits remaining", {
-          description: "Please upgrade your membership or purchase a class pack.",
-          action: {
-            label: "View Memberships",
-            onClick: () => router.push("/memberships"),
-          },
-        })
-      } else {
-        toast.error("Failed to book class", {
-          description: error.message || "Please try again later.",
-        })
-      }
-    } finally {
-      setIsBooking(false)
-    }
-  }
-
-  const isFull = classData.spots === 0
+  const spotsLeft = classData.spots;
+  const isFull = spotsLeft === 0;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold">{classData.name}</DialogTitle>
-          <DialogDescription>
-            Review class details and confirm your booking
-          </DialogDescription>
+          <DialogTitle>Book class</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {/* Class details */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 text-sm">
-              <User className="w-4 h-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Instructor:</span>
-              <span className="font-semibold">{classData.instructor}</span>
-            </div>
-
-            <div className="flex items-center gap-3 text-sm">
-              <Calendar className="w-4 h-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Date:</span>
-              <span className="font-semibold">
-                {classData.date || new Date().toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric'
-                })}
+        <div className="space-y-4">
+          {/* Class info */}
+          <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+            <p className="font-semibold">{classData.name}</p>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" />
+                {classData.time} · {classData.duration} min
+              </span>
+              <span className="flex items-center gap-1">
+                <Users className="h-3.5 w-3.5" />
+                {isFull ? (
+                  <span className="text-red-600 font-medium">Full</span>
+                ) : (
+                  <span className={spotsLeft <= 3 ? "text-amber-600 font-medium" : ""}>
+                    {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left
+                  </span>
+                )}
               </span>
             </div>
-
-            <div className="flex items-center gap-3 text-sm">
-              <Clock className="w-4 h-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Time:</span>
-              <span className="font-semibold">{classData.time}</span>
-              <span className="text-muted-foreground">({classData.duration} min)</span>
-            </div>
-
-            <div className="flex items-center gap-3 text-sm">
-              <Users className="w-4 h-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Availability:</span>
-              <span className={`font-semibold ${
-                classData.spots > 5 ? 'text-green-600' :
-                classData.spots > 0 ? 'text-yellow-600' :
-                'text-red-600'
-              }`}>
-                {classData.spots} / {classData.capacity} spots
-              </span>
-            </div>
-
-            {classData.difficulty && (
-              <div className="flex items-center gap-3 text-sm">
-                <Flame className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Level:</span>
-                <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs font-semibold rounded-full">
-                  {classData.difficulty}
-                </span>
-              </div>
+            {classData.instructor && (
+              <p className="text-xs text-muted-foreground">with {classData.instructor}</p>
             )}
           </div>
 
-          {/* Warning for full classes */}
-          {isFull && (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-              <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                This class is currently full. You'll be added to the waitlist and notified if a spot opens up.
-              </p>
+          {/* Result feedback */}
+          {result && (
+            <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${
+              result.success
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                : "bg-red-50 text-red-700 border border-red-200"
+            }`}>
+              {result.success
+                ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
+              {result.message}
             </div>
           )}
-        </div>
 
-        {/* Actions */}
-        <div className="flex gap-3 pt-4">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="flex-1"
-            disabled={isBooking}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleBookClass}
-            className="flex-1"
-            disabled={isBooking}
-          >
-            {isBooking ? (
-              "Booking..."
-            ) : isFull ? (
-              "Join Waitlist"
-            ) : (
-              "Confirm Booking"
-            )}
-          </Button>
+          {/* Actions */}
+          {!result?.success && (
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={handleClose} className="flex-1">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleBook}
+                disabled={isPending || isFull}
+                className="flex-1"
+              >
+                {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isFull ? "Join waitlist" : "Confirm booking"}
+              </Button>
+            </div>
+          )}
+          {result?.success && (
+            <Button onClick={handleClose} className="w-full">
+              Done
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

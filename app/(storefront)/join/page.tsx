@@ -1,14 +1,14 @@
-import { MembershipSignupPage } from "@/features/storefront/screens/MembershipSignupPage"
-import { Metadata } from "next"
+import JoinPage from "@/features/storefront/screens/JoinPage";
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Join - Openfront Gym",
-  description: "Join Openfront Gym and start your fitness journey today.",
-}
+  title: "Join – Openfront Gym",
+  description: "Create your account and choose a membership plan.",
+};
 
-export default async function JoinPage(props: {
-  searchParams: Promise<{ tier?: string }>
+export default async function Page(props: {
+  searchParams: Promise<{ tier?: string; checkoutError?: string }>;
 }) {
-  const searchParams = await props.searchParams
-  return <MembershipSignupPage tier={searchParams.tier} />
+  const { tier, checkoutError } = await props.searchParams;
+  return <JoinPage tier={tier} checkoutError={checkoutError} />;
 }

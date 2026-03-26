@@ -14,7 +14,7 @@ export async function BillingDashboardPage() {
     getRecentBillingActivity()
   ]);
 
-  const stats = statsRes.success ? statsRes.data : null;
+  const stats = statsRes.success ? (statsRes.data ?? null) : null;
   const activity = activityRes.success ? activityRes.data : { recentPayments: [], recentSubscriptions: [] };
 
   const header = (

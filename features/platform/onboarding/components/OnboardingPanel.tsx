@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import seedData from "../lib/seed.json";
 import { GYM_TEMPLATES, SECTION_DEFINITIONS } from "../config/templates";
 import { getSeedForTemplate } from "../utils/dataUtils";
-import { seedGymFromOnboarding, dismissOnboarding } from "../actions/onboarding";
+import { dismissOnboarding } from "../actions/onboarding";
 import { Button } from "@/components/ui/button";
 import { SectionRenderer } from "./SectionRenderer";
 
@@ -25,20 +25,9 @@ export function OnboardingPanel() {
     setIsLoading(true);
     setError(null);
     setSuccess(null);
-
-    const result = await seedGymFromOnboarding(currentJsonData);
-
-    if (!result.success) {
-      setError(result.errors.join("\n"));
-      setIsLoading(false);
-      return;
-    }
-
-    setSuccess("Onboarding completed and data seeded.");
+    // OnboardingPanel is deprecated — use OnboardingDialog instead.
+    setError('Please use the Setup dialog (click "Get started" in the sidebar).');
     setIsLoading(false);
-
-    // Soft refresh to hide onboarding in dashboard once completed
-    window.location.reload();
   }
 
   async function handleDismiss() {

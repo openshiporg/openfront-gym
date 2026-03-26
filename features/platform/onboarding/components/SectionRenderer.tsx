@@ -37,7 +37,7 @@ export const SectionRenderer: React.FC<SectionRendererProps> = ({
           <div key={section.type} className="relative">
             {/* Connecting line between sections */}
             {!isLastItem && (
-              <div className="absolute left-3 top-3 bottom-0 w-[1px] bg-border"></div>
+              <div className="absolute left-3 top-3 bottom-0 w-[1px] bg-border" />
             )}
 
             {/* Section header with number badge */}
@@ -54,28 +54,18 @@ export const SectionRenderer: React.FC<SectionRendererProps> = ({
             <div className="pl-9">
               <div className="flex flex-wrap gap-2 pb-6">
                 {items.map((item) => {
-                  // Determine the status of this item
                   let status: 'normal' | 'loading' | 'completed' | 'error' = 'normal';
                   let errorMessage: string | undefined;
 
-                  // For completed step, all items are completed
                   if (step === 'done') {
                     status = 'completed';
                   } else {
-                    // Check for errors first
                     if (error && itemErrors[section.type]?.[item]) {
                       status = 'error';
                       errorMessage = itemErrors[section.type][item];
-                    }
-                    // Then check if it's completed
-                    else if (completedItems[section.type]?.includes(item)) {
+                    } else if (completedItems[section.type]?.includes(item)) {
                       status = 'completed';
-                    }
-                    // Then check if it's loading
-                    else if (
-                      isLoading &&
-                      loadingItems[section.type]?.includes(item)
-                    ) {
+                    } else if (isLoading && loadingItems[section.type]?.includes(item)) {
                       status = 'loading';
                     }
                   }

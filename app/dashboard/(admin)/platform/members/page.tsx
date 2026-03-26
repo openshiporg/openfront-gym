@@ -1,1 +1,3 @@
-import MemberListPage from '@/features/platform/members/screens/MemberListPage';\n\nexport default MemberListPage
+import MemberListPage from '@/features/platform/members/screens/MemberListPage';
+
+export default MemberListPage

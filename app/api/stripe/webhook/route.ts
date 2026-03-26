@@ -1,371 +1,296 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { keystoneContext } from "@/features/keystone/context";
+import { constructWebhookEvent, stripe } from "@/features/keystone/utils/stripe";
+import { provisionMembershipFromCheckoutSession } from "@/features/integrations/payment/stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
-  apiVersion: "2023-10-16",
-});
+function toIsoFromUnix(value?: number | null) {
+  return value ? new Date(value * 1000).toISOString() : null;
+}
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+async function findUserByStripe(context: any, customerId: string, metadataUserId?: string) {
+  if (metadataUserId) {
+    const user = await context.query.User.findOne({
+      where: { id: metadataUserId },
+      query: "id email stripeCustomerId membership { id stripeSubscriptionId status }",
+    });
+    if (user) return user;
+  }
 
-const toDateTime = (secs: number) => {
-  const t = new Date("1970-01-01T00:30:00Z");
-  t.setSeconds(secs);
-  return t;
-};
+  const users = await context.query.User.findMany({
+    where: { stripeCustomerId: { equals: customerId } },
+    take: 1,
+    query: "id email stripeCustomerId membership { id stripeSubscriptionId status }",
+  });
+
+  return users[0] ?? null;
+}
+
+async function findMemberForUser(context: any, userId: string) {
+  const members = await context.query.Member.findMany({
+    where: { user: { id: { equals: userId } } },
+    take: 1,
+    query: "id",
+  });
+  return members[0] ?? null;
+}
+
+async function resolveTier(context: any, subscription: Stripe.Subscription) {
+  const metadataTierId = subscription.metadata?.tierId;
+  if (metadataTierId) {
+    const tier = await context.query.MembershipTier.findOne({
+      where: { id: metadataTierId },
+      query: "id name classCreditsPerMonth stripeMonthlyPriceId stripeAnnualPriceId",
+    });
+    if (tier) return tier;
+  }
+
+  const priceId = subscription.items.data[0]?.price?.id;
+  if (!priceId) return null;
+
+  const tiers = await context.query.MembershipTier.findMany({
+    where: {
+      OR: [
+        { stripeMonthlyPriceId: { equals: priceId } },
+        { stripeAnnualPriceId: { equals: priceId } },
+      ],
+    },
+    take: 1,
+    query: "id name classCreditsPerMonth stripeMonthlyPriceId stripeAnnualPriceId",
+  });
+
+  return tiers[0] ?? null;
+}
+
+function mapStripeStatusToMembership(status: string) {
+  switch (status) {
+    case "active":
+    case "trialing":
+      return "active";
+    case "past_due":
+    case "unpaid":
+    case "incomplete":
+    case "incomplete_expired":
+      return "past-due";
+    case "canceled":
+      return "cancelled";
+    case "paused":
+      return "frozen";
+    default:
+      return "past-due";
+  }
+}
+
+function mapStripeStatusToSubscription(status: string) {
+  switch (status) {
+    case "active":
+    case "trialing":
+      return "active";
+    case "past_due":
+    case "unpaid":
+    case "incomplete":
+    case "incomplete_expired":
+      return "past_due";
+    case "paused":
+      return "paused";
+    default:
+      return "cancelled";
+  }
+}
+
+async function syncFromSubscription(context: any, subscription: Stripe.Subscription) {
+  const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
+  if (!customerId) return;
+
+  const user = await findUserByStripe(context, customerId, subscription.metadata?.userId);
+  if (!user) {
+    console.warn(`No user found for Stripe customer ${customerId}`);
+    return;
+  }
+
+  const member = await findMemberForUser(context, user.id);
+  const tier = await resolveTier(context, subscription);
+  const billingCycle = subscription.metadata?.billingCycle === "annual" ? "annual" : "monthly";
+  const membershipStatus = mapStripeStatusToMembership(subscription.status);
+  const nextBillingDate = toIsoFromUnix(subscription.current_period_end);
+  const startDate = toIsoFromUnix(subscription.current_period_start) ?? new Date().toISOString();
+
+  if (user.membership?.id) {
+    await context.query.Membership.updateOne({
+      where: { id: user.membership.id },
+      data: {
+        ...(tier ? { tier: { connect: { id: tier.id } } } : {}),
+        status: membershipStatus,
+        billingCycle,
+        startDate,
+        nextBillingDate,
+        autoRenew: subscription.status !== "canceled",
+        stripeSubscriptionId: subscription.id,
+        ...(membershipStatus === "cancelled"
+          ? { cancelledAt: new Date().toISOString() }
+          : { cancelledAt: null, cancelReason: null }),
+      },
+      query: "id",
+    });
+  } else if (tier) {
+    await context.query.Membership.createOne({
+      data: {
+        member: { connect: { id: user.id } },
+        tier: { connect: { id: tier.id } },
+        status: membershipStatus,
+        billingCycle,
+        startDate,
+        nextBillingDate,
+        autoRenew: subscription.status !== "canceled",
+        classCreditsRemaining: tier.classCreditsPerMonth,
+        stripeSubscriptionId: subscription.id,
+      },
+      query: "id",
+    });
+  }
+
+  if (member) {
+    const existingSubscriptions = await context.query.Subscription.findMany({
+      where: { stripeSubscriptionId: { equals: subscription.id } },
+      take: 1,
+      query: "id",
+    });
+
+    const data = {
+      member: { connect: { id: member.id } },
+      ...(tier ? { membershipTier: { connect: { id: tier.id } } } : {}),
+      status: mapStripeStatusToSubscription(subscription.status),
+      startDate,
+      nextBillingDate,
+      cancelledAt: subscription.status === "canceled" ? new Date().toISOString() : null,
+      pausedAt: subscription.status === "paused" ? new Date().toISOString() : null,
+      stripeSubscriptionId: subscription.id,
+      stripeCustomerId: customerId,
+    };
+
+    if (existingSubscriptions.length) {
+      await context.query.Subscription.updateOne({
+        where: { id: existingSubscriptions[0].id },
+        data,
+        query: "id",
+      });
+    } else {
+      await context.query.Subscription.createOne({
+        data,
+        query: "id",
+      });
+    }
+  }
+}
+
+async function recordInvoicePayment(context: any, invoice: Stripe.Invoice, status: "completed" | "failed") {
+  const subscriptionId = typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+  if (!subscriptionId) return;
+
+  const memberships = await context.query.Membership.findMany({
+    where: { stripeSubscriptionId: { equals: subscriptionId } },
+    take: 1,
+    query: "id billingCycle member { id email } tier { id classCreditsPerMonth }",
+  });
+  const membership = memberships[0] as any;
+  if (!membership) return;
+
+  const existingPayments = await context.query.MembershipPayment.findMany({
+    where: { stripeInvoiceId: { equals: invoice.id } },
+    take: 1,
+    query: "id status",
+  });
+
+  const paymentData = {
+    member: { connect: { id: membership.member.id } },
+    membership: { connect: { id: membership.id } },
+    amount: ((status === "completed" ? invoice.amount_paid : invoice.amount_due) ?? 0) / 100,
+    paymentType: "membership",
+    status,
+    paymentMethod: "credit-card",
+    paymentDate: new Date().toISOString(),
+    stripeInvoiceId: invoice.id,
+    stripeChargeId: typeof invoice.charge === "string" ? invoice.charge : undefined,
+    receiptUrl: invoice.hosted_invoice_url ?? undefined,
+    description: `${membership.billingCycle === "annual" ? "Annual" : "Monthly"} membership payment`,
+    isRecurring: true,
+  };
+
+  if (existingPayments.length) {
+    await context.query.MembershipPayment.updateOne({
+      where: { id: existingPayments[0].id },
+      data: paymentData,
+      query: "id",
+    });
+  } else {
+    await context.query.MembershipPayment.createOne({
+      data: paymentData,
+      query: "id",
+    });
+  }
+
+  await context.query.Membership.updateOne({
+    where: { id: membership.id },
+    data: {
+      status: status === "completed" ? "active" : "past-due",
+      ...(status === "completed" && membership.tier
+        ? { classCreditsRemaining: membership.tier.classCreditsPerMonth }
+        : {}),
+    },
+    query: "id",
+  });
+}
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
-  const signature = request.headers.get("stripe-signature") as string;
+  const signature = request.headers.get("stripe-signature");
 
-  if (!webhookSecret) {
-    console.error("Stripe webhook secret not configured");
-    return NextResponse.json(
-      { error: "Webhook secret not configured" },
-      { status: 500 }
-    );
+  if (!signature) {
+    return NextResponse.json({ error: "Missing Stripe signature" }, { status: 400 });
   }
 
   let event: Stripe.Event;
-
   try {
-    event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-  } catch (err: any) {
-    console.error(`Webhook signature verification failed: ${err.message}`);
-    return NextResponse.json(
-      { error: `Webhook Error: ${err.message}` },
-      { status: 400 }
-    );
+    event = await constructWebhookEvent(body, signature);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  const sudoContext = keystoneContext.sudo();
+  const context = keystoneContext.sudo();
 
   try {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        if (session.mode === "subscription") {
-          await handleCheckoutSessionCompleted(sudoContext, session);
+        if (session.mode === "subscription" && session.id) {
+          await provisionMembershipFromCheckoutSession(session.id);
         }
         break;
       }
-
-      case "customer.subscription.created": {
-        const subscription = event.data.object as Stripe.Subscription;
-        await handleSubscriptionCreated(sudoContext, subscription);
-        break;
-      }
-
-      case "invoice.payment_succeeded": {
-        const invoice = event.data.object as Stripe.Invoice;
-        await handleInvoicePaymentSucceeded(sudoContext, invoice);
-        break;
-      }
-
-      case "invoice.payment_failed": {
-        const invoice = event.data.object as Stripe.Invoice;
-        await handleInvoicePaymentFailed(sudoContext, invoice);
-        break;
-      }
-
-      case "customer.subscription.updated": {
-        const subscription = event.data.object as Stripe.Subscription;
-        await handleSubscriptionUpdated(sudoContext, subscription);
-        break;
-      }
-
+      case "customer.subscription.created":
+      case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
-        await handleSubscriptionDeleted(sudoContext, subscription);
+        await syncFromSubscription(context, subscription);
         break;
       }
-
+      case "invoice.paid": {
+        const invoice = event.data.object as Stripe.Invoice;
+        await recordInvoicePayment(context, invoice, "completed");
+        break;
+      }
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        await recordInvoicePayment(context, invoice, "failed");
+        break;
+      }
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        break;
     }
-  } catch (err: any) {
-    console.error(`Error processing webhook: ${err.message}`);
-    return NextResponse.json(
-      { error: `Webhook processing error: ${err.message}` },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    console.error("Stripe webhook processing error", error);
+    return NextResponse.json({ error: error.message || "Webhook processing failed" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });
-}
-
-async function handleCheckoutSessionCompleted(
-  context: any,
-  session: Stripe.Checkout.Session
-) {
-  const subscriptionId = session.subscription as string;
-  const customerId = session.customer as string;
-  const userId = session.metadata?.userId;
-  const membershipId = session.metadata?.membershipId;
-  const billingCycle = session.metadata?.billingCycle || "monthly";
-
-  if (!subscriptionId || !userId) {
-    console.log("Missing subscription ID or user ID in checkout session");
-    return;
-  }
-
-  // Fetch full subscription details from Stripe
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-
-  // If membershipId provided, link subscription to existing membership
-  if (membershipId) {
-    await context.query.Membership.updateOne({
-      where: { id: membershipId },
-      data: {
-        stripeSubscriptionId: subscriptionId,
-        status: "active",
-        billingCycle,
-        nextBillingDate: toDateTime(subscription.current_period_end).toISOString(),
-      },
-    });
-    console.log(`Linked subscription ${subscriptionId} to membership ${membershipId}`);
-  }
-
-  console.log(`Checkout session completed for user ${userId}`);
-}
-
-async function handleSubscriptionCreated(
-  context: any,
-  subscription: Stripe.Subscription
-) {
-  const customerId = subscription.customer as string;
-  const userId = subscription.metadata?.userId;
-
-  // Find user by stripeCustomerId
-  const users = await context.query.User.findMany({
-    where: { stripeCustomerId: { equals: customerId } },
-    query: "id email",
-  });
-
-  const user = users[0];
-  if (!user && !userId) {
-    console.error(`No user found for Stripe customer: ${customerId}`);
-    return;
-  }
-
-  const foundUserId = userId || user?.id;
-
-  // Check if Subscription record already exists
-  const existingSubscription = await context.query.Subscription.findOne({
-    where: { stripeSubscriptionId: subscription.id },
-  });
-
-  if (existingSubscription) {
-    console.log(`Subscription ${subscription.id} already exists`);
-    return;
-  }
-
-  // Get the price ID to find the membership tier
-  const priceId = subscription.items.data[0]?.price?.id;
-  let membershipTier = null;
-
-  if (priceId) {
-    // Find tier by stripe price ID
-    const tiers = await context.query.MembershipTier.findMany({
-      where: {
-        OR: [
-          { stripeMonthlyPriceId: { equals: priceId } },
-          { stripeAnnualPriceId: { equals: priceId } },
-        ],
-      },
-      query: "id name",
-    });
-    membershipTier = tiers[0];
-  }
-
-  // Create Subscription record (following os.org pattern)
-  await context.query.Subscription.createOne({
-    data: {
-      stripeSubscriptionId: subscription.id,
-      stripeCustomerId: customerId,
-      status: subscription.status === "active" ? "active" : "past_due",
-      startDate: toDateTime(subscription.created).toISOString(),
-      nextBillingDate: toDateTime(subscription.current_period_end).toISOString(),
-      ...(membershipTier && { membershipTier: { connect: { id: membershipTier.id } } }),
-    },
-  });
-
-  console.log(`Created Subscription record for ${subscription.id}`);
-}
-
-async function handleInvoicePaymentSucceeded(context: any, invoice: Stripe.Invoice) {
-  const subscriptionId = invoice.subscription as string;
-
-  if (!subscriptionId) return;
-
-  // Find membership by subscription ID
-  const memberships = await context.db.Membership.findMany({
-    where: { stripeSubscriptionId: { equals: subscriptionId } },
-  });
-
-  if (memberships.length === 0) {
-    console.log(`No membership found for subscription: ${subscriptionId}`);
-    return;
-  }
-
-  const membership = memberships[0];
-
-  // Update membership status to active
-  await context.db.Membership.updateOne({
-    where: { id: membership.id },
-    data: {
-      status: "active",
-    },
-  });
-
-  // Create payment record
-  const member = await context.db.User.findOne({
-    where: { id: membership.memberId },
-  });
-
-  if (member) {
-    await context.db.MembershipPayment.createOne({
-      data: {
-        member: { connect: { id: member.id } },
-        membership: { connect: { id: membership.id } },
-        amount: invoice.amount_paid / 100, // Convert from cents
-        paymentType: "membership",
-        status: "completed",
-        paymentMethod: "credit-card",
-        stripeInvoiceId: invoice.id,
-        stripeChargeId: invoice.charge as string,
-        receiptUrl: invoice.hosted_invoice_url || undefined,
-        description: `${membership.billingCycle === "monthly" ? "Monthly" : "Annual"} membership payment`,
-        isRecurring: true,
-      },
-    });
-  }
-
-  // Reset class credits if it's a new billing period
-  const tier = await context.db.MembershipTier.findOne({
-    where: { id: membership.tierId },
-  });
-
-  if (tier) {
-    await context.db.Membership.updateOne({
-      where: { id: membership.id },
-      data: {
-        classCreditsRemaining: tier.classCreditsPerMonth,
-      },
-    });
-  }
-
-  console.log(`Payment succeeded for membership: ${membership.id}`);
-}
-
-async function handleInvoicePaymentFailed(context: any, invoice: Stripe.Invoice) {
-  const subscriptionId = invoice.subscription as string;
-
-  if (!subscriptionId) return;
-
-  // Find membership by subscription ID
-  const memberships = await context.db.Membership.findMany({
-    where: { stripeSubscriptionId: { equals: subscriptionId } },
-  });
-
-  if (memberships.length === 0) {
-    console.log(`No membership found for subscription: ${subscriptionId}`);
-    return;
-  }
-
-  const membership = memberships[0];
-
-  // Update membership status to past-due
-  await context.db.Membership.updateOne({
-    where: { id: membership.id },
-    data: {
-      status: "past-due",
-    },
-  });
-
-  // Create failed payment record
-  const member = await context.db.User.findOne({
-    where: { id: membership.memberId },
-  });
-
-  if (member) {
-    await context.db.MembershipPayment.createOne({
-      data: {
-        member: { connect: { id: member.id } },
-        membership: { connect: { id: membership.id } },
-        amount: invoice.amount_due / 100,
-        paymentType: "membership",
-        status: "failed",
-        stripeInvoiceId: invoice.id,
-        description: "Failed membership payment",
-        isRecurring: true,
-      },
-    });
-  }
-
-  console.log(`Payment failed for membership: ${membership.id}`);
-}
-
-async function handleSubscriptionUpdated(context: any, subscription: Stripe.Subscription) {
-  const memberships = await context.db.Membership.findMany({
-    where: { stripeSubscriptionId: { equals: subscription.id } },
-  });
-
-  if (memberships.length === 0) {
-    console.log(`No membership found for subscription: ${subscription.id}`);
-    return;
-  }
-
-  const membership = memberships[0];
-
-  // Map Stripe status to our status
-  let status = membership.status;
-  if (subscription.status === "active") {
-    status = "active";
-  } else if (subscription.status === "past_due") {
-    status = "past-due";
-  } else if (subscription.status === "canceled") {
-    status = "cancelled";
-  } else if (subscription.status === "paused") {
-    status = "frozen";
-  }
-
-  // Update next billing date
-  const nextBillingDate = subscription.current_period_end
-    ? new Date(subscription.current_period_end * 1000).toISOString()
-    : membership.nextBillingDate;
-
-  await context.db.Membership.updateOne({
-    where: { id: membership.id },
-    data: {
-      status,
-      nextBillingDate,
-    },
-  });
-
-  console.log(`Subscription updated for membership: ${membership.id}`);
-}
-
-async function handleSubscriptionDeleted(context: any, subscription: Stripe.Subscription) {
-  const memberships = await context.db.Membership.findMany({
-    where: { stripeSubscriptionId: { equals: subscription.id } },
-  });
-
-  if (memberships.length === 0) {
-    console.log(`No membership found for subscription: ${subscription.id}`);
-    return;
-  }
-
-  const membership = memberships[0];
-
-  await context.db.Membership.updateOne({
-    where: { id: membership.id },
-    data: {
-      status: "cancelled",
-      cancelledAt: new Date().toISOString(),
-      autoRenew: false,
-    },
-  });
-
-  console.log(`Subscription deleted for membership: ${membership.id}`);
 }

@@ -1,9 +1,10 @@
-import { keystoneContext } from "@/features/keystone/context";
 import { cookies } from "next/headers";
+import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
 
 /**
  * Storefront auth helper (server-side)
- * Mirrors Openfront principle: storefront session is real Keystone session.
+ * Uses the dashboard keystoneClient with the session cookie, matching
+ * the same pattern used in dashboard/actions/auth.ts.
  */
 export async function getStorefrontUser() {
   const cookieStore = await cookies();
@@ -11,32 +12,30 @@ export async function getStorefrontUser() {
 
   if (!token) return null;
 
-  // Keystone context with current session token
-  const context = keystoneContext.withRequest(async () => ({
-    headers: {
-      cookie: `keystonejs-session=${token}`,
-    },
-  }) as any);
-
-  try {
-    const user = await context.query.User.findOne({
-      where: { id: "" } as any,
-      query: `
-        id
-        name
-        email
-        onboardingStatus
-        role {
+  const query = `
+    query StorefrontAuthenticatedUser {
+      authenticatedItem {
+        ... on User {
           id
           name
-          isInstructor
+          email
+          onboardingStatus
+          role {
+            id
+            name
+            isInstructor
+            canManageOnboarding
+            canAccessDashboard
+          }
         }
-      `,
-    });
+      }
+    }
+  `;
 
-    // If findOne fails due to empty where, fallback with authenticatedItem query via GraphQL client path
-    // This helper remains defensive until a dedicated storefront auth endpoint is introduced.
-    return user;
+  try {
+    const response = await keystoneClient(query, {});
+    if (!response.success) return null;
+    return response.data?.authenticatedItem ?? null;
   } catch {
     return null;
   }

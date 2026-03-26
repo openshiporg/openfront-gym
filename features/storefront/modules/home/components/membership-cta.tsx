@@ -1,80 +1,76 @@
-import Link from "next/link"
-import { ShieldCheck, Zap, Globe, Lock } from "lucide-react"
+import Link from "next/link";
+import { Check } from "lucide-react";
+import { getMembershipTiers } from "@/features/storefront/lib/data/memberships";
 
-export default function MembershipCTA() {
+const TIER_PERKS: Record<string, string[]> = {
+  basic: ["Full gym access", "4 classes / month", "6am–10pm access", "Online booking"],
+  premium: ["Full gym access", "Unlimited classes", "24/7 access", "2 guest passes", "1 PT session / month"],
+  elite: ["Full gym access", "Unlimited classes", "24/7 access", "5 guest passes", "4 PT sessions / month", "Nutrition consult"],
+};
+
+function getPerks(name: string): string[] {
+  const k = name.toLowerCase();
+  for (const [key, value] of Object.entries(TIER_PERKS)) {
+    if (k.includes(key)) return value;
+  }
+  return ["Full gym access", "Structured booking", "Coach-led classes"];
+}
+
+export default async function MembershipCTA() {
+  const tiers = await getMembershipTiers();
+  const shown = tiers.slice(0, 3);
+  if (!shown.length) return null;
+
   return (
-    <section className="relative overflow-hidden bg-[#0a0a0a] py-32 text-white">
-      {/* Background Graphic */}
-      <div className="absolute top-0 right-0 h-full w-1/3 bg-violet-600/5 blur-[120px]" />
-      
-      <div className="container mx-auto px-6">
-        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-24 items-center">
-          <div>
-            <div className="mb-6 inline-block bg-violet-600 px-3 py-1 text-[10px] font-black uppercase tracking-[0.3em]">
-              Access Level: Unrestricted
-            </div>
-            <h2 className="mb-8 text-5xl font-black uppercase italic leading-[0.9] tracking-tighter md:text-8xl">
-              Become the <br /> <span className="text-zinc-700 font-outline-2">Standard</span>
-            </h2>
-            
-            <div className="mb-12 space-y-6">
-              {[
-                { icon: ShieldCheck, title: "Biometric Lab Access", desc: "24/7 entry to all performance zones." },
-                { icon: Zap, title: "Elite Protocols", desc: "Personalized programming for every member." },
-                { icon: Lock, title: "The Vault", desc: "Private recovery suites and cryotherapy." },
-              ].map((item, i) => (
-                <div key={i} className="flex gap-6">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-white/10 bg-white/5">
-                    <item.icon className="h-5 w-5 text-violet-500" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black uppercase tracking-widest">{item.title}</h4>
-                    <p className="text-xs text-zinc-500 mt-1">{item.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+    <section className="bg-[#0e0e0e] py-24">
+      <div className="mx-auto grid max-w-7xl gap-16 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+        <div className="flex flex-col justify-center">
+          <h2 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase tracking-[-0.08em] text-white sm:text-6xl">
+            Your contract
+            <br />
+            with self
+          </h2>
+          <p className="mt-6 max-w-md text-base leading-relaxed text-[#c4c7c7]">
+            No hidden fees. No predatory lock-ins. Just a clear mix of facility access, class access, and recovery-oriented membership benefits.
+          </p>
+          <Link href="/memberships" className="mt-8 inline-flex border-2 border-[#d3fbff] px-8 py-4 text-sm font-bold uppercase tracking-[0.2em] text-[#d3fbff] transition-colors hover:bg-[#d3fbff]/10">
+            Compare all plans
+          </Link>
+        </div>
 
-            <Link
-              href="/memberships"
-              className="inline-flex h-16 items-center bg-white px-12 text-sm font-black uppercase tracking-[0.2em] text-black transition-all hover:bg-violet-600 hover:text-white"
-            >
-              Select Your Tier
-            </Link>
-          </div>
-
-          <div className="relative">
-            <div className="relative border border-white/5 bg-zinc-900/50 p-12 backdrop-blur-sm">
-              <div className="absolute -top-px -left-px h-8 w-8 border-l-2 border-t-2 border-violet-600" />
-              <div className="absolute -bottom-px -right-px h-8 w-8 border-r-2 border-b-2 border-violet-600" />
-              
-              <h3 className="mb-8 text-center text-2xl font-black uppercase italic tracking-tighter">
-                Direct Entry <span className="text-violet-500 text-sm align-top">V1</span>
-              </h3>
-              
-              <div className="space-y-4">
-                <div className="flex justify-between border-b border-white/5 pb-4">
-                  <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Initiation</span>
-                  <span className="text-xs font-black uppercase line-through text-zinc-700">$250</span>
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {shown.map((tier, index) => {
+            const perks = getPerks(tier.name);
+            const isPrimary = index === 1;
+            return (
+              <div key={tier.id} className={`flex flex-col justify-between p-8 ${isPrimary ? "border-t-4 border-[#ffb59e] bg-[#2a2a2a]" : "bg-[#1c1b1b]"}`}>
+                <div>
+                  <h3 className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.05em] text-white">
+                    {tier.name}
+                  </h3>
+                  <ul className="mt-6 space-y-3">
+                    {perks.map((perk) => (
+                      <li key={perk} className="flex items-start gap-3 text-sm text-[#e5e2e1]">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#7df4ff]" />
+                        <span>{perk}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <div className="flex justify-between border-b border-white/5 pb-4 text-violet-500">
-                  <span className="text-xs font-black uppercase tracking-widest italic">Founding Member Rate</span>
-                  <span className="text-lg font-black italic tracking-tighter">WAIVED</span>
+                <div className="mt-10">
+                  <div className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black leading-none text-white">
+                    {Math.round(tier.monthlyPrice)}
+                  </div>
+                  <div className="mt-2 text-[11px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">USD / month</div>
+                  <Link href={`/join?tier=${tier.id}`} className="mt-6 inline-flex bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95">
+                    Join now
+                  </Link>
                 </div>
               </div>
-
-              <p className="mt-8 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-600">
-                Founding rates guaranteed for the first 500 members. 
-                <br />Current status: <span className="text-white">412/500</span>
-              </p>
-            </div>
-
-            {/* Floating accent elements */}
-            <div className="absolute -bottom-8 -left-8 h-24 w-24 border-b border-l border-white/10" />
-            <div className="absolute -top-8 -right-8 h-24 w-24 border-t border-r border-white/10" />
-          </div>
+            );
+          })}
         </div>
       </div>
     </section>
-  )
+  );
 }

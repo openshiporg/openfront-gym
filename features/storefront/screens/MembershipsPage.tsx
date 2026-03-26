@@ -1,32 +1,45 @@
-import { Metadata } from "next"
-import MembershipTiers from "@/features/storefront/modules/memberships/components/membership-tiers"
-import MembershipFAQ from "@/features/storefront/modules/memberships/components/membership-faq"
+import MembershipTiers from "@/features/storefront/modules/memberships/components/membership-tiers";
+import MembershipFAQ from "@/features/storefront/modules/memberships/components/membership-faq";
+import { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Membership Plans - Openfront Gym",
-  description: "Choose the perfect membership plan for your fitness journey. Flexible options with class credits, personal training, and exclusive benefits.",
-}
+  title: "Membership Plans — Openfront Gym",
+  description: "Flexible plans for every fitness goal. Join today — first class is always free.",
+};
 
 export async function generateMetadata(): Promise<Metadata> {
-  return {
-    title: "Membership Plans - Openfront Gym",
-    description: "Choose the perfect membership plan for your fitness journey. Flexible options with class credits, personal training, and exclusive benefits.",
-  }
+  return metadata;
 }
 
 export async function MembershipsPage() {
   return (
-    <div className="container py-8 md:py-12">
-      <div className="text-center mb-12">
-        <h1 className="text-3xl md:text-4xl font-bold mb-4">
-          Choose Your Membership
-        </h1>
-        <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Flexible plans designed to fit your lifestyle. All memberships include access to our state-of-the-art facilities.
-        </p>
+    <div className="min-h-screen bg-[#131313] px-4 pb-24 pt-14 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <section className="relative overflow-hidden border border-white/10 bg-[#0e0e0e] px-8 py-16 sm:px-12">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,181,158,0.18),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(125,244,255,0.12),transparent_32%)]" />
+          <div className="relative z-10 grid gap-8 lg:grid-cols-[1fr_0.7fr] lg:items-end">
+            <div>
+              <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Engineered access</p>
+              <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.88] tracking-[-0.08em] text-white sm:text-7xl">
+                Membership
+                <br />
+                architecture
+              </h1>
+            </div>
+            <p className="max-w-md border-l-2 border-[#ffb59e] pl-6 text-base leading-relaxed text-[#c4c7c7]">
+              Every plan includes facility access. Class access, recovery depth, and coaching benefits scale with the tier you choose.
+            </p>
+          </div>
+        </section>
+
+        <div className="mt-16">
+          <MembershipTiers />
+        </div>
+
+        <div className="mt-16 bg-[#1c1b1b] px-8 py-12">
+          <MembershipFAQ />
+        </div>
       </div>
-      <MembershipTiers />
-      <MembershipFAQ />
     </div>
-  )
+  );
 }

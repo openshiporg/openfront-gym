@@ -49,7 +49,7 @@ export function useOnboardingState() {
         customJsonApplied: false,
       }));
     } else {
-      // For custom, start with basic template
+      // For custom, start with basic template data as placeholder
       const basicData = getSeedForTemplate('minimal', seedData);
       setState(prev => ({
         ...prev,
@@ -108,20 +108,16 @@ export function useOnboardingState() {
     };
   };
 
-  // Helper function to update UI based on progress
+  // Progress handler — bulk-completes prior sections as we advance
   const setProgress = (message: string) => {
     setProgressMessage(message);
 
-    // Get the current display names (either from template or from actual data)
     const displayNames = state.currentJsonData
       ? getDisplayNamesFromData(state.currentJsonData)
       : GYM_TEMPLATES[state.selectedTemplate].displayNames;
 
-    // Process based on current step
-    if (message.includes('membership')) {
-      // Starting memberships - no previous steps
-    } else if (message.includes('class')) {
-      // When working on classes, memberships are completed
+    if (message.includes('class type') || message.includes('class types')) {
+      // Membership tiers done
       setState(prev => ({
         ...prev,
         completedItems: {
@@ -131,10 +127,10 @@ export function useOnboardingState() {
         loadingItems: {
           ...prev.loadingItems,
           membershipTiers: [],
-        }
+        },
       }));
     } else if (message.includes('instructor')) {
-      // When working on instructors, previous steps are completed
+      // Membership tiers + class types done
       setState(prev => ({
         ...prev,
         completedItems: {
@@ -144,41 +140,41 @@ export function useOnboardingState() {
         },
         loadingItems: {
           ...prev.loadingItems,
+          membershipTiers: [],
           classTypes: [],
-        }
+        },
       }));
-    } else if (message.includes('complete')) {
-      // On completion, no loading items and all items are completed
+    } else if (message.toLowerCase().includes('complete')) {
+      // Everything done
       setState(prev => ({
         ...prev,
         loadingItems: {
-          ...prev.loadingItems,
-          instructors: [], // Clear loading state for instructors
+          membershipTiers: [],
+          classTypes: [],
+          instructors: [],
         },
         completedItems: {
           membershipTiers: [...displayNames.membershipTiers],
           classTypes: [...displayNames.classTypes],
           instructors: [...displayNames.instructors],
-        }
+        },
       }));
     }
   };
 
-  // Helper functions to update individual item states
   const setItemLoading = (type: string, item: string) => {
     setState(prev => ({
       ...prev,
       loadingItems: {
         ...prev.loadingItems,
-        [type]: [...prev.loadingItems[type], item],
+        [type]: [...(prev.loadingItems[type] || []), item],
       },
       itemErrors: {
         ...prev.itemErrors,
-        [type]: prev.itemErrors[type] ? {
-          ...prev.itemErrors[type],
-          [item]: undefined
-        } : {}
-      }
+        [type]: prev.itemErrors[type]
+          ? { ...prev.itemErrors[type], [item]: undefined as any }
+          : {},
+      },
     }));
   };
 
@@ -187,19 +183,18 @@ export function useOnboardingState() {
       ...prev,
       loadingItems: {
         ...prev.loadingItems,
-        [type]: prev.loadingItems[type].filter((i) => i !== item),
+        [type]: (prev.loadingItems[type] || []).filter((i) => i !== item),
       },
       completedItems: {
         ...prev.completedItems,
-        [type]: [...prev.completedItems[type], item],
+        [type]: [...(prev.completedItems[type] || []), item],
       },
       itemErrors: {
         ...prev.itemErrors,
-        [type]: prev.itemErrors[type] ? {
-          ...prev.itemErrors[type],
-          [item]: undefined
-        } : {}
-      }
+        [type]: prev.itemErrors[type]
+          ? { ...prev.itemErrors[type], [item]: undefined as any }
+          : {},
+      },
     }));
   };
 
@@ -208,15 +203,15 @@ export function useOnboardingState() {
       ...prev,
       loadingItems: {
         ...prev.loadingItems,
-        [type]: prev.loadingItems[type].filter((i) => i !== item),
+        [type]: (prev.loadingItems[type] || []).filter((i) => i !== item),
       },
       itemErrors: {
         ...prev.itemErrors,
         [type]: {
-          ...prev.itemErrors[type],
+          ...(prev.itemErrors[type] || {}),
           [item]: errorMessage,
-        }
-      }
+        },
+      },
     }));
   };
 

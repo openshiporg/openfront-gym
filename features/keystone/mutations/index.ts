@@ -1,6 +1,7 @@
 import { mergeSchemas } from "@graphql-tools/schema";
 import type { GraphQLSchema } from 'graphql';
 import redirectToInit from "./redirectToInit";
+import updateActiveUser from "./updateActiveUser";
 import { getBillingStats } from "../queries/billing";
 import {
   checkClassAvailability,
@@ -31,7 +32,16 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         getBillingStats: BillingStats!
       }
 
+      input UserUpdateProfileInput {
+        email: String
+        name: String
+        phone: String
+        password: String
+        onboardingStatus: String
+      }
+
       type Mutation {
+        updateActiveUser(data: UserUpdateProfileInput!): User
         bookClass(classInstanceId: ID!, memberId: ID!): BookClassResult!
         checkIn(memberId: ID!, bookingId: ID, classInstanceId: ID): CheckInResult!
         promoteFromWaitlist(classInstanceId: ID!): PromoteResult!
@@ -155,6 +165,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         getBillingStats,
       },
       Mutation: {
+        updateActiveUser,
         bookClass,
         checkIn,
         promoteFromWaitlist,

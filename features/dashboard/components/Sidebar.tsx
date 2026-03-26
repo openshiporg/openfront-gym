@@ -41,6 +41,8 @@ import { Logo, LogoIcon } from '@/features/dashboard/components/Logo'
 import { UserProfileClient } from './UserProfileClient'
 import { platformNavGroups, platformStandaloneItems, getPlatformNavItemsWithBasePath } from '@/features/platform/lib/navigation'
 import { useDashboard } from '../context/DashboardProvider'
+import { OnboardingCards } from '@/features/platform/onboarding/components/OnboardingCards'
+import { dismissOnboarding } from '@/features/platform/onboarding/actions/onboarding'
 
 interface User {
   id: string;
@@ -358,18 +360,26 @@ export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
       </SidebarContent>
       
       <SidebarFooter>
-        {user?.role?.canManageOnboarding && user.onboardingStatus !== 'completed' && user.onboardingStatus !== 'dismissed' && (
-          <div className="mb-2 rounded-lg border bg-card p-3">
-            <div className="text-xs font-medium">Setup your gym</div>
-            <div className="text-[11px] text-muted-foreground mt-1">Seed demo data and finish onboarding.</div>
-            <button
-              className="mt-2 inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-[11px] text-primary-foreground"
-              onClick={onOpenDialog}
-            >
-              Get started
-            </button>
-          </div>
-        )}
+        {/* Onboarding Cards — canonical pattern matching openfront/openfront-restaurant */}
+        <div className="w-full mb-2 overflow-visible">
+          <OnboardingCards
+            steps={[{
+              href: '#onboarding',
+              title: 'Welcome to Openfront Gym',
+              description: 'Your gym is empty. Click get started to seed membership plans, class types, and instructors.',
+            }]}
+            onboardingStatus={user?.onboardingStatus}
+            userRole={user?.role}
+            onDismiss={async () => {
+              try {
+                await dismissOnboarding();
+              } catch (error) {
+                console.error('Error dismissing onboarding:', error);
+              }
+            }}
+            onOpenDialog={onOpenDialog ?? (() => {})}
+          />
+        </div>
         {user && <UserProfileClient user={user} />}
       </SidebarFooter>
       

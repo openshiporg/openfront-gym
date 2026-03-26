@@ -1,1 +1,2 @@
-export * from './MemberListPage';\nexport * from './MemberListPageClient';
+export * from './MemberListPage';
+export * from './MemberListPageClient';

@@ -1,11 +1,16 @@
 {
+  "location": {
+    "name": "Openfront Gym – Main Studio",
+    "address": "123 Fitness Ave, San Francisco, CA 94102",
+    "phone": "(415) 555-0100",
+    "isActive": true
+  },
   "membershipTiers": [
     {
       "handle": "basic-monthly",
       "name": "Basic Monthly",
-      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Access to gym during regular hours", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
-      "monthlyPrice": 29.99,
-      "annualPrice": 299.99,
+      "monthlyPrice": 29,
+      "annualPrice": 299,
       "classCreditsPerMonth": 4,
       "accessHours": "6am-10pm",
       "guestPasses": 0,
@@ -16,9 +21,8 @@
     {
       "handle": "premium-monthly",
       "name": "Premium Monthly",
-      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Full access with unlimited group classes", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
-      "monthlyPrice": 49.99,
-      "annualPrice": 499.99,
+      "monthlyPrice": 49,
+      "annualPrice": 499,
       "classCreditsPerMonth": -1,
       "accessHours": "24/7",
       "guestPasses": 2,
@@ -29,9 +33,8 @@
     {
       "handle": "elite-monthly",
       "name": "Elite Monthly",
-      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "All-inclusive premium experience with personal training", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
-      "monthlyPrice": 79.99,
-      "annualPrice": 799.99,
+      "monthlyPrice": 79,
+      "annualPrice": 799,
       "classCreditsPerMonth": -1,
       "accessHours": "24/7",
       "guestPasses": 5,
@@ -41,91 +44,65 @@
     }
   ],
   "classTypes": [
-    {
-      "handle": "yoga",
-      "name": "Yoga",
-      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Mind and body wellness through yoga practice. Suitable for all levels.", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
-      "difficulty": "beginner",
-      "duration": 60,
-      "equipmentNeeded": ["Yoga mat", "Blocks", "Strap"],
-      "caloriesBurn": 200
-    },
-    {
-      "handle": "spin",
-      "name": "Spin Class",
-      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "High-intensity indoor cycling for cardio fitness", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
-      "difficulty": "intermediate",
-      "duration": 45,
-      "equipmentNeeded": ["Spin bike"],
-      "caloriesBurn": 500
-    },
-    {
-      "handle": "hiit",
-      "name": "HIIT",
-      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "High-Intensity Interval Training for maximum calorie burn", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
-      "difficulty": "advanced",
-      "duration": 30,
-      "equipmentNeeded": ["Dumbbells", "Kettlebells", "Jump rope"],
-      "caloriesBurn": 400
-    },
-    {
-      "handle": "pilates",
-      "name": "Pilates",
-      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Core strength and flexibility training", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
-      "difficulty": "beginner",
-      "duration": 60,
-      "equipmentNeeded": ["Pilates mat", "Resistance bands"],
-      "caloriesBurn": 250
-    },
-    {
-      "handle": "zumba",
-      "name": "Zumba",
-      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Dance fitness party with Latin-inspired moves", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
-      "difficulty": "beginner",
-      "duration": 60,
-      "equipmentNeeded": [],
-      "caloriesBurn": 400
-    },
-    {
-      "handle": "boxing",
-      "name": "Boxing",
-      "description": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Combat fitness and boxing technique training", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
-      "difficulty": "intermediate",
-      "duration": 45,
-      "equipmentNeeded": ["Boxing gloves", "Hand wraps", "Heavy bag"],
-      "caloriesBurn": 600
-    }
+    { "handle": "yoga",    "name": "Yoga",       "difficulty": "beginner",     "duration": 60, "caloriesBurn": 200, "equipmentNeeded": ["Yoga mat"] },
+    { "handle": "spin",    "name": "Spin Class", "difficulty": "intermediate", "duration": 45, "caloriesBurn": 500, "equipmentNeeded": ["Spin bike"] },
+    { "handle": "hiit",    "name": "HIIT",       "difficulty": "advanced",     "duration": 30, "caloriesBurn": 400, "equipmentNeeded": ["Dumbbells"] },
+    { "handle": "pilates", "name": "Pilates",    "difficulty": "beginner",     "duration": 60, "caloriesBurn": 250, "equipmentNeeded": ["Mat"] },
+    { "handle": "zumba",   "name": "Zumba",      "difficulty": "beginner",     "duration": 60, "caloriesBurn": 400, "equipmentNeeded": [] },
+    { "handle": "boxing",  "name": "Boxing",     "difficulty": "intermediate", "duration": 45, "caloriesBurn": 600, "equipmentNeeded": ["Gloves"] }
   ],
   "instructors": [
     {
       "handle": "sarah-johnson",
-      "firstName": "Sarah",
-      "lastName": "Johnson",
-      "email": "sarah@fitprogym.com",
-      "bio": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Certified yoga instructor with 10 years of experience. Passionate about helping students find balance and strength through mindful movement.", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "firstName": "Sarah", "lastName": "Johnson",
+      "email": "sarah@demo-gym.com",
       "specialties": ["Yoga", "Pilates"],
-      "certifications": ["RYT-500", "Pilates Mat Certification"],
-      "isActive": true
+      "certifications": ["RYT-500"],
+      "isActive": true,
+      "teachesClassTypes": ["yoga", "pilates"]
     },
     {
       "handle": "mike-rodriguez",
-      "firstName": "Mike",
-      "lastName": "Rodriguez",
-      "email": "mike@fitprogym.com",
-      "bio": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "Former professional boxer and certified personal trainer. Specializes in high-intensity training and boxing technique.", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "firstName": "Mike", "lastName": "Rodriguez",
+      "email": "mike@demo-gym.com",
       "specialties": ["HIIT", "Boxing"],
-      "certifications": ["NASM-CPT", "Boxing Coach Level 2"],
-      "isActive": true
+      "certifications": ["NASM-CPT"],
+      "isActive": true,
+      "teachesClassTypes": ["hiit", "boxing"]
     },
     {
       "handle": "emily-chen",
-      "firstName": "Emily",
-      "lastName": "Chen",
-      "email": "emily@fitprogym.com",
-      "bio": {"root": {"children": [{"children": [{"detail": 0, "format": 0, "mode": "normal", "style": "", "text": "High-energy instructor specializing in cardio fitness and dance. Loves bringing the party to the gym floor!", "type": "text", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "paragraph", "version": 1}], "direction": "ltr", "format": "", "indent": 0, "type": "root", "version": 1}},
+      "firstName": "Emily", "lastName": "Chen",
+      "email": "emily@demo-gym.com",
       "specialties": ["Spin", "Zumba"],
-      "certifications": ["ACE Certified", "Spinning Instructor"],
-      "isActive": true
+      "certifications": ["ACE Certified"],
+      "isActive": true,
+      "teachesClassTypes": ["spin", "zumba"]
     }
-  ]
+  ],
+  "schedules": [
+    { "name": "Morning Yoga",    "classTypeHandle": "yoga",    "instructorHandle": "sarah-johnson",  "dayOfWeek": "monday",    "startTime": "07:00", "endTime": "08:00", "maxCapacity": 15, "isActive": true },
+    { "name": "Morning Yoga",    "classTypeHandle": "yoga",    "instructorHandle": "sarah-johnson",  "dayOfWeek": "wednesday", "startTime": "07:00", "endTime": "08:00", "maxCapacity": 15, "isActive": true },
+    { "name": "Morning Yoga",    "classTypeHandle": "yoga",    "instructorHandle": "sarah-johnson",  "dayOfWeek": "friday",    "startTime": "07:00", "endTime": "08:00", "maxCapacity": 15, "isActive": true },
+    { "name": "Spin Class",      "classTypeHandle": "spin",    "instructorHandle": "emily-chen",     "dayOfWeek": "tuesday",   "startTime": "06:30", "endTime": "07:15", "maxCapacity": 20, "isActive": true },
+    { "name": "Spin Class",      "classTypeHandle": "spin",    "instructorHandle": "emily-chen",     "dayOfWeek": "thursday",  "startTime": "06:30", "endTime": "07:15", "maxCapacity": 20, "isActive": true },
+    { "name": "Spin Class",      "classTypeHandle": "spin",    "instructorHandle": "emily-chen",     "dayOfWeek": "saturday",  "startTime": "09:00", "endTime": "09:45", "maxCapacity": 20, "isActive": true },
+    { "name": "HIIT Training",   "classTypeHandle": "hiit",    "instructorHandle": "mike-rodriguez", "dayOfWeek": "monday",    "startTime": "18:00", "endTime": "18:30", "maxCapacity": 12, "isActive": true },
+    { "name": "HIIT Training",   "classTypeHandle": "hiit",    "instructorHandle": "mike-rodriguez", "dayOfWeek": "wednesday", "startTime": "18:00", "endTime": "18:30", "maxCapacity": 12, "isActive": true },
+    { "name": "HIIT Training",   "classTypeHandle": "hiit",    "instructorHandle": "mike-rodriguez", "dayOfWeek": "friday",    "startTime": "18:00", "endTime": "18:30", "maxCapacity": 12, "isActive": true },
+    { "name": "Pilates",         "classTypeHandle": "pilates", "instructorHandle": "sarah-johnson",  "dayOfWeek": "tuesday",   "startTime": "09:00", "endTime": "10:00", "maxCapacity": 10, "isActive": true },
+    { "name": "Pilates",         "classTypeHandle": "pilates", "instructorHandle": "sarah-johnson",  "dayOfWeek": "saturday",  "startTime": "10:00", "endTime": "11:00", "maxCapacity": 10, "isActive": true },
+    { "name": "Zumba",           "classTypeHandle": "zumba",   "instructorHandle": "emily-chen",     "dayOfWeek": "wednesday", "startTime": "19:00", "endTime": "20:00", "maxCapacity": 25, "isActive": true },
+    { "name": "Zumba",           "classTypeHandle": "zumba",   "instructorHandle": "emily-chen",     "dayOfWeek": "friday",    "startTime": "19:00", "endTime": "20:00", "maxCapacity": 25, "isActive": true },
+    { "name": "Boxing",          "classTypeHandle": "boxing",  "instructorHandle": "mike-rodriguez", "dayOfWeek": "tuesday",   "startTime": "18:00", "endTime": "18:45", "maxCapacity": 10, "isActive": true },
+    { "name": "Boxing",          "classTypeHandle": "boxing",  "instructorHandle": "mike-rodriguez", "dayOfWeek": "thursday",  "startTime": "18:00", "endTime": "18:45", "maxCapacity": 10, "isActive": true }
+  ],
+  "demoMember": {
+    "name": "Alex Demo",
+    "email": "demo@openfront.gym",
+    "password": "Demo1234!",
+    "phone": "(415) 555-0199",
+    "membershipTierHandle": "premium-monthly",
+    "note": "Demo account for testing storefront and member flows"
+  }
 }

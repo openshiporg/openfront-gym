@@ -268,11 +268,17 @@ export const Member = list({
 
     currentMembershipTier: virtual({
       field: graphql.field({
-        type: graphql.object()({
+        type: graphql.object<{ id: string; name: string }>()({
           name: 'MemberCurrentTier',
           fields: {
-            id: graphql.field({ type: graphql.ID }),
-            name: graphql.field({ type: graphql.String }),
+            id: graphql.field({
+              type: graphql.ID,
+              resolve: (source) => source.id,
+            }),
+            name: graphql.field({
+              type: graphql.String,
+              resolve: (source) => source.name,
+            }),
           },
         }),
         async resolve(item, args, context) {
@@ -281,7 +287,7 @@ export const Member = list({
             where: { id: item.id.toString() },
             query: 'membershipTier { id name }',
           });
-          return member?.membershipTier || null;
+          return (member?.membershipTier as { id: string; name: string } | null) || null;
         },
       }),
       ui: {

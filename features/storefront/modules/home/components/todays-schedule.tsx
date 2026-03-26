@@ -1,104 +1,83 @@
-import Link from "next/link"
-import { Timer, Users, ChevronRight } from "lucide-react"
-import { getTodaysClasses } from "@/features/storefront/lib/data/classes"
+import Link from "next/link";
+import { getTodaysClasses } from "@/features/storefront/lib/data/classes";
+
+function isClassNow(startTime: string, durationMin: number): boolean {
+  try {
+    const now = new Date();
+    const [h, m] = startTime.split(":").map(Number);
+    const start = new Date(now);
+    start.setHours(h, m, 0, 0);
+    const end = new Date(start.getTime() + durationMin * 60 * 1000);
+    return now >= start && now < end;
+  } catch {
+    return false;
+  }
+}
 
 export default async function TodaysSchedule() {
-  const todaysClasses = await getTodaysClasses()
-  const upcomingClasses = todaysClasses.slice(0, 5)
-
-  if (upcomingClasses.length === 0) return null
+  const classes = await getTodaysClasses();
+  if (!classes.length) return null;
 
   return (
-    <section className="bg-black py-24 text-white relative">
-      <div className="container mx-auto px-6">
-        <div className="mb-16 flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
-          <div className="relative">
-            <div className="mb-4 text-[10px] font-black uppercase tracking-[0.4em] text-violet-500">
-              Operational Queue
-            </div>
-            <h2 className="text-4xl font-black uppercase italic leading-none tracking-tighter md:text-6xl">
-              Live <span className="text-zinc-600">Protocols</span>
+    <section className="bg-[#1c1b1b] py-20">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-10 flex items-end justify-between gap-6">
+          <div>
+            <h2 className="font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase tracking-[-0.06em] text-white sm:text-5xl">
+              Live now & next
             </h2>
-            <div className="absolute -left-12 top-1/2 h-px w-8 bg-white/10 hidden xl:block" />
+            <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.28em] text-[#c4c7c7]">
+              Precision class instrumentation
+            </p>
           </div>
-          
-          <Link
-            href="/schedule"
-            className="group flex items-center gap-3 text-sm font-bold uppercase tracking-widest text-zinc-500 hover:text-white transition-colors"
-          >
-            Tactical Schedule
-            <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+          <Link href="/schedule" className="hidden border-b border-[#ffb59e] pb-1 text-xs font-bold uppercase tracking-[0.22em] text-[#ffb59e] sm:inline-flex">
+            View full schedule
           </Link>
         </div>
 
-        <div className="space-y-[1px] bg-white/5 border border-white/5">
-          {upcomingClasses.map((classSession) => (
-            <div
-              key={classSession.id}
-              className="group relative bg-black p-8 transition-colors hover:bg-zinc-900/50"
-            >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
-                <div className="flex items-center gap-10">
-                  {/* Time Block */}
-                  <div className="flex flex-col items-center">
-                    <span className="text-3xl font-black italic tracking-tighter text-white group-hover:text-violet-500 transition-colors">
-                      {classSession.startTime}
-                    </span>
-                    <span className="text-[8px] font-black uppercase tracking-widest text-zinc-700">
-                      EST / UTC-5
-                    </span>
-                  </div>
+        <div className="grid grid-cols-1 gap-1 md:grid-cols-2 xl:grid-cols-4">
+          {classes.slice(0, 4).map((cls: any) => {
+            const duration = cls.classType?.duration ?? 60;
+            const isNow = isClassNow(cls.startTime, duration);
+            const spotsLeft = (cls.maxCapacity ?? 0) - (cls.currentCapacity ?? 0);
+            const isFull = spotsLeft <= 0;
 
-                  <div className="h-12 w-px bg-white/5" />
-
-                  {/* Class Info */}
-                  <div>
-                    <h3 className="text-2xl font-black uppercase italic tracking-tight mb-1">
-                      {classSession.classType.name}
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <div className="h-1.5 w-1.5 rounded-full bg-violet-600" />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                        Instructor: {classSession.instructor.name}
-                      </span>
-                    </div>
-                  </div>
+            return (
+              <Link
+                key={cls.id}
+                href="/schedule"
+                className={`flex min-h-[320px] flex-col justify-between p-8 transition-colors ${
+                  isNow ? "bg-[#00eefc] text-[#00363a]" : "bg-[#353535] text-white hover:bg-[#393939]"
+                }`}
+              >
+                <div>
+                  <span className={`inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-[0.24em] ${
+                    isNow ? "bg-[#00363a] text-[#d3fbff]" : "text-[#c4c7c7]"
+                  }`}>
+                    {isNow ? "Live now" : `Starts ${cls.startTime}`}
+                  </span>
+                  <h3 className="mt-8 font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase leading-none tracking-[-0.06em]">
+                    {(cls.classType?.name ?? cls.name).split(" ").slice(0, 2).join(" ")}
+                  </h3>
                 </div>
 
-                {/* Metrics & Action */}
-                <div className="flex flex-wrap items-center gap-10">
-                  <div className="flex items-center gap-8">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-zinc-700">Duration</span>
-                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-tighter">
-                        <Timer className="h-3 w-3 text-violet-500" />
-                        {classSession.classType.duration}M
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-zinc-700">Capacity</span>
-                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-tighter">
-                        <Users className="h-3 w-3 text-violet-500" />
-                        {classSession.currentCapacity || 0}/{classSession.maxCapacity}
-                      </div>
-                    </div>
+                <div className="space-y-4 text-sm uppercase tracking-[0.16em]">
+                  <div className={`flex items-center justify-between border-b pb-4 ${isNow ? "border-[#00363a]/20" : "border-white/10"}`}>
+                    <span className={isNow ? "text-[#004f54]" : "text-[#c4c7c7]"}>Instructor</span>
+                    <span className="font-medium">{cls.instructor?.name ?? "TBD"}</span>
                   </div>
-
-                  <Link
-                    href={`/schedule#class-${classSession.id}`}
-                    className="flex h-12 items-center justify-center border border-white px-8 text-xs font-black uppercase tracking-[0.2em] transition-all hover:bg-white hover:text-black active:scale-95"
-                  >
-                    Engage
-                  </Link>
+                  <div className="flex items-center justify-between">
+                    <span className={isNow ? "text-[#004f54]" : "text-[#c4c7c7]"}>Spots left</span>
+                    <span className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black tracking-[-0.05em]">
+                      {isFull ? "FULL" : String(spotsLeft).padStart(2, "0")}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              
-              {/* Decorative side accent */}
-              <div className="absolute left-0 top-0 h-0 w-1 bg-violet-600 transition-all group-hover:h-full" />
-            </div>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </section>
-  )
+  );
 }
