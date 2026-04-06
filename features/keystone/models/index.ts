@@ -9,6 +9,7 @@ import { GymPayment } from './GymPayment';
 import { PaymentMethod } from './PaymentMethod';
 import { CheckIn } from './CheckIn';
 import { Location } from './Location';
+import { GymSettings } from './GymSettings';
 import { WorkoutLog } from './WorkoutLog';
 import { WorkoutSet } from './WorkoutSet';
 import { Exercise } from './Exercise';
@@ -32,6 +33,7 @@ export const models = {
   PaymentMethod,
   CheckIn,
   Location,
+  GymSettings,
   WorkoutLog,
   WorkoutSet,
   Exercise,

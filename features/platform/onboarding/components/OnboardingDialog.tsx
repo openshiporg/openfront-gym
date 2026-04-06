@@ -55,7 +55,7 @@ const StripeEnvHint = () => (
       <TooltipContent side="bottom" align="start" className="p-3 text-xs max-w-sm z-[100]">
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground mb-3">
-            For Stripe payments to work, add these env vars to your .env file:
+            For Stripe-backed membership billing to work, add these env vars to your .env file:
           </p>
           {PAYMENT_ENV_VARS.map((v) => (
             <div key={v} className="flex items-center gap-2">
@@ -117,14 +117,18 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
 
   const displayNames = currentJsonData
     ? {
+        gymSettings: getItemsFromJsonData(currentJsonData, 'gymSettings'),
+        location: getItemsFromJsonData(currentJsonData, 'location'),
         membershipTiers: getItemsFromJsonData(currentJsonData, 'membershipTiers'),
         classTypes: getItemsFromJsonData(currentJsonData, 'classTypes'),
         instructors: getItemsFromJsonData(currentJsonData, 'instructors'),
+        schedules: getItemsFromJsonData(currentJsonData, 'schedules'),
+        demoMember: getItemsFromJsonData(currentJsonData, 'demoMember'),
       }
     : GYM_TEMPLATES[selectedTemplate].displayNames;
 
   const ActionButtons = ({ fullWidth = false }: { fullWidth?: boolean }) => (
-    <div className={`flex ${fullWidth ? 'flex-col sm:flex-row gap-2 w-full' : 'flex-col sm:flex-row gap-2 w-full'}`}>
+    <div className={`flex flex-col sm:flex-row gap-2 w-full`}>
       {step === 'done' ? (
         <>
           <DialogClose asChild>
@@ -205,8 +209,21 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                       <div className="flex items-center space-x-2 text-muted-foreground">
                         <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
                         <span className="font-medium">
+                          {displayNames.gymSettings.length} gym profile{displayNames.gymSettings.length === 1 ? '' : 's'} configured
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-muted-foreground">
+                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
+                        <span className="font-medium">
+                          {displayNames.location.length} location{displayNames.location.length === 1 ? '' : 's'} created
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-muted-foreground">
+                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
+                        <span className="font-medium">
                           {displayNames.membershipTiers.length} membership plan{displayNames.membershipTiers.length === 1 ? '' : 's'} created
                         </span>
+                        <StripeEnvHint />
                       </div>
                       <div className="flex items-center space-x-2 text-muted-foreground">
                         <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
@@ -219,7 +236,22 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                         <span className="font-medium">
                           {displayNames.instructors.length} instructor{displayNames.instructors.length === 1 ? '' : 's'} created
                         </span>
-                        <StripeEnvHint />
+                      </div>
+                      <div className="flex items-center space-x-2 text-muted-foreground">
+                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
+                        <span className="font-medium">
+                          {displayNames.schedules.length} recurring schedule{displayNames.schedules.length === 1 ? '' : 's'} created
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-muted-foreground">
+                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
+                        <span className="font-medium">
+                          {displayNames.demoMember.length} demo member account{displayNames.demoMember.length === 1 ? '' : 's'} created
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-muted-foreground">
+                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
+                        <span className="font-medium">Upcoming class instances generated for the next 14 days</span>
                       </div>
                     </div>
                   </>
@@ -240,13 +272,13 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                           <SelectItem value="minimal">
                             <div className="flex flex-col items-start text-left">
                               <span className="font-medium">Basic Setup</span>
-                              <span className="text-xs text-muted-foreground">One plan, one class, one instructor</span>
+                              <span className="text-xs text-muted-foreground">One plan, one class, one instructor, recurring schedules</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="full">
                             <div className="flex flex-col items-start text-left">
                               <span className="font-medium">Complete Setup</span>
-                              <span className="text-xs text-muted-foreground">3 plans, 6 class types, 3 instructors</span>
+                              <span className="text-xs text-muted-foreground">Plans, classes, instructors, schedules, and a demo member</span>
                             </div>
                           </SelectItem>
                           <SelectItem value="custom">
@@ -271,13 +303,13 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                             value: 'minimal' as const,
                             icon: Package,
                             label: 'Basic Setup',
-                            desc: 'One plan, one class, one instructor',
+                            desc: 'One plan, one class, one instructor, recurring schedules',
                           },
                           {
                             value: 'full' as const,
                             icon: Building2,
                             label: 'Complete Setup',
-                            desc: '3 plans, 6 class types, 3 instructors',
+                            desc: 'Plans, classes, instructors, schedules, and a demo member',
                           },
                           {
                             value: 'custom' as const,

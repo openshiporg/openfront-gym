@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Check, CreditCard } from "lucide-react";
 import { getMembershipTiers } from "@/features/storefront/lib/data/memberships";
 import { getUser } from "@/features/storefront/lib/data/user";
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 import { redirectToMembershipCheckout } from "@/features/integrations/payment/stripe";
 import LoginPage from "./LoginPage";
 
@@ -11,7 +12,11 @@ interface JoinPageProps {
 }
 
 export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
-  const [tiers, user] = await Promise.all([getMembershipTiers().catch(() => []), getUser()]);
+  const [tiers, user, config] = await Promise.all([
+    getMembershipTiers().catch(() => []),
+    getUser(),
+    getStorefrontConfig(),
+  ]);
   const selectedTier = tier ? tiers.find((t) => t.id === tier) ?? tiers[0] : tiers[0];
 
   return (
@@ -23,14 +28,16 @@ export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
 
         <div className="mt-10 grid gap-12 lg:grid-cols-[1fr_420px]">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Access the monolith</p>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">
+              {config?.promoBanner || `Join ${config?.name || 'the gym'}`}
+            </p>
             <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
-              Join the
+              Join
               <br />
-              program
+              {config?.name || 'the gym'}
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-[#c4c7c7]">
-              Choose your level of facility access and class access. We’ll create your account first, then move you into secure Stripe checkout.
+              Choose your level of facility access and class access. We’ll create your account first, then move you into secure Stripe checkout for {config?.name || 'your gym membership'}.
             </p>
 
             {tiers.length > 0 ? (

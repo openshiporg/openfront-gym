@@ -41,6 +41,7 @@ const { withAuth } = createAuth({
           canManageRoles: true,
           canAccessDashboard: true,
           canManageOnboarding: true,
+          canManageSettings: true,
         },
       },
     },
@@ -66,6 +67,7 @@ const { withAuth } = createAuth({
       canManageRoles
       canAccessDashboard
       canManageOnboarding
+      canManageSettings
       isInstructor
     }
   `

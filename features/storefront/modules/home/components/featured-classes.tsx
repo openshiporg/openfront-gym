@@ -23,7 +23,7 @@ export default async function FeaturedClasses() {
             evolution
           </h2>
           <p className="max-w-md text-sm leading-relaxed text-[#c4c7c7] sm:text-base">
-            Strength, conditioning, mobility, and coached formats built from the class catalog already in Openfront Gym.
+            Strength, conditioning, mobility, and coached formats built directly from the live class catalog.
           </p>
         </div>
 

@@ -3,6 +3,7 @@ export type Session = {
   listKey: string
   data: {
     name: string
+    onboardingStatus?: string
     role: {
       id: string
       name: string
@@ -14,6 +15,7 @@ export type Session = {
       canManageRoles: boolean
       canAccessDashboard: boolean
       canManageOnboarding: boolean
+      canManageSettings: boolean
       isInstructor: boolean
     }
   }
@@ -34,6 +36,7 @@ export const permissions = {
   canManageRoles: ({ session }: AccessArgs) => session?.data.role?.canManageRoles ?? false,
   canAccessDashboard: ({ session }: AccessArgs) => session?.data.role?.canAccessDashboard ?? false,
   canManageOnboarding: ({ session }: AccessArgs) => session?.data.role?.canManageOnboarding ?? false,
+  canManageSettings: ({ session }: AccessArgs) => session?.data.role?.canManageSettings ?? false,
   isInstructor: ({ session }: AccessArgs) => session?.data.role?.isInstructor ?? false,
 }
 

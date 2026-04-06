@@ -1,14 +1,14 @@
 import MembershipTiers from "@/features/storefront/modules/memberships/components/membership-tiers";
 import MembershipFAQ from "@/features/storefront/modules/memberships/components/membership-faq";
 import { Metadata } from "next";
-
-export const metadata: Metadata = {
-  title: "Membership Plans — Openfront Gym",
-  description: "Flexible plans for every fitness goal. Join today — first class is always free.",
-};
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 
 export async function generateMetadata(): Promise<Metadata> {
-  return metadata;
+  const config = await getStorefrontConfig();
+  return {
+    title: config?.name ? `Membership Plans — ${config.name}` : "Membership Plans",
+    description: config?.description || "Flexible plans for every fitness goal.",
+  };
 }
 
 export async function MembershipsPage() {

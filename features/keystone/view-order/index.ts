@@ -21,5 +21,6 @@ export const VIEW_ORDER = [
   "document",
   "float",
   "integer",
+  "decimal",
   "multiselect"
 ];

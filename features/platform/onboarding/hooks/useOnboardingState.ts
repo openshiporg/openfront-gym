@@ -20,9 +20,13 @@ export interface OnboardingState {
 }
 
 const initialItemsState = {
+  gymSettings: [],
+  location: [],
   membershipTiers: [],
   classTypes: [],
   instructors: [],
+  schedules: [],
+  demoMember: [],
 };
 
 export function useOnboardingState() {
@@ -43,7 +47,7 @@ export function useOnboardingState() {
   useEffect(() => {
     if (state.selectedTemplate !== 'custom') {
       const templateData = getSeedForTemplate(state.selectedTemplate, seedData);
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         currentJsonData: templateData,
         customJsonApplied: false,
@@ -51,7 +55,7 @@ export function useOnboardingState() {
     } else {
       // For custom, start with basic template data as placeholder
       const basicData = getSeedForTemplate('minimal', seedData);
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         currentJsonData: basicData,
         customJsonApplied: false,
@@ -60,110 +64,86 @@ export function useOnboardingState() {
   }, [state.selectedTemplate]);
 
   const setStep = (step: OnboardingStep) => {
-    setState(prev => ({ ...prev, step }));
+    setState((prev) => ({ ...prev, step }));
   };
 
   const setSelectedTemplate = (template: TemplateType) => {
-    setState(prev => ({ ...prev, selectedTemplate: template }));
+    setState((prev) => ({ ...prev, selectedTemplate: template }));
   };
 
   const setCurrentJsonData = (data: any) => {
-    setState(prev => ({ ...prev, currentJsonData: data }));
+    setState((prev) => ({ ...prev, currentJsonData: data }));
   };
 
   const setCustomJsonApplied = (applied: boolean) => {
-    setState(prev => ({ ...prev, customJsonApplied: applied }));
+    setState((prev) => ({ ...prev, customJsonApplied: applied }));
   };
 
   const setIsLoading = (loading: boolean) => {
-    setState(prev => ({ ...prev, isLoading: loading }));
+    setState((prev) => ({ ...prev, isLoading: loading }));
   };
 
   const setError = (error: string | null) => {
-    setState(prev => ({ ...prev, error }));
+    setState((prev) => ({ ...prev, error }));
   };
 
   const setProgressMessage = (message: string) => {
-    setState(prev => ({ ...prev, progressMessage: message }));
+    setState((prev) => ({ ...prev, progressMessage: message }));
   };
 
   const setLoadingItems = (items: Record<string, string[]>) => {
-    setState(prev => ({ ...prev, loadingItems: items }));
+    setState((prev) => ({ ...prev, loadingItems: items }));
   };
 
   const setCompletedItems = (items: Record<string, string[]>) => {
-    setState(prev => ({ ...prev, completedItems: items }));
+    setState((prev) => ({ ...prev, completedItems: items }));
   };
 
   const setItemErrors = (errors: Record<string, Record<string, string>>) => {
-    setState(prev => ({ ...prev, itemErrors: errors }));
+    setState((prev) => ({ ...prev, itemErrors: errors }));
   };
 
   // Helper function to get display names from current data
   const getDisplayNamesFromData = (data: any) => {
     return {
+      gymSettings: getItemsFromJsonData(data, 'gymSettings'),
+      location: getItemsFromJsonData(data, 'location'),
       membershipTiers: getItemsFromJsonData(data, 'membershipTiers'),
       classTypes: getItemsFromJsonData(data, 'classTypes'),
       instructors: getItemsFromJsonData(data, 'instructors'),
+      schedules: getItemsFromJsonData(data, 'schedules'),
+      demoMember: getItemsFromJsonData(data, 'demoMember'),
     };
   };
 
-  // Progress handler — bulk-completes prior sections as we advance
   const setProgress = (message: string) => {
     setProgressMessage(message);
+
+    if (!message.toLowerCase().includes('complete')) {
+      return;
+    }
 
     const displayNames = state.currentJsonData
       ? getDisplayNamesFromData(state.currentJsonData)
       : GYM_TEMPLATES[state.selectedTemplate].displayNames;
 
-    if (message.includes('class type') || message.includes('class types')) {
-      // Membership tiers done
-      setState(prev => ({
-        ...prev,
-        completedItems: {
-          ...prev.completedItems,
-          membershipTiers: [...displayNames.membershipTiers],
-        },
-        loadingItems: {
-          ...prev.loadingItems,
-          membershipTiers: [],
-        },
-      }));
-    } else if (message.includes('instructor')) {
-      // Membership tiers + class types done
-      setState(prev => ({
-        ...prev,
-        completedItems: {
-          ...prev.completedItems,
-          membershipTiers: [...displayNames.membershipTiers],
-          classTypes: [...displayNames.classTypes],
-        },
-        loadingItems: {
-          ...prev.loadingItems,
-          membershipTiers: [],
-          classTypes: [],
-        },
-      }));
-    } else if (message.toLowerCase().includes('complete')) {
-      // Everything done
-      setState(prev => ({
-        ...prev,
-        loadingItems: {
-          membershipTiers: [],
-          classTypes: [],
-          instructors: [],
-        },
-        completedItems: {
-          membershipTiers: [...displayNames.membershipTiers],
-          classTypes: [...displayNames.classTypes],
-          instructors: [...displayNames.instructors],
-        },
-      }));
-    }
+    setState((prev) => ({
+      ...prev,
+      loadingItems: { ...initialItemsState },
+      completedItems: {
+        gymSettings: [...displayNames.gymSettings],
+        location: [...displayNames.location],
+        membershipTiers: [...displayNames.membershipTiers],
+        classTypes: [...displayNames.classTypes],
+        instructors: [...displayNames.instructors],
+        schedules: [...displayNames.schedules],
+        demoMember: [...displayNames.demoMember],
+      },
+    }));
   };
 
   const setItemLoading = (type: string, item: string) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       loadingItems: {
         ...prev.loadingItems,
@@ -179,7 +159,7 @@ export function useOnboardingState() {
   };
 
   const setItemCompleted = (type: string, item: string) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       loadingItems: {
         ...prev.loadingItems,
@@ -199,7 +179,7 @@ export function useOnboardingState() {
   };
 
   const setItemError = (type: string, item: string, errorMessage: string) => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       loadingItems: {
         ...prev.loadingItems,
@@ -216,7 +196,7 @@ export function useOnboardingState() {
   };
 
   const resetOnboardingState = () => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       error: null,
       itemErrors: {},

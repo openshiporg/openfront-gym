@@ -110,7 +110,11 @@ export async function keystoneClient<T = any>(
       data
     };
 
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === "DYNAMIC_SERVER_USAGE") {
+      throw error;
+    }
+
     console.error("Error fetching GraphQL data:", error);
 
     if (error instanceof ClientError) {

@@ -48,6 +48,7 @@ model Role {
   canManageRoles      Boolean  @default(false)
   canAccessDashboard  Boolean  @default(false)
   canManageOnboarding Boolean  @default(false)
+  canManageSettings   Boolean  @default(false)
   isInstructor        Boolean  @default(false)
   assignedTo          User[]   @relation("User_role")
   createdAt           DateTime @default(now())
@@ -270,6 +271,40 @@ model Location {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @default(now()) @updatedAt
   from_CheckIn_location CheckIn[] @relation("CheckIn_location")
+}
+
+model GymSettings {
+  id                    Int      @id
+  name                  String   @default("")
+  tagline               String   @default("")
+  description           String   @default("")
+  address               String   @default("")
+  phone                 String   @default("")
+  email                 String   @default("")
+  currencyCode          String   @default("USD")
+  locale                String   @default("en-US")
+  timezone              String   @default("America/New_York")
+  countryCode           String   @default("US")
+  hours                 Json?    @default("{\"monday\":\"5:00 AM - 11:00 PM\",\"tuesday\":\"5:00 AM - 11:00 PM\",\"wednesday\":\"5:00 AM - 11:00 PM\",\"thursday\":\"5:00 AM - 11:00 PM\",\"friday\":\"5:00 AM - 10:00 PM\",\"saturday\":\"6:00 AM - 8:00 PM\",\"sunday\":\"7:00 AM - 7:00 PM\"}")
+  heroEyebrow           String   @default("Performance without compromise")
+  heroHeadline          String   @default("Train with structure. Recover with intent.")
+  heroSubheadline       String   @default("A modern gym storefront with memberships, classes, coaching, and facility access configured from one operational system.")
+  heroPrimaryCtaLabel   String   @default("Start membership")
+  heroPrimaryCtaHref    String   @default("/join")
+  heroSecondaryCtaLabel String   @default("View schedule")
+  heroSecondaryCtaHref  String   @default("/schedule")
+  promoBanner           String   @default("Memberships, schedules, and coaching all managed from one system.")
+  footerTagline         String   @default("Structured programming, confident operations, and a better member experience.")
+  copyrightName         String   @default("Openfront Gym")
+  facilityHeadline      String   @default("Facility systems")
+  facilityDescription   String   @default("Training, coaching, recovery, and member access all live in one coordinated environment.")
+  facilityHighlights    Json?    @default("[]")
+  heroStats             Json?    @default("[]")
+  contactTopics         Json?    @default("[]")
+  rating                Decimal? @default("4.8") @postgresql.Decimal(2, 1)
+  reviewCount           Int?     @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @default(now()) @updatedAt
 }
 
 model WorkoutLog {

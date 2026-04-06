@@ -56,6 +56,22 @@ export const platformNavItems: PlatformNavItem[] = [
     icon: UserCheck,
     group: 'standalone'
   },
+  {
+    title: 'Gym Settings',
+    href: '/platform/store-settings',
+    color: 'slate',
+    description: 'Update public gym identity, contact details, and storefront hours.',
+    icon: Settings,
+    group: 'standalone'
+  },
+  {
+    title: 'Locations',
+    href: '/platform/locations',
+    color: 'cyan',
+    description: 'Manage physical gym locations and facility contact records.',
+    icon: MapPin,
+    group: 'standalone'
+  },
 
   // Gym Management
   {
@@ -64,6 +80,30 @@ export const platformNavItems: PlatformNavItem[] = [
     color: 'blue',
     description: 'Manage member profiles, statuses, and history.',
     icon: Users,
+    group: 'management'
+  },
+  {
+    title: 'Membership Plans',
+    href: '/platform/membership-plans',
+    color: 'emerald',
+    description: 'Configure plan pricing, credits, guest passes, and Stripe IDs.',
+    icon: CreditCard,
+    group: 'management'
+  },
+  {
+    title: 'Instructors',
+    href: '/platform/instructors',
+    color: 'violet',
+    description: 'Manage public coach profiles and linked instructor accounts.',
+    icon: Dumbbell,
+    group: 'management'
+  },
+  {
+    title: 'Class Catalog',
+    href: '/platform/class-catalog',
+    color: 'amber',
+    description: 'Define class types, descriptions, duration, and required equipment.',
+    icon: Calendar,
     group: 'management'
   },
   {

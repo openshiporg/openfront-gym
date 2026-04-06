@@ -1,20 +1,30 @@
-import { getCalendarEvents } from '../actions/scheduling';
+import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from 'date-fns';
 import { PageContainer } from '@/features/dashboard/components/PageContainer';
+import { requireDashboardUser } from '@/features/dashboard/lib/current-user';
+import { getSchedulingWorkspaceData } from '../actions/scheduling';
 import { SchedulingClient } from './SchedulingClient';
-import { startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 
 export async function SchedulingPage() {
+  const user = await requireDashboardUser();
   const now = new Date();
   const start = startOfWeek(startOfMonth(now));
   const end = endOfWeek(endOfMonth(now));
+  const canManageWorkspace = Boolean(user.role?.canManageAllRecords);
+  const isInstructorOnly = Boolean(user.role?.isInstructor && !canManageWorkspace);
 
-  const response = await getCalendarEvents(start, end);
-  const events = response.success ? response.data : [];
+  const workspace = await getSchedulingWorkspaceData(start, end, {
+    userId: user.id,
+    isInstructorOnly,
+  });
 
   const header = (
     <div className="flex flex-col">
       <h1 className="text-lg font-semibold md:text-2xl">Scheduling Command Center</h1>
-      <p className="text-muted-foreground">Monitor class capacity and instructor availability</p>
+      <p className="text-muted-foreground">
+        {isInstructorOnly
+          ? 'Review your teaching calendar and move into rosters quickly.'
+          : 'Monitor class capacity and instructor availability'}
+      </p>
     </div>
   );
 
@@ -25,7 +35,14 @@ export async function SchedulingPage() {
 
   return (
     <PageContainer title="Scheduling" header={header} breadcrumbs={breadcrumbs}>
-      <SchedulingClient initialEvents={events as any} />
+      <SchedulingClient
+        initialEvents={workspace.events as any}
+        schedules={workspace.schedules as any}
+        instructors={workspace.instructors as any}
+        upcomingInstances={workspace.upcomingInstances as any}
+        isInstructor={isInstructorOnly}
+        canManageWorkspace={canManageWorkspace}
+      />
     </PageContainer>
   );
 }

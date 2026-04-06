@@ -26,17 +26,27 @@ const COLS = [
   },
 ];
 
-export default function Footer() {
+export default function Footer({
+  config,
+}: {
+  config?: { name?: string | null; footerTagline?: string | null; copyrightName?: string | null } | null;
+}) {
+  const brandName = config?.name || 'Openfront Gym';
+  const footerTagline =
+    config?.footerTagline ||
+    'Structured programming, confident operations, and a better member experience.';
+  const copyrightName = config?.copyrightName || brandName;
+
   return (
     <footer className="border-t border-white/10 bg-[#0e0e0e] py-14">
       <div className="mx-auto flex max-w-7xl flex-col gap-12 px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col justify-between gap-10 md:flex-row md:items-start">
           <div>
             <div className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.08em] text-white">
-              Monolith
+              {brandName}
             </div>
             <p className="mt-4 max-w-sm text-sm leading-relaxed text-[#c4c7c7]">
-              High-discipline coaching, engineered class programming, and membership access built for people who train with intent.
+              {footerTagline}
             </p>
           </div>
 
@@ -64,7 +74,7 @@ export default function Footer() {
         </div>
 
         <div className="flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-[10px] uppercase tracking-[0.25em] text-[#c4c7c7]/60 md:flex-row">
-          <p>© {new Date().getFullYear()} Openfront Gym. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} {copyrightName}. All rights reserved.</p>
           <p>Built for disciplined training.</p>
         </div>
       </div>

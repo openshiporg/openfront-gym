@@ -7,7 +7,7 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { 
   Sidebar as SidebarComponent, 
   SidebarContent, 
@@ -65,6 +65,7 @@ interface SidebarProps {
 export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
   const { isMobile, setOpenMobile } = useSidebar()
   const pathname = usePathname()
+  const router = useRouter()
   const { basePath } = useDashboard()
 
   const lists = adminMeta?.lists || {}
@@ -372,7 +373,11 @@ export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
             userRole={user?.role}
             onDismiss={async () => {
               try {
-                await dismissOnboarding();
+                const result = await dismissOnboarding();
+                if (!result?.success) {
+                  throw new Error(result?.error || 'Failed to dismiss onboarding');
+                }
+                router.refresh()
               } catch (error) {
                 console.error('Error dismissing onboarding:', error);
               }

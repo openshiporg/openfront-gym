@@ -8,7 +8,7 @@ export type OnboardingStatus = 'not_started' | 'in_progress' | 'completed' | 'di
 export async function updateOnboardingStatus(status: OnboardingStatus) {
   try {
     const query = `
-      mutation UpdateOnboardingStatus($data: UserUpdateInput!) {
+      mutation UpdateOnboardingStatus($data: UserUpdateProfileInput!) {
         updateActiveUser(data: $data) {
           id
           onboardingStatus
@@ -24,8 +24,8 @@ export async function updateOnboardingStatus(status: OnboardingStatus) {
       return { success: false, error: response.error };
     }
 
+    revalidatePath('/dashboard', 'layout');
     revalidatePath('/dashboard');
-    revalidatePath('/dashboard/(admin)');
 
     return { success: true, data: response.data?.updateActiveUser };
   } catch (error) {

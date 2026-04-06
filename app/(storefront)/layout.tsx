@@ -1,3 +1,4 @@
+import "./storefront.css";
 import StorefrontServer from "@/features/storefront/screens/StorefrontServer";
 
 export default function StorefrontLayout({

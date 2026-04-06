@@ -300,6 +300,7 @@ export async function getAuthenticatedUser() {
           role {
             canAccessDashboard
             canManageOnboarding
+            canManageSettings
             isInstructor
           }
         }

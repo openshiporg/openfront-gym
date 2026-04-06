@@ -5,15 +5,17 @@ import TodaysSchedule from "@/features/storefront/modules/home/components/todays
 import InstructorSpotlight from "@/features/storefront/modules/home/components/instructor-spotlight"
 import Testimonials from "@/features/storefront/modules/home/components/testimonials"
 import MembershipCTA from "@/features/storefront/modules/home/components/membership-cta"
-
-export const metadata: Metadata = {
-  title: "Openfront Gym — Expert Coaching, Flexible Memberships",
-  description:
-    "Join a community-first gym with expert-coached group fitness classes, flexible memberships, and a schedule that works around you.",
-}
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings"
 
 export async function generateMetadata(): Promise<Metadata> {
-  return metadata
+  const config = await getStorefrontConfig()
+  return {
+    title: config?.name ? `${config.name} — ${config.tagline || config.heroEyebrow || "Gym"}` : "Openfront Gym",
+    description:
+      config?.heroSubheadline ||
+      config?.description ||
+      "Join a community-first gym with expert-coached group fitness classes, flexible memberships, and a schedule that works around you.",
+  }
 }
 
 export async function HomePage() {

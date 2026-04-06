@@ -82,7 +82,11 @@ export async function getUser(): Promise<StorefrontUser | null> {
     );
 
     return authenticatedItem ?? null;
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.digest === "DYNAMIC_SERVER_USAGE") {
+      throw error;
+    }
+
     console.error("getUser error:", error);
     return null;
   }

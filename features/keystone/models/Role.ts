@@ -32,6 +32,7 @@ export const Role = list({
     canManageRoles: checkbox({ defaultValue: false }),
     canAccessDashboard: checkbox({ defaultValue: false }),
     canManageOnboarding: checkbox({ defaultValue: false }),
+    canManageSettings: checkbox({ defaultValue: false }),
     isInstructor: checkbox({ defaultValue: false }),
     assignedTo: relationship({
       ref: 'User.role',

@@ -233,6 +233,7 @@ type Role {
   canManageRoles: Boolean
   canAccessDashboard: Boolean
   canManageOnboarding: Boolean
+  canManageSettings: Boolean
   isInstructor: Boolean
   assignedTo(where: UserWhereInput! = {}, orderBy: [UserOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: UserWhereUniqueInput): [User!]
   assignedToCount(where: UserWhereInput! = {}): Int
@@ -258,6 +259,7 @@ input RoleWhereInput {
   canManageRoles: BooleanFilter
   canAccessDashboard: BooleanFilter
   canManageOnboarding: BooleanFilter
+  canManageSettings: BooleanFilter
   isInstructor: BooleanFilter
   assignedTo: UserManyRelationFilter
   createdAt: DateTimeFilter
@@ -286,6 +288,7 @@ input RoleOrderByInput {
   canManageRoles: OrderDirection
   canAccessDashboard: OrderDirection
   canManageOnboarding: OrderDirection
+  canManageSettings: OrderDirection
   isInstructor: OrderDirection
   createdAt: OrderDirection
   updatedAt: OrderDirection
@@ -301,6 +304,7 @@ input RoleUpdateInput {
   canManageRoles: Boolean
   canAccessDashboard: Boolean
   canManageOnboarding: Boolean
+  canManageSettings: Boolean
   isInstructor: Boolean
   assignedTo: UserRelateToManyForUpdateInput
   createdAt: DateTime
@@ -329,6 +333,7 @@ input RoleCreateInput {
   canManageRoles: Boolean
   canAccessDashboard: Boolean
   canManageOnboarding: Boolean
+  canManageSettings: Boolean
   isInstructor: Boolean
   assignedTo: UserRelateToManyForCreateInput
   createdAt: DateTime
@@ -1552,6 +1557,191 @@ input LocationCreateInput {
   updatedAt: DateTime
 }
 
+type GymSettings {
+  id: ID!
+  name: String
+  tagline: String
+  description: String
+  address: String
+  phone: String
+  email: String
+  currencyCode: String
+  locale: String
+  timezone: String
+  countryCode: String
+  hours: JSON
+  heroEyebrow: String
+  heroHeadline: String
+  heroSubheadline: String
+  heroPrimaryCtaLabel: String
+  heroPrimaryCtaHref: String
+  heroSecondaryCtaLabel: String
+  heroSecondaryCtaHref: String
+  promoBanner: String
+  footerTagline: String
+  copyrightName: String
+  facilityHeadline: String
+  facilityDescription: String
+  facilityHighlights: JSON
+  heroStats: JSON
+  contactTopics: JSON
+  rating: Decimal
+  reviewCount: Int
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+scalar Decimal
+
+input GymSettingsWhereUniqueInput {
+  id: ID
+}
+
+input GymSettingsWhereInput {
+  AND: [GymSettingsWhereInput!]
+  OR: [GymSettingsWhereInput!]
+  NOT: [GymSettingsWhereInput!]
+  id: IDFilter
+  name: StringFilter
+  tagline: StringFilter
+  description: StringFilter
+  address: StringFilter
+  phone: StringFilter
+  email: StringFilter
+  currencyCode: StringFilter
+  locale: StringFilter
+  timezone: StringFilter
+  countryCode: StringFilter
+  heroEyebrow: StringFilter
+  heroHeadline: StringFilter
+  heroSubheadline: StringFilter
+  heroPrimaryCtaLabel: StringFilter
+  heroPrimaryCtaHref: StringFilter
+  heroSecondaryCtaLabel: StringFilter
+  heroSecondaryCtaHref: StringFilter
+  promoBanner: StringFilter
+  footerTagline: StringFilter
+  copyrightName: StringFilter
+  facilityHeadline: StringFilter
+  facilityDescription: StringFilter
+  rating: DecimalNullableFilter
+  reviewCount: IntNullableFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
+}
+
+input DecimalNullableFilter {
+  equals: Decimal
+  in: [Decimal!]
+  notIn: [Decimal!]
+  lt: Decimal
+  lte: Decimal
+  gt: Decimal
+  gte: Decimal
+  not: DecimalNullableFilter
+}
+
+input GymSettingsOrderByInput {
+  id: OrderDirection
+  name: OrderDirection
+  tagline: OrderDirection
+  description: OrderDirection
+  address: OrderDirection
+  phone: OrderDirection
+  email: OrderDirection
+  currencyCode: OrderDirection
+  locale: OrderDirection
+  timezone: OrderDirection
+  countryCode: OrderDirection
+  heroEyebrow: OrderDirection
+  heroHeadline: OrderDirection
+  heroSubheadline: OrderDirection
+  heroPrimaryCtaLabel: OrderDirection
+  heroPrimaryCtaHref: OrderDirection
+  heroSecondaryCtaLabel: OrderDirection
+  heroSecondaryCtaHref: OrderDirection
+  promoBanner: OrderDirection
+  footerTagline: OrderDirection
+  copyrightName: OrderDirection
+  facilityHeadline: OrderDirection
+  facilityDescription: OrderDirection
+  rating: OrderDirection
+  reviewCount: OrderDirection
+  createdAt: OrderDirection
+  updatedAt: OrderDirection
+}
+
+input GymSettingsUpdateInput {
+  name: String
+  tagline: String
+  description: String
+  address: String
+  phone: String
+  email: String
+  currencyCode: String
+  locale: String
+  timezone: String
+  countryCode: String
+  hours: JSON
+  heroEyebrow: String
+  heroHeadline: String
+  heroSubheadline: String
+  heroPrimaryCtaLabel: String
+  heroPrimaryCtaHref: String
+  heroSecondaryCtaLabel: String
+  heroSecondaryCtaHref: String
+  promoBanner: String
+  footerTagline: String
+  copyrightName: String
+  facilityHeadline: String
+  facilityDescription: String
+  facilityHighlights: JSON
+  heroStats: JSON
+  contactTopics: JSON
+  rating: Decimal
+  reviewCount: Int
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input GymSettingsUpdateArgs {
+  where: GymSettingsWhereUniqueInput! = {id: 1}
+  data: GymSettingsUpdateInput!
+}
+
+input GymSettingsCreateInput {
+  name: String
+  tagline: String
+  description: String
+  address: String
+  phone: String
+  email: String
+  currencyCode: String
+  locale: String
+  timezone: String
+  countryCode: String
+  hours: JSON
+  heroEyebrow: String
+  heroHeadline: String
+  heroSubheadline: String
+  heroPrimaryCtaLabel: String
+  heroPrimaryCtaHref: String
+  heroSecondaryCtaLabel: String
+  heroSecondaryCtaHref: String
+  promoBanner: String
+  footerTagline: String
+  copyrightName: String
+  facilityHeadline: String
+  facilityDescription: String
+  facilityHighlights: JSON
+  heroStats: JSON
+  contactTopics: JSON
+  rating: Decimal
+  reviewCount: Int
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
 type WorkoutLog {
   id: ID!
   member: Member
@@ -2519,6 +2709,12 @@ type Mutation {
   updateLocations(data: [LocationUpdateArgs!]!): [Location]
   deleteLocation(where: LocationWhereUniqueInput!): Location
   deleteLocations(where: [LocationWhereUniqueInput!]!): [Location]
+  createGymSettings(data: GymSettingsCreateInput!): GymSettings
+  creategymSettingsItems(data: [GymSettingsCreateInput!]!): [GymSettings]
+  updateGymSettings(where: GymSettingsWhereUniqueInput! = {id: 1}, data: GymSettingsUpdateInput!): GymSettings
+  updategymSettingsItems(data: [GymSettingsUpdateArgs!]!): [GymSettings]
+  deleteGymSettings(where: GymSettingsWhereUniqueInput! = {id: 1}): GymSettings
+  deletegymSettingsItems(where: [GymSettingsWhereUniqueInput!]!): [GymSettings]
   createWorkoutLog(data: WorkoutLogCreateInput!): WorkoutLog
   createWorkoutLogs(data: [WorkoutLogCreateInput!]!): [WorkoutLog]
   updateWorkoutLog(where: WorkoutLogWhereUniqueInput!, data: WorkoutLogUpdateInput!): WorkoutLog
@@ -2584,6 +2780,7 @@ type Mutation {
   createInitialUser(data: CreateInitialUserInput!): UserAuthenticationWithPasswordSuccess!
   sendUserPasswordResetLink(email: String!): Boolean!
   redeemUserPasswordResetToken(email: String!, token: String!, password: String!): RedeemUserPasswordResetTokenResult
+  updateActiveUser(data: UserUpdateProfileInput!): User
   bookClass(classInstanceId: ID!, memberId: ID!): BookClassResult!
   checkIn(memberId: ID!, bookingId: ID, classInstanceId: ID): CheckInResult!
   promoteFromWaitlist(classInstanceId: ID!): PromoteResult!
@@ -2659,6 +2856,9 @@ type Query {
   location(where: LocationWhereUniqueInput!): Location
   locations(where: LocationWhereInput! = {}, orderBy: [LocationOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: LocationWhereUniqueInput): [Location!]
   locationsCount(where: LocationWhereInput! = {}): Int
+  gymSettings(where: GymSettingsWhereUniqueInput! = {id: 1}): GymSettings
+  gymSettingsItems(where: GymSettingsWhereInput! = {id: {equals: 1}}, orderBy: [GymSettingsOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymSettingsWhereUniqueInput): [GymSettings!]
+  gymSettingsItemsCount(where: GymSettingsWhereInput! = {id: {equals: 1}}): Int
   workoutLog(where: WorkoutLogWhereUniqueInput!): WorkoutLog
   workoutLogs(where: WorkoutLogWhereInput! = {}, orderBy: [WorkoutLogOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WorkoutLogWhereUniqueInput): [WorkoutLog!]
   workoutLogsCount(where: WorkoutLogWhereInput! = {}): Int
@@ -2833,6 +3033,14 @@ type KeystoneAdminUISort {
 enum KeystoneAdminUISortDirection {
   ASC
   DESC
+}
+
+input UserUpdateProfileInput {
+  email: String
+  name: String
+  phone: String
+  password: String
+  onboardingStatus: String
 }
 
 type ClassAvailabilityResult {

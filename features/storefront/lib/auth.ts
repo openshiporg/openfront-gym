@@ -25,6 +25,7 @@ export async function getStorefrontUser() {
             name
             isInstructor
             canManageOnboarding
+            canManageSettings
             canAccessDashboard
           }
         }

@@ -52,32 +52,54 @@ export function CustomSetupSteps({
   };
 
   const generateAIPrompt = () => {
-    return `I need help customizing my gym configuration. I've pasted my current setup.
+    return `I need help customizing my gym onboarding configuration. I've pasted my current setup.
 
-**Your first response should be:**
+Your first response should do two things:
+1. Summarize what this JSON currently contains.
+2. Ask me what I want to change.
 
-Start by telling me what this JSON configuration currently contains:
+The summary should cover:
+- Gym profile / storefront settings
+- Main location
+- Membership plans
+- Class types
+- Instructors
+- Recurring schedules
+- Demo member account
 
-**GYM DATA:**
-- Membership Plans: Basic Monthly, Premium Monthly, Elite Monthly
-- Class Types: Yoga, Spin Class, HIIT, Pilates, Zumba, Boxing
-- Instructors: Sarah Johnson, Mike Rodriguez, Emily Chen
+Then ask exactly:
+"This is what your gym configuration currently has. What would you like to change?"
 
-Then ask: "This is what your gym configuration currently has. What would you like to change?
-As the user provides more changes to the JSON, keep asking what changes and once the user is finished and indicates they are done, return the JSON and tell them to paste it into the Gym Setup dialog."
+As I give you changes, keep updating the JSON. When I say I’m done, return the complete final JSON and tell me to paste it back into the Gym Setup dialog.
 
-After I tell you what to change, modify the JSON and provide the complete updated configuration for me to paste.`;
+Important:
+- Return valid JSON only when giving me the final configuration.
+- Keep all required top-level keys:
+  gymSettings
+  location
+  membershipTiers
+  classTypes
+  instructors
+  schedules
+  demoMember
+- Preserve realistic demo-ready data so onboarding still seeds a working gym experience.`;
   };
 
   const validateAndApplyJson = () => {
     try {
       const parsed = JSON.parse(customJson);
 
-      const requiredKeys = ["membershipTiers", "classTypes", "instructors"];
-      const missingKeys = requiredKeys.filter((key) => !parsed[key] || !Array.isArray(parsed[key]));
+      const objectKeys = ["gymSettings", "location", "demoMember"];
+      const arrayKeys = ["membershipTiers", "classTypes", "instructors", "schedules"];
+
+      const missingObjectKeys = objectKeys.filter(
+        (key) => !parsed[key] || typeof parsed[key] !== "object" || Array.isArray(parsed[key])
+      );
+      const missingArrayKeys = arrayKeys.filter((key) => !Array.isArray(parsed[key]));
+      const missingKeys = [...missingObjectKeys, ...missingArrayKeys];
 
       if (missingKeys.length > 0) {
-        setJsonError(`Missing required keys: ${missingKeys.join(", ")}`);
+        setJsonError(`Missing or invalid required keys: ${missingKeys.join(", ")}`);
         return;
       }
 
@@ -125,13 +147,15 @@ After I tell you what to change, modify the JSON and provide the complete update
       content: (
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            The AI will ask you questions about your gym such as:
+            The AI should help you customize things like:
           </p>
           <ul className="text-sm text-muted-foreground space-y-1 ml-4">
-            <li>• What membership plans do you offer?</li>
-            <li>• What group fitness classes do you run?</li>
-            <li>• Who are your instructors?</li>
-            <li>• What are their specialties and certifications?</li>
+            <li>• Gym name, contact info, hours, and hero messaging</li>
+            <li>• Membership plans and pricing</li>
+            <li>• Group fitness class offerings</li>
+            <li>• Instructor profiles, specialties, and certifications</li>
+            <li>• Recurring weekly schedules</li>
+            <li>• Demo member data for testing account flows</li>
           </ul>
         </div>
       ),

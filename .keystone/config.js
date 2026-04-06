@@ -36,7 +36,7 @@ module.exports = __toCommonJS(keystone_exports);
 
 // features/keystone/index.ts
 var import_auth = require("@keystone-6/auth");
-var import_core22 = require("@keystone-6/core");
+var import_core23 = require("@keystone-6/core");
 var import_config = require("dotenv/config");
 
 // features/keystone/models/User.ts
@@ -55,6 +55,7 @@ var permissions = {
   canManageRoles: ({ session }) => session?.data.role?.canManageRoles ?? false,
   canAccessDashboard: ({ session }) => session?.data.role?.canAccessDashboard ?? false,
   canManageOnboarding: ({ session }) => session?.data.role?.canManageOnboarding ?? false,
+  canManageSettings: ({ session }) => session?.data.role?.canManageSettings ?? false,
   isInstructor: ({ session }) => session?.data.role?.isInstructor ?? false
 };
 var rules = {
@@ -268,6 +269,7 @@ var Role = (0, import_core2.list)({
     canManageRoles: (0, import_fields3.checkbox)({ defaultValue: false }),
     canAccessDashboard: (0, import_fields3.checkbox)({ defaultValue: false }),
     canManageOnboarding: (0, import_fields3.checkbox)({ defaultValue: false }),
+    canManageSettings: (0, import_fields3.checkbox)({ defaultValue: false }),
     isInstructor: (0, import_fields3.checkbox)({ defaultValue: false }),
     assignedTo: (0, import_fields3.relationship)({
       ref: "User.role",
@@ -1412,10 +1414,138 @@ var Location = (0, import_core11.list)({
   }
 });
 
-// features/keystone/models/WorkoutLog.ts
+// features/keystone/models/GymSettings.ts
 var import_core12 = require("@keystone-6/core");
 var import_fields13 = require("@keystone-6/core/fields");
-var WorkoutLog = (0, import_core12.list)({
+var GymSettings = (0, import_core12.list)({
+  access: {
+    operation: {
+      query: () => true,
+      create: permissions.canManageSettings,
+      update: permissions.canManageSettings,
+      delete: permissions.canManageSettings
+    }
+  },
+  isSingleton: true,
+  graphql: {
+    plural: "gymSettingsItems"
+  },
+  ui: {
+    listView: {
+      initialColumns: ["name", "tagline", "phone"]
+    }
+  },
+  fields: {
+    name: (0, import_fields13.text)({
+      validation: { isRequired: true },
+      ui: { description: "Public gym/storefront name" }
+    }),
+    tagline: (0, import_fields13.text)({
+      ui: { description: "Short brand tagline" }
+    }),
+    description: (0, import_fields13.text)({
+      ui: {
+        displayMode: "textarea",
+        description: "Short public business description"
+      }
+    }),
+    address: (0, import_fields13.text)({
+      ui: { description: "Primary public address" }
+    }),
+    phone: (0, import_fields13.text)({
+      ui: { description: "Primary public phone" }
+    }),
+    email: (0, import_fields13.text)({
+      ui: { description: "Primary public email" }
+    }),
+    currencyCode: (0, import_fields13.text)({
+      defaultValue: "USD"
+    }),
+    locale: (0, import_fields13.text)({
+      defaultValue: "en-US"
+    }),
+    timezone: (0, import_fields13.text)({
+      defaultValue: "America/New_York"
+    }),
+    countryCode: (0, import_fields13.text)({
+      defaultValue: "US"
+    }),
+    hours: (0, import_fields13.json)({
+      defaultValue: {
+        monday: "5:00 AM - 11:00 PM",
+        tuesday: "5:00 AM - 11:00 PM",
+        wednesday: "5:00 AM - 11:00 PM",
+        thursday: "5:00 AM - 11:00 PM",
+        friday: "5:00 AM - 10:00 PM",
+        saturday: "6:00 AM - 8:00 PM",
+        sunday: "7:00 AM - 7:00 PM"
+      },
+      ui: { description: "Operating hours by day" }
+    }),
+    heroEyebrow: (0, import_fields13.text)({
+      defaultValue: "Performance without compromise"
+    }),
+    heroHeadline: (0, import_fields13.text)({
+      defaultValue: "Train with structure. Recover with intent."
+    }),
+    heroSubheadline: (0, import_fields13.text)({
+      defaultValue: "A modern gym storefront with memberships, classes, coaching, and facility access configured from one operational system."
+    }),
+    heroPrimaryCtaLabel: (0, import_fields13.text)({
+      defaultValue: "Start membership"
+    }),
+    heroPrimaryCtaHref: (0, import_fields13.text)({
+      defaultValue: "/join"
+    }),
+    heroSecondaryCtaLabel: (0, import_fields13.text)({
+      defaultValue: "View schedule"
+    }),
+    heroSecondaryCtaHref: (0, import_fields13.text)({
+      defaultValue: "/schedule"
+    }),
+    promoBanner: (0, import_fields13.text)({
+      defaultValue: "Memberships, schedules, and coaching all managed from one system."
+    }),
+    footerTagline: (0, import_fields13.text)({
+      defaultValue: "Structured programming, confident operations, and a better member experience."
+    }),
+    copyrightName: (0, import_fields13.text)({
+      defaultValue: "Openfront Gym"
+    }),
+    facilityHeadline: (0, import_fields13.text)({
+      defaultValue: "Facility systems"
+    }),
+    facilityDescription: (0, import_fields13.text)({
+      defaultValue: "Training, coaching, recovery, and member access all live in one coordinated environment."
+    }),
+    facilityHighlights: (0, import_fields13.json)({
+      defaultValue: [],
+      ui: { description: "Public facility cards/sections" }
+    }),
+    heroStats: (0, import_fields13.json)({
+      defaultValue: [],
+      ui: { description: "Hero stat cards" }
+    }),
+    contactTopics: (0, import_fields13.json)({
+      defaultValue: [],
+      ui: { description: "Contact page topics/cards" }
+    }),
+    rating: (0, import_fields13.decimal)({
+      precision: 2,
+      scale: 1,
+      defaultValue: "4.8"
+    }),
+    reviewCount: (0, import_fields13.integer)({
+      defaultValue: 0
+    }),
+    ...trackingFields
+  }
+});
+
+// features/keystone/models/WorkoutLog.ts
+var import_core13 = require("@keystone-6/core");
+var import_fields14 = require("@keystone-6/core/fields");
+var WorkoutLog = (0, import_core13.list)({
   access: {
     operation: {
       query: () => true,
@@ -1430,37 +1560,37 @@ var WorkoutLog = (0, import_core12.list)({
     }
   },
   fields: {
-    member: (0, import_fields13.relationship)({
+    member: (0, import_fields14.relationship)({
       ref: "Member.workoutLogs",
       ui: {
         displayMode: "select",
         description: "Member who performed this workout"
       }
     }),
-    date: (0, import_fields13.timestamp)({
+    date: (0, import_fields14.timestamp)({
       defaultValue: { kind: "now" },
       validation: { isRequired: true },
       ui: {
         description: "Workout date"
       }
     }),
-    title: (0, import_fields13.text)({
+    title: (0, import_fields14.text)({
       ui: {
         description: "Workout title (e.g., Chest Day, Full Body)"
       }
     }),
-    duration: (0, import_fields13.integer)({
+    duration: (0, import_fields14.integer)({
       ui: {
         description: "Workout duration in minutes"
       }
     }),
-    notes: (0, import_fields13.text)({
+    notes: (0, import_fields14.text)({
       ui: {
         displayMode: "textarea",
         description: "Workout notes and observations"
       }
     }),
-    workoutSets: (0, import_fields13.relationship)({
+    workoutSets: (0, import_fields14.relationship)({
       ref: "WorkoutSet.workoutLog",
       many: true,
       ui: {
@@ -1472,9 +1602,9 @@ var WorkoutLog = (0, import_core12.list)({
 });
 
 // features/keystone/models/WorkoutSet.ts
-var import_core13 = require("@keystone-6/core");
-var import_fields14 = require("@keystone-6/core/fields");
-var WorkoutSet = (0, import_core13.list)({
+var import_core14 = require("@keystone-6/core");
+var import_fields15 = require("@keystone-6/core/fields");
+var WorkoutSet = (0, import_core14.list)({
   access: {
     operation: {
       query: () => true,
@@ -1489,47 +1619,47 @@ var WorkoutSet = (0, import_core13.list)({
     }
   },
   fields: {
-    workoutLog: (0, import_fields14.relationship)({
+    workoutLog: (0, import_fields15.relationship)({
       ref: "WorkoutLog.workoutSets",
       ui: {
         displayMode: "select",
         description: "Workout log this set belongs to"
       }
     }),
-    exercise: (0, import_fields14.relationship)({
+    exercise: (0, import_fields15.relationship)({
       ref: "Exercise",
       ui: {
         displayMode: "select",
         description: "Exercise performed"
       }
     }),
-    setNumber: (0, import_fields14.integer)({
+    setNumber: (0, import_fields15.integer)({
       validation: { isRequired: true },
       ui: {
         description: "Set number in the workout"
       }
     }),
-    reps: (0, import_fields14.integer)({
+    reps: (0, import_fields15.integer)({
       ui: {
         description: "Number of repetitions"
       }
     }),
-    weight: (0, import_fields14.float)({
+    weight: (0, import_fields15.float)({
       ui: {
         description: "Weight used (in pounds or kg)"
       }
     }),
-    duration: (0, import_fields14.integer)({
+    duration: (0, import_fields15.integer)({
       ui: {
         description: "Duration in seconds (for timed exercises)"
       }
     }),
-    restTime: (0, import_fields14.integer)({
+    restTime: (0, import_fields15.integer)({
       ui: {
         description: "Rest time after this set (in seconds)"
       }
     }),
-    notes: (0, import_fields14.text)({
+    notes: (0, import_fields15.text)({
       ui: {
         displayMode: "textarea",
         description: "Notes about this set (form, difficulty, etc.)"
@@ -1540,9 +1670,9 @@ var WorkoutSet = (0, import_core13.list)({
 });
 
 // features/keystone/models/Exercise.ts
-var import_core14 = require("@keystone-6/core");
-var import_fields15 = require("@keystone-6/core/fields");
-var Exercise = (0, import_core14.list)({
+var import_core15 = require("@keystone-6/core");
+var import_fields16 = require("@keystone-6/core/fields");
+var Exercise = (0, import_core15.list)({
   access: {
     operation: {
       query: () => true,
@@ -1557,13 +1687,13 @@ var Exercise = (0, import_core14.list)({
     }
   },
   fields: {
-    name: (0, import_fields15.text)({
+    name: (0, import_fields16.text)({
       validation: { isRequired: true },
       ui: {
         description: "Exercise name (e.g., Bench Press, Squats)"
       }
     }),
-    category: (0, import_fields15.select)({
+    category: (0, import_fields16.select)({
       type: "string",
       options: [
         { label: "Strength", value: "strength" },
@@ -1577,30 +1707,30 @@ var Exercise = (0, import_core14.list)({
         description: "Exercise category"
       }
     }),
-    muscleGroup: (0, import_fields15.json)({
+    muscleGroup: (0, import_fields16.json)({
       defaultValue: [],
       ui: {
         views: "./fields/json-view",
         description: "Target muscle groups (stored as JSON array)"
       }
     }),
-    equipment: (0, import_fields15.text)({
+    equipment: (0, import_fields16.text)({
       ui: {
         description: "Equipment needed (e.g., Barbell, Dumbbells, None)"
       }
     }),
-    description: (0, import_fields15.text)({
+    description: (0, import_fields16.text)({
       ui: {
         displayMode: "textarea",
         description: "Exercise description and proper form instructions"
       }
     }),
-    videoUrl: (0, import_fields15.text)({
+    videoUrl: (0, import_fields16.text)({
       ui: {
         description: "URL to demonstration video"
       }
     }),
-    difficulty: (0, import_fields15.select)({
+    difficulty: (0, import_fields16.select)({
       type: "string",
       options: [
         { label: "Beginner", value: "beginner" },
@@ -1617,9 +1747,9 @@ var Exercise = (0, import_core14.list)({
 });
 
 // features/keystone/models/Waitlist.ts
-var import_core15 = require("@keystone-6/core");
-var import_fields16 = require("@keystone-6/core/fields");
-var Waitlist = (0, import_core15.list)({
+var import_core16 = require("@keystone-6/core");
+var import_fields17 = require("@keystone-6/core/fields");
+var Waitlist = (0, import_core16.list)({
   access: {
     operation: {
       query: () => true,
@@ -1634,40 +1764,40 @@ var Waitlist = (0, import_core15.list)({
     }
   },
   fields: {
-    member: (0, import_fields16.relationship)({
+    member: (0, import_fields17.relationship)({
       ref: "Member.waitlistEntries",
       ui: {
         displayMode: "select",
         description: "Member on the waitlist"
       }
     }),
-    classSchedule: (0, import_fields16.relationship)({
+    classSchedule: (0, import_fields17.relationship)({
       ref: "ClassSchedule",
       ui: {
         displayMode: "select",
         description: "Class the member is waiting for"
       }
     }),
-    position: (0, import_fields16.integer)({
+    position: (0, import_fields17.integer)({
       ui: {
         description: "Position in the waitlist (auto-calculated based on addedAt)",
         itemView: { fieldMode: "read" },
         createView: { fieldMode: "hidden" }
       }
     }),
-    addedAt: (0, import_fields16.timestamp)({
+    addedAt: (0, import_fields17.timestamp)({
       defaultValue: { kind: "now" },
       validation: { isRequired: true },
       ui: {
         description: "When the member joined the waitlist"
       }
     }),
-    notifiedAt: (0, import_fields16.timestamp)({
+    notifiedAt: (0, import_fields17.timestamp)({
       ui: {
         description: "When the member was notified of an available spot"
       }
     }),
-    status: (0, import_fields16.select)({
+    status: (0, import_fields17.select)({
       type: "string",
       options: [
         { label: "Waiting", value: "waiting" },
@@ -1681,15 +1811,15 @@ var Waitlist = (0, import_core15.list)({
         description: "Waitlist entry status"
       }
     }),
-    expiresAt: (0, import_fields16.timestamp)({
+    expiresAt: (0, import_fields17.timestamp)({
       ui: {
         description: "When the notification expires (typically 2 hours after notification)"
       }
     }),
     // Virtual field to calculate estimated wait time
-    estimatedWaitTime: (0, import_fields16.virtual)({
-      field: import_core15.graphql.field({
-        type: import_core15.graphql.String,
+    estimatedWaitTime: (0, import_fields17.virtual)({
+      field: import_core16.graphql.field({
+        type: import_core16.graphql.String,
         async resolve(item, args, context) {
           const position = item.position;
           if (position && position > 0) {
@@ -1762,9 +1892,9 @@ var Waitlist = (0, import_core15.list)({
 });
 
 // features/keystone/models/AttendanceRecord.ts
-var import_core16 = require("@keystone-6/core");
-var import_fields17 = require("@keystone-6/core/fields");
-var AttendanceRecord = (0, import_core16.list)({
+var import_core17 = require("@keystone-6/core");
+var import_fields18 = require("@keystone-6/core/fields");
+var AttendanceRecord = (0, import_core17.list)({
   access: {
     operation: {
       query: () => true,
@@ -1779,67 +1909,67 @@ var AttendanceRecord = (0, import_core16.list)({
     }
   },
   fields: {
-    booking: (0, import_fields17.relationship)({
+    booking: (0, import_fields18.relationship)({
       ref: "ClassBooking",
       ui: {
         displayMode: "select",
         description: "Associated class booking"
       }
     }),
-    classSchedule: (0, import_fields17.relationship)({
+    classSchedule: (0, import_fields18.relationship)({
       ref: "ClassSchedule",
       ui: {
         displayMode: "select",
         description: "Class that was attended"
       }
     }),
-    member: (0, import_fields17.relationship)({
+    member: (0, import_fields18.relationship)({
       ref: "Member.attendanceRecords",
       ui: {
         displayMode: "select",
         description: "Member whose attendance is being tracked"
       }
     }),
-    attended: (0, import_fields17.checkbox)({
+    attended: (0, import_fields18.checkbox)({
       defaultValue: false,
       ui: {
         description: "Did the member attend?"
       }
     }),
-    markedAt: (0, import_fields17.timestamp)({
+    markedAt: (0, import_fields18.timestamp)({
       ui: {
         description: "When attendance was marked"
       }
     }),
-    markedBy: (0, import_fields17.relationship)({
+    markedBy: (0, import_fields18.relationship)({
       ref: "User",
       ui: {
         displayMode: "select",
         description: "Staff member who marked attendance"
       }
     }),
-    noShowReason: (0, import_fields17.text)({
+    noShowReason: (0, import_fields18.text)({
       ui: {
         displayMode: "textarea",
         description: "Reason for no-show (if applicable)"
       }
     }),
-    lateArrival: (0, import_fields17.checkbox)({
+    lateArrival: (0, import_fields18.checkbox)({
       defaultValue: false,
       ui: {
         description: "Was the member late?"
       }
     }),
-    minutesLate: (0, import_fields17.integer)({
+    minutesLate: (0, import_fields18.integer)({
       ui: {
         description: "How many minutes late (if lateArrival is true)"
       }
     }),
     // Virtual field for attendance rate per member
     // This would typically be calculated at the Member level, but included here as a reference
-    memberAttendanceRate: (0, import_fields17.virtual)({
-      field: import_core16.graphql.field({
-        type: import_core16.graphql.Float,
+    memberAttendanceRate: (0, import_fields18.virtual)({
+      field: import_core17.graphql.field({
+        type: import_core17.graphql.Float,
         async resolve(item, args, context) {
           if (!item.memberId) return 0;
           const sudoContext = context.sudo();
@@ -1877,10 +2007,10 @@ var AttendanceRecord = (0, import_core16.list)({
 });
 
 // features/keystone/models/ClassType.ts
-var import_core17 = require("@keystone-6/core");
-var import_fields18 = require("@keystone-6/core/fields");
+var import_core18 = require("@keystone-6/core");
+var import_fields19 = require("@keystone-6/core/fields");
 var import_fields_document2 = require("@keystone-6/fields-document");
-var ClassType = (0, import_core17.list)({
+var ClassType = (0, import_core18.list)({
   access: {
     operation: {
       query: () => true,
@@ -1895,7 +2025,7 @@ var ClassType = (0, import_core17.list)({
     }
   },
   fields: {
-    name: (0, import_fields18.text)({
+    name: (0, import_fields19.text)({
       validation: { isRequired: true },
       ui: {
         description: "e.g., Yoga, Spin, HIIT, Boxing"
@@ -1905,7 +2035,7 @@ var ClassType = (0, import_core17.list)({
       formatting: true,
       links: true
     }),
-    difficulty: (0, import_fields18.select)({
+    difficulty: (0, import_fields19.select)({
       type: "string",
       options: [
         { label: "Beginner", value: "beginner" },
@@ -1916,14 +2046,14 @@ var ClassType = (0, import_core17.list)({
       defaultValue: "all-levels",
       validation: { isRequired: true }
     }),
-    duration: (0, import_fields18.integer)({
+    duration: (0, import_fields19.integer)({
       validation: { isRequired: true },
       defaultValue: 60,
       ui: {
         description: "Typical duration in minutes"
       }
     }),
-    equipmentNeeded: (0, import_fields18.multiselect)({
+    equipmentNeeded: (0, import_fields19.multiselect)({
       type: "string",
       options: [
         { label: "Mat", value: "mat" },
@@ -1938,7 +2068,7 @@ var ClassType = (0, import_core17.list)({
       ],
       defaultValue: []
     }),
-    caloriesBurn: (0, import_fields18.integer)({
+    caloriesBurn: (0, import_fields19.integer)({
       ui: {
         description: "Estimated calories burned per session"
       }
@@ -1948,9 +2078,9 @@ var ClassType = (0, import_core17.list)({
 });
 
 // features/keystone/models/ClassSchedule.ts
-var import_core18 = require("@keystone-6/core");
-var import_fields19 = require("@keystone-6/core/fields");
-var ClassSchedule = (0, import_core18.list)({
+var import_core19 = require("@keystone-6/core");
+var import_fields20 = require("@keystone-6/core/fields");
+var ClassSchedule = (0, import_core19.list)({
   access: {
     operation: {
       query: () => true,
@@ -1965,25 +2095,25 @@ var ClassSchedule = (0, import_core18.list)({
     }
   },
   fields: {
-    name: (0, import_fields19.text)({
+    name: (0, import_fields20.text)({
       validation: { isRequired: true },
       ui: {
         description: "Name of the class (e.g., 'Morning Yoga', 'HIIT Blast')"
       }
     }),
-    description: (0, import_fields19.text)({
+    description: (0, import_fields20.text)({
       ui: {
         displayMode: "textarea",
         description: "Description of the class"
       }
     }),
-    instructor: (0, import_fields19.relationship)({
+    instructor: (0, import_fields20.relationship)({
       ref: "Instructor.classSchedules",
       ui: {
         displayMode: "select"
       }
     }),
-    dayOfWeek: (0, import_fields19.select)({
+    dayOfWeek: (0, import_fields20.select)({
       type: "string",
       options: [
         { label: "Monday", value: "monday" },
@@ -1996,39 +2126,39 @@ var ClassSchedule = (0, import_core18.list)({
       ],
       validation: { isRequired: true }
     }),
-    startTime: (0, import_fields19.text)({
+    startTime: (0, import_fields20.text)({
       validation: { isRequired: true },
       ui: {
         description: "Format: HH:MM (24-hour)"
       }
     }),
-    endTime: (0, import_fields19.text)({
+    endTime: (0, import_fields20.text)({
       validation: { isRequired: true },
       ui: {
         description: "Format: HH:MM (24-hour)"
       }
     }),
-    maxCapacity: (0, import_fields19.integer)({
+    maxCapacity: (0, import_fields20.integer)({
       validation: { isRequired: true },
       defaultValue: 20,
       ui: {
         description: "Maximum number of participants"
       }
     }),
-    isActive: (0, import_fields19.checkbox)({
+    isActive: (0, import_fields20.checkbox)({
       defaultValue: true,
       ui: {
         description: "Whether this class schedule is currently active"
       }
     }),
     // Relationship to specific instances
-    instances: (0, import_fields19.relationship)({
+    instances: (0, import_fields20.relationship)({
       ref: "ClassInstance.classSchedule",
       many: true
     }),
-    averageAttendance: (0, import_fields19.virtual)({
-      field: import_core18.graphql.field({
-        type: import_core18.graphql.Float,
+    averageAttendance: (0, import_fields20.virtual)({
+      field: import_core19.graphql.field({
+        type: import_core19.graphql.Float,
         async resolve(item, args, context) {
           const sudoContext = context.sudo();
           const instances = await sudoContext.query.ClassInstance.findMany({
@@ -2045,9 +2175,9 @@ var ClassSchedule = (0, import_core18.list)({
       }),
       ui: { description: "Average number of attendees per class" }
     }),
-    bookingRate: (0, import_fields19.virtual)({
-      field: import_core18.graphql.field({
-        type: import_core18.graphql.Float,
+    bookingRate: (0, import_fields20.virtual)({
+      field: import_core19.graphql.field({
+        type: import_core19.graphql.Float,
         async resolve(item, args, context) {
           const maxCapacity = item.maxCapacity;
           if (!maxCapacity) return 0;
@@ -2067,9 +2197,9 @@ var ClassSchedule = (0, import_core18.list)({
       }),
       ui: { description: "Booking rate as percentage of capacity" }
     }),
-    totalRevenue: (0, import_fields19.virtual)({
-      field: import_core18.graphql.field({
-        type: import_core18.graphql.Float,
+    totalRevenue: (0, import_fields20.virtual)({
+      field: import_core19.graphql.field({
+        type: import_core19.graphql.Float,
         async resolve(item, args, context) {
           const sudoContext = context.sudo();
           const bookings = await sudoContext.query.ClassBooking.findMany({
@@ -2092,9 +2222,9 @@ var ClassSchedule = (0, import_core18.list)({
 });
 
 // features/keystone/models/ClassBooking.ts
-var import_core19 = require("@keystone-6/core");
-var import_fields20 = require("@keystone-6/core/fields");
-var ClassBooking = (0, import_core19.list)({
+var import_core20 = require("@keystone-6/core");
+var import_fields21 = require("@keystone-6/core/fields");
+var ClassBooking = (0, import_core20.list)({
   access: {
     operation: {
       query: () => true,
@@ -2110,7 +2240,7 @@ var ClassBooking = (0, import_core19.list)({
   },
   fields: {
     // Link to specific class instance
-    classInstance: (0, import_fields20.relationship)({
+    classInstance: (0, import_fields21.relationship)({
       ref: "ClassInstance.bookings",
       ui: {
         displayMode: "select",
@@ -2118,7 +2248,7 @@ var ClassBooking = (0, import_core19.list)({
       }
     }),
     // Link to member
-    member: (0, import_fields20.relationship)({
+    member: (0, import_fields21.relationship)({
       ref: "Member.bookings",
       ui: {
         displayMode: "select",
@@ -2126,28 +2256,28 @@ var ClassBooking = (0, import_core19.list)({
       }
     }),
     // Denormalized member info for quick access
-    memberName: (0, import_fields20.text)({
+    memberName: (0, import_fields21.text)({
       ui: {
         description: "Member's name at time of booking"
       }
     }),
-    memberEmail: (0, import_fields20.text)({
+    memberEmail: (0, import_fields21.text)({
       ui: {
         description: "Member's email at time of booking"
       }
     }),
-    memberPhone: (0, import_fields20.text)({
+    memberPhone: (0, import_fields21.text)({
       ui: {
         description: "Member's phone number"
       }
     }),
-    notes: (0, import_fields20.text)({
+    notes: (0, import_fields21.text)({
       ui: {
         displayMode: "textarea",
         description: "Special notes or requests for this booking"
       }
     }),
-    status: (0, import_fields20.select)({
+    status: (0, import_fields21.select)({
       type: "string",
       options: [
         { label: "Confirmed", value: "confirmed" },
@@ -2157,16 +2287,16 @@ var ClassBooking = (0, import_core19.list)({
       defaultValue: "confirmed",
       validation: { isRequired: true }
     }),
-    waitlistPosition: (0, import_fields20.integer)({
+    waitlistPosition: (0, import_fields21.integer)({
       ui: {
         description: "Position in waitlist (only applicable when status is 'waitlist')"
       }
     }),
-    bookedAt: (0, import_fields20.timestamp)({
+    bookedAt: (0, import_fields21.timestamp)({
       validation: { isRequired: true },
       defaultValue: { kind: "now" }
     }),
-    cancelledAt: (0, import_fields20.timestamp)({
+    cancelledAt: (0, import_fields21.timestamp)({
       ui: {
         description: "When the booking was cancelled"
       }
@@ -2176,10 +2306,10 @@ var ClassBooking = (0, import_core19.list)({
 });
 
 // features/keystone/models/Instructor.ts
-var import_core20 = require("@keystone-6/core");
-var import_fields21 = require("@keystone-6/core/fields");
+var import_core21 = require("@keystone-6/core");
+var import_fields22 = require("@keystone-6/core/fields");
 var import_fields_document3 = require("@keystone-6/fields-document");
-var Instructor = (0, import_core20.list)({
+var Instructor = (0, import_core21.list)({
   access: {
     operation: {
       query: () => true,
@@ -2196,7 +2326,7 @@ var Instructor = (0, import_core20.list)({
   },
   fields: {
     // Link to User account
-    user: (0, import_fields21.relationship)({
+    user: (0, import_fields22.relationship)({
       ref: "User",
       ui: {
         displayMode: "select",
@@ -2208,42 +2338,42 @@ var Instructor = (0, import_core20.list)({
       links: true
     }),
     // JSON array of specialties
-    specialties: (0, import_fields21.json)({
+    specialties: (0, import_fields22.json)({
       defaultValue: [],
       ui: {
         description: "Array of specialties (e.g., ['yoga', 'pilates', 'strength'])"
       }
     }),
     // JSON array of certifications
-    certifications: (0, import_fields21.json)({
+    certifications: (0, import_fields22.json)({
       defaultValue: [],
       ui: {
         description: "Array of certifications (e.g., ['ACE', 'NASM', 'RYT-200'])"
       }
     }),
-    photo: (0, import_fields21.text)({
+    photo: (0, import_fields22.text)({
       ui: {
         description: "URL to instructor's photo"
       }
     }),
-    isActive: (0, import_fields21.checkbox)({
+    isActive: (0, import_fields22.checkbox)({
       defaultValue: true,
       ui: {
         description: "Whether this instructor is currently active"
       }
     }),
     // Relationships
-    classSchedules: (0, import_fields21.relationship)({
+    classSchedules: (0, import_fields22.relationship)({
       ref: "ClassSchedule.instructor",
       many: true
     }),
-    classInstances: (0, import_fields21.relationship)({
+    classInstances: (0, import_fields22.relationship)({
       ref: "ClassInstance.instructor",
       many: true
     }),
-    totalClassesTaught: (0, import_fields21.virtual)({
-      field: import_core20.graphql.field({
-        type: import_core20.graphql.Int,
+    totalClassesTaught: (0, import_fields22.virtual)({
+      field: import_core21.graphql.field({
+        type: import_core21.graphql.Int,
         async resolve(item, args, context) {
           const sudoContext = context.sudo();
           const count = await sudoContext.query.ClassInstance.count({
@@ -2257,18 +2387,18 @@ var Instructor = (0, import_core20.list)({
       }),
       ui: { description: "Total number of classes taught" }
     }),
-    averageRating: (0, import_fields21.virtual)({
-      field: import_core20.graphql.field({
-        type: import_core20.graphql.Float,
+    averageRating: (0, import_fields22.virtual)({
+      field: import_core21.graphql.field({
+        type: import_core21.graphql.Float,
         async resolve(item, args, context) {
           return 4.5;
         }
       }),
       ui: { description: "Average rating from members (placeholder)" }
     }),
-    totalRevenue: (0, import_fields21.virtual)({
-      field: import_core20.graphql.field({
-        type: import_core20.graphql.Float,
+    totalRevenue: (0, import_fields22.virtual)({
+      field: import_core21.graphql.field({
+        type: import_core21.graphql.Float,
         async resolve(item, args, context) {
           const sudoContext = context.sudo();
           const instances = await sudoContext.query.ClassInstance.findMany({
@@ -2288,9 +2418,9 @@ var Instructor = (0, import_core20.list)({
       }),
       ui: { description: "Total revenue attributed to this instructor" }
     }),
-    upcomingClasses: (0, import_fields21.virtual)({
-      field: import_core20.graphql.field({
-        type: import_core20.graphql.Int,
+    upcomingClasses: (0, import_fields22.virtual)({
+      field: import_core21.graphql.field({
+        type: import_core21.graphql.Int,
         async resolve(item, args, context) {
           const sudoContext = context.sudo();
           const count = await sudoContext.query.ClassInstance.count({
@@ -2309,9 +2439,9 @@ var Instructor = (0, import_core20.list)({
 });
 
 // features/keystone/models/ClassInstance.ts
-var import_core21 = require("@keystone-6/core");
-var import_fields22 = require("@keystone-6/core/fields");
-var ClassInstance = (0, import_core21.list)({
+var import_core22 = require("@keystone-6/core");
+var import_fields23 = require("@keystone-6/core/fields");
+var ClassInstance = (0, import_core22.list)({
   access: {
     operation: {
       query: () => true,
@@ -2327,21 +2457,21 @@ var ClassInstance = (0, import_core21.list)({
   },
   fields: {
     // Reference to the recurring schedule
-    classSchedule: (0, import_fields22.relationship)({
+    classSchedule: (0, import_fields23.relationship)({
       ref: "ClassSchedule.instances",
       ui: {
         displayMode: "select"
       }
     }),
     // Specific date for this instance
-    date: (0, import_fields22.timestamp)({
+    date: (0, import_fields23.timestamp)({
       validation: { isRequired: true },
       ui: {
         description: "Specific date and time of this class occurrence"
       }
     }),
     // Override instructor for this specific instance (if different from schedule)
-    instructor: (0, import_fields22.relationship)({
+    instructor: (0, import_fields23.relationship)({
       ref: "Instructor.classInstances",
       ui: {
         displayMode: "select",
@@ -2349,25 +2479,25 @@ var ClassInstance = (0, import_core21.list)({
       }
     }),
     // Override capacity for this specific instance
-    maxCapacity: (0, import_fields22.integer)({
+    maxCapacity: (0, import_fields23.integer)({
       ui: {
         description: "Override max capacity (leave empty to use schedule default)"
       }
     }),
-    isCancelled: (0, import_fields22.checkbox)({
+    isCancelled: (0, import_fields23.checkbox)({
       defaultValue: false,
       ui: {
         description: "Whether this class instance has been cancelled"
       }
     }),
-    cancellationReason: (0, import_fields22.text)({
+    cancellationReason: (0, import_fields23.text)({
       ui: {
         displayMode: "textarea",
         description: "Reason for cancellation (if cancelled)"
       }
     }),
     // Bookings for this specific instance
-    bookings: (0, import_fields22.relationship)({
+    bookings: (0, import_fields23.relationship)({
       ref: "ClassBooking.classInstance",
       many: true
     }),
@@ -2388,6 +2518,7 @@ var models = {
   PaymentMethod,
   CheckIn,
   Location,
+  GymSettings,
   WorkoutLog,
   WorkoutSet,
   Exercise,
@@ -2415,6 +2546,27 @@ async function redirectToInit(root, args, context) {
   return false;
 }
 var redirectToInit_default = redirectToInit;
+
+// features/keystone/mutations/updateActiveUser.ts
+async function updateActiveUser(root, { data }, context) {
+  const sudoContext = context.sudo();
+  const session = context.session;
+  if (!session?.itemId) {
+    throw new Error("Not authenticated");
+  }
+  const existingUser = await sudoContext.query.User.findOne({
+    where: { id: session.itemId },
+    query: "id"
+  });
+  if (!existingUser) {
+    throw new Error("User not found");
+  }
+  return await sudoContext.db.User.updateOne({
+    where: { id: session.itemId },
+    data
+  });
+}
+var updateActiveUser_default = updateActiveUser;
 
 // features/keystone/queries/billing.ts
 async function getBillingStats(root, args, context) {
@@ -3102,7 +3254,16 @@ function extendGraphqlSchema(baseSchema) {
         getBillingStats: BillingStats!
       }
 
+      input UserUpdateProfileInput {
+        email: String
+        name: String
+        phone: String
+        password: String
+        onboardingStatus: String
+      }
+
       type Mutation {
+        updateActiveUser(data: UserUpdateProfileInput!): User
         bookClass(classInstanceId: ID!, memberId: ID!): BookClassResult!
         checkIn(memberId: ID!, bookingId: ID, classInstanceId: ID): CheckInResult!
         promoteFromWaitlist(classInstanceId: ID!): PromoteResult!
@@ -3226,6 +3387,7 @@ function extendGraphqlSchema(baseSchema) {
         getBillingStats
       },
       Mutation: {
+        updateActiveUser: updateActiveUser_default,
         bookClass,
         checkIn,
         promoteFromWaitlist,
@@ -3339,7 +3501,8 @@ var { withAuth } = (0, import_auth.createAuth)({
           canManagePeople: true,
           canManageRoles: true,
           canAccessDashboard: true,
-          canManageOnboarding: true
+          canManageOnboarding: true,
+          canManageSettings: true
         }
       }
     }
@@ -3364,12 +3527,13 @@ var { withAuth } = (0, import_auth.createAuth)({
       canManageRoles
       canAccessDashboard
       canManageOnboarding
+      canManageSettings
       isInstructor
     }
   `
 });
 var keystone_default = withAuth(
-  (0, import_core22.config)({
+  (0, import_core23.config)({
     db: {
       provider: "postgresql",
       url: databaseURL
