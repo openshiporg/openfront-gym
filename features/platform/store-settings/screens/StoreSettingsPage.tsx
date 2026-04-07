@@ -208,13 +208,14 @@ function normalizeStats(raw: any, fallback: HeroStatBlock[]): HeroStatBlock[] {
 }
 
 export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSettingsData | null }) {
+  const [currentSettingsId, setCurrentSettingsId] = useState<string | undefined>(initialSettings?.id)
   const [isSaving, setIsSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     name: initialSettings?.name || 'Openfront Gym',
-    tagline: initialSettings?.tagline || '',
+    tagline: initialSettings?.tagline || 'Movement is art. The body of work is you.',
     description: initialSettings?.description || '',
     address: initialSettings?.address || '',
     phone: initialSettings?.phone || '',
@@ -223,9 +224,9 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
     locale: initialSettings?.locale || 'en-US',
     timezone: initialSettings?.timezone || 'America/New_York',
     countryCode: initialSettings?.countryCode || 'US',
-    promoBanner: initialSettings?.promoBanner || '',
+    promoBanner: initialSettings?.promoBanner || 'Movement is art. The body of work is you.',
     heroEyebrow: initialSettings?.heroEyebrow || '',
-    heroHeadline: initialSettings?.heroHeadline || '',
+    heroHeadline: initialSettings?.heroHeadline || 'Movement is art.\nThe body of work\nis you.',
     heroSubheadline: initialSettings?.heroSubheadline || '',
     heroPrimaryCtaLabel: initialSettings?.heroPrimaryCtaLabel || 'Start membership',
     heroPrimaryCtaHref: initialSettings?.heroPrimaryCtaHref || '/join',
@@ -366,19 +367,43 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
     setError(null)
     setIsSaving(true)
     try {
+      const cleanHeroStats = heroStats
+        .map((item) => ({ value: item.value.trim(), label: item.label.trim() }))
+        .filter((item) => item.value && item.label)
+
+      const cleanContactTopics = contactTopics
+        .map((item) => ({
+          title: item.title.trim(),
+          details: item.details.map((detail) => detail.trim()).filter(Boolean),
+        }))
+        .filter((item) => item.title && item.details.length)
+
+      const cleanFacilityHighlights = facilityHighlights
+        .map((item) => ({
+          title: item.title.trim(),
+          description: item.description.trim(),
+          features: item.features.map((feature) => feature.trim()).filter(Boolean),
+        }))
+        .filter((item) => item.title && item.description)
+
       const data: any = {
         ...form,
+        tagline: form.tagline.trim() || 'Movement is art. The body of work is you.',
+        promoBanner: form.promoBanner.trim() || 'Movement is art. The body of work is you.',
+        heroHeadline: form.heroHeadline.trim() || 'Movement is art.\nThe body of work\nis you.',
         reviewCount: Number(form.reviewCount || 0),
         hours: serializeHours(hours),
-        heroStats,
-        contactTopics,
-        facilityHighlights,
+        heroStats: cleanHeroStats,
+        contactTopics: cleanContactTopics,
+        facilityHighlights: cleanFacilityHighlights,
       }
 
-      if (initialSettings?.id) {
-        await request('/api/graphql', UPDATE_GYM_SETTINGS, { id: initialSettings.id, data })
+      if (currentSettingsId) {
+        const result = await request<any>('/api/graphql', UPDATE_GYM_SETTINGS, { id: currentSettingsId, data })
+        setCurrentSettingsId(result?.updateGymSettings?.id || currentSettingsId)
       } else {
-        await request('/api/graphql', CREATE_GYM_SETTINGS, { data })
+        const result = await request<any>('/api/graphql', CREATE_GYM_SETTINGS, { data })
+        setCurrentSettingsId(result?.createGymSettings?.id)
       }
 
       setSavedAt(new Date().toLocaleTimeString())
@@ -433,7 +458,7 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Tagline</p>
-                <Input value={form.tagline} onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))} placeholder="e.g. Structured training for real life" className={fieldInput} />
+                <Input value={form.tagline} onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))} placeholder="Movement is art. The body of work is you." className={fieldInput} />
               </div>
             </div>
             <div className="px-5 py-3">
@@ -501,7 +526,7 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Headline</p>
-              <Input value={form.heroHeadline} onChange={(e) => setForm((f) => ({ ...f, heroHeadline: e.target.value }))} placeholder="Train hard. Recover well." className={fieldInput} />
+              <Textarea value={form.heroHeadline} onChange={(e) => setForm((f) => ({ ...f, heroHeadline: e.target.value }))} placeholder="Movement is art. The body of work is you." className={fieldTextarea} />
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Subheadline</p>

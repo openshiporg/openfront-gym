@@ -25,14 +25,14 @@ export async function ClassesPage({
       <div className="mx-auto max-w-7xl">
         <header className="mb-14 grid gap-8 lg:grid-cols-[1fr_0.7fr] lg:items-end">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Performance architecture</p>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Performance architecture</p>
             <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
               The training
               <br />
               catalog
             </h1>
           </div>
-          <p className="max-w-md border-l-2 border-[#ffb59e] pl-6 text-base leading-relaxed text-[#c4c7c7]">
+          <p className="max-w-md border-l-2 border-[#818cf8] pl-6 text-base leading-relaxed text-[#c4c7c7]">
             Filter by intensity or duration to find the next class in your progression stack.
           </p>
         </header>

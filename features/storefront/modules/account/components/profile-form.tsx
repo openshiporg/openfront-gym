@@ -15,7 +15,7 @@ interface ProfileFormProps {
 
 export default function ProfileForm({ user }: ProfileFormProps) {
   const [state, action, pending] = useActionState(updateProfile, null);
-  const inputClass = "h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]";
+  const inputClass = "h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#a5b4fc]";
   const labelClass = "text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]";
 
   return (
@@ -39,12 +39,12 @@ export default function ProfileForm({ user }: ProfileFormProps) {
 
       {state?.error && <p className="border border-[#ffb4ab]/30 bg-[#93000a]/20 px-3 py-2 text-sm text-[#ffdad6]">{state.error}</p>}
       {state?.success && (
-        <p className="flex items-center gap-2 text-sm uppercase tracking-[0.16em] text-[#7df4ff]">
+        <p className="flex items-center gap-2 text-sm uppercase tracking-[0.16em] text-[#a5b4fc]">
           <CheckCircle2 className="h-4 w-4" /> Profile updated
         </p>
       )}
 
-      <button type="submit" disabled={pending} className="flex h-12 items-center justify-center gap-2 bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 text-sm font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95 disabled:opacity-50">
+      <button type="submit" disabled={pending} className="flex h-12 items-center justify-center gap-2 bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 text-sm font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95 disabled:opacity-50">
         {pending && <Loader2 className="h-4 w-4 animate-spin" />} Save changes
       </button>
     </form>

@@ -22,7 +22,7 @@ export default function AccountNav({ user }: { user: any }) {
 
   return (
     <aside className="space-y-6 md:sticky md:top-28 md:self-start">
-      <div className="border-l-4 border-[#ffb59e] pl-4">
+      <div className="border-l-4 border-[#818cf8] pl-4">
         <p className="font-[family-name:var(--font-space-grotesk)] text-xl font-black uppercase tracking-[-0.04em] text-white">
           Athlete portal
         </p>
@@ -39,7 +39,7 @@ export default function AccountNav({ user }: { user: any }) {
               href={item.href}
               className={cn(
                 "flex items-center gap-3 px-4 py-4 text-sm font-bold uppercase tracking-[0.18em] transition-colors",
-                active ? "bg-[#1c1b1b] text-[#ffb59e]" : "text-[#c4c7c7] hover:bg-[#1c1b1b] hover:text-white"
+                active ? "bg-[#1c1b1b] text-[#818cf8]" : "text-[#c4c7c7] hover:bg-[#1c1b1b] hover:text-white"
               )}
             >
               <Icon className="h-4 w-4" />

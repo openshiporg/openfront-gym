@@ -1,11 +1,17 @@
-import { Urbanist } from "next/font/google";
+import { Space_Grotesk, Caudex } from "next/font/google";
 import Nav from "@/features/storefront/modules/layout/templates/nav";
 import Footer from "@/features/storefront/modules/layout/templates/footer";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 
-const urbanist = Urbanist({
+const displaySans = Space_Grotesk({
   variable: "--font-space-grotesk",
   subsets: ["latin"],
+});
+
+const brandSerif = Caudex({
+  variable: "--font-brand-serif",
+  subsets: ["latin"],
+  weight: ["400", "700"],
 });
 
 interface MainLayoutProps {
@@ -18,8 +24,10 @@ export async function MainLayout({ children, user }: MainLayoutProps) {
 
   return (
     <div
-      className={`${urbanist.variable} dark flex min-h-screen flex-col bg-[#131313] text-[#e5e2e1] font-[family-name:var(--font-space-grotesk)] selection:bg-[#ffb59e] selection:text-[#3a0b00]`}
+      className={`${displaySans.variable} ${brandSerif.variable} dark flex min-h-screen flex-col bg-[#131313] text-[#e5e2e1] font-[family-name:var(--font-space-grotesk)] selection:bg-[#818cf8] selection:text-white`}
     >
+      {/* 2px top accent bar — indigo brand anchor */}
+      <div className="h-[2px] w-full bg-[linear-gradient(90deg,#818cf8_0%,#4f46e5_50%,transparent_100%)]" />
       <Nav user={user} config={config} />
       <main className="flex-1">{children}</main>
       <Footer config={config} />

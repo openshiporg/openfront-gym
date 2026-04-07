@@ -27,13 +27,13 @@ export default function AuthNav({ user }: AuthNavProps) {
       <div className="flex items-center gap-3">
         <Link
           href="/account"
-          className="hidden text-sm font-bold uppercase tracking-widest text-[#e5e2e1] transition-colors hover:text-[#ffb59e] sm:inline-flex"
+          className="hidden text-sm font-bold uppercase tracking-widest text-[#e5e2e1] transition-colors hover:text-[#818cf8] sm:inline-flex"
         >
           Sign in
         </Link>
         <Link
           href="/join"
-          className="inline-flex items-center bg-[#ffb59e] px-5 py-2 text-xs font-bold uppercase tracking-[0.2em] text-[#3a0b00] transition-transform active:scale-95"
+          className="inline-flex items-center bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-5 py-2 text-xs font-bold uppercase tracking-[0.2em] text-white transition-transform active:scale-95"
         >
           Join now
         </Link>
@@ -52,14 +52,14 @@ export default function AuthNav({ user }: AuthNavProps) {
     <div className="flex items-center gap-3">
       <Link
         href="/schedule"
-        className="hidden border border-[#ffb59e] px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-[#ffb59e] transition-colors hover:bg-[#ffb59e]/10 sm:inline-flex"
+        className="hidden border border-[#818cf8] px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-[#818cf8] transition-colors hover:bg-[#818cf8]/10 sm:inline-flex"
       >
         Book now
       </Link>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-3 rounded-none px-1 py-1 text-[#e5e2e1] transition-colors hover:text-[#ffb59e]">
+          <button className="flex items-center gap-3 rounded-none px-1 py-1 text-[#e5e2e1] transition-colors hover:text-[#818cf8]">
             <span className="flex h-9 w-9 items-center justify-center border border-white/15 bg-[#1c1b1b] text-xs font-bold uppercase">
               {initials}
             </span>

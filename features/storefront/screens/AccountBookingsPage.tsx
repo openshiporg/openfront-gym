@@ -26,7 +26,7 @@ export default async function AccountBookingsPage() {
           <h2 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-bold uppercase tracking-[-0.04em] text-white">
             Upcoming ({upcoming.length})
           </h2>
-          <Link href="/schedule" className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffb59e]">Browse schedule</Link>
+          <Link href="/schedule" className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">Browse schedule</Link>
         </div>
         {upcoming.length === 0 ? (
           <div className="bg-[#1c1b1b] px-6 py-16 text-center text-sm uppercase tracking-[0.16em] text-[#c4c7c7]">No upcoming classes booked.</div>
@@ -60,7 +60,7 @@ function BookingRow({ booking, index }: { booking: any; index: number }) {
   const date = booking.classInstance?.date;
   const instructorName = booking.classInstance?.instructor?.user?.name ?? schedule?.instructor?.user?.name;
   const stateClass =
-    booking.status === "confirmed" ? "text-[#7df4ff]" : booking.status === "cancelled" ? "text-[#ffb4ab]" : "text-[#ffb59e]";
+    booking.status === "confirmed" ? "text-[#a5b4fc]" : booking.status === "cancelled" ? "text-[#ffb4ab]" : "text-[#818cf8]";
 
   return (
     <div className={`flex flex-col gap-5 px-6 py-6 md:flex-row md:items-center md:justify-between ${index === 0 ? "bg-[#1c1b1b]" : "bg-[#0e0e0e] border border-white/10"}`}>

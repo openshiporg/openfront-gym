@@ -50,7 +50,7 @@ export default async function ClassGrid({
             index % 2 === 0 ? "bg-[#1c1b1b]" : "border border-white/10 bg-[#0e0e0e]"
           }`}
         >
-          <div className="absolute right-0 top-0 bg-[#ffb59e] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.24em] text-[#3a0b00]">
+          <div className="absolute right-0 top-0 bg-[#818cf8] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.24em] text-white">
             {difficultyMap[classType.difficulty] ?? "Balanced"}
           </div>
           <div className="p-8">
@@ -70,7 +70,7 @@ export default async function ClassGrid({
               </div>
               <div>
                 <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Estimated burn</span>
-                <span className="mt-1 block font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase text-[#7df4ff]">
+                <span className="mt-1 block font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase text-[#a5b4fc]">
                   {classType.caloriesBurn ? `~${classType.caloriesBurn}` : "—"}
                 </span>
               </div>
@@ -84,7 +84,7 @@ export default async function ClassGrid({
 
             <Link
               href="/schedule"
-              className="mt-8 inline-flex bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95"
+              className="mt-8 inline-flex bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95"
             >
               See schedule
             </Link>

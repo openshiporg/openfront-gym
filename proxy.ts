@@ -1,16 +1,20 @@
 import { handleDashboardRoutes, getAuthenticatedUser } from '@/features/dashboard/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 
+const dashboardPath = '/dashboard';
+
 export async function proxy(request: NextRequest) {
-  // Get authenticated user once
   const { user, redirectToInit } = await getAuthenticatedUser(request);
-  
-  // Let dashboard handler manage its routes
+
+  // Match canonical openfront behavior:
+  // if no initial user exists yet, all storefront traffic should redirect to dashboard/init.
+  if (redirectToInit && !request.nextUrl.pathname.startsWith(`${dashboardPath}/init`)) {
+    return NextResponse.redirect(new URL(`${dashboardPath}/init`, request.url));
+  }
+
   const dashboardResponse = await handleDashboardRoutes(request, user, redirectToInit);
   if (dashboardResponse) return dashboardResponse;
-  
-  // Continue with existing middleware logic {
-  // Add any middleware logic here if needed
+
   return NextResponse.next();
 }
 

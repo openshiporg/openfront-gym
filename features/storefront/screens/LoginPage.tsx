@@ -13,7 +13,7 @@ export default function LoginPage({ redirectTo }: LoginPageProps) {
   const [signinError, signinAction, signinPending] = useActionState(login, null);
   const [signupError, signupAction, signupPending] = useActionState(signUp, null);
 
-  const inputClass = "h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]";
+  const inputClass = "h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#a5b4fc]";
   const labelClass = "text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]";
 
   return (
@@ -25,7 +25,7 @@ export default function LoginPage({ redirectTo }: LoginPageProps) {
             type="button"
             onClick={() => setView(v)}
             className={`flex-1 border-b-2 pb-3 text-sm font-bold uppercase tracking-[0.18em] transition-colors ${
-              view === v ? "border-[#ffb59e] text-[#ffb59e]" : "border-transparent text-[#c4c7c7] hover:text-white"
+              view === v ? "border-[#818cf8] text-[#818cf8]" : "border-transparent text-[#c4c7c7] hover:text-white"
             }`}
           >
             {v === "signup" ? "Create account" : "Sign in"}
@@ -45,7 +45,7 @@ export default function LoginPage({ redirectTo }: LoginPageProps) {
             <input id="signin-password" name="password" type="password" required autoComplete="current-password" className={inputClass} />
           </div>
           {signinError && <p className="border border-[#ffb4ab]/30 bg-[#93000a]/20 px-3 py-2 text-sm text-[#ffdad6]">{signinError}</p>}
-          <button type="submit" disabled={signinPending} className="mt-2 flex h-12 w-full items-center justify-center gap-2 bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] text-sm font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95 disabled:opacity-50">
+          <button type="submit" disabled={signinPending} className="mt-2 flex h-12 w-full items-center justify-center gap-2 bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] text-sm font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95 disabled:opacity-50">
             {signinPending && <Loader2 className="h-4 w-4 animate-spin" />} Sign in
           </button>
         </form>
@@ -72,12 +72,12 @@ export default function LoginPage({ redirectTo }: LoginPageProps) {
           <ul className="space-y-2 pt-1">
             {["Facility access starts with your plan", "Class entitlement depends on tier", "Billing is handled securely by Stripe"].map((t) => (
               <li key={t} className="flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-[#c4c7c7]">
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#7df4ff]" />
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#a5b4fc]" />
                 {t}
               </li>
             ))}
           </ul>
-          <button type="submit" disabled={signupPending} className="mt-2 flex h-12 w-full items-center justify-center gap-2 bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] text-sm font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95 disabled:opacity-50">
+          <button type="submit" disabled={signupPending} className="mt-2 flex h-12 w-full items-center justify-center gap-2 bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] text-sm font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95 disabled:opacity-50">
             {signupPending && <Loader2 className="h-4 w-4 animate-spin" />} Create account
           </button>
         </form>

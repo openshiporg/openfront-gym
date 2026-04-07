@@ -18,7 +18,7 @@ const COLS = [
     ],
   },
   {
-    heading: "Info",
+    heading: "Explore",
     links: [
       { label: "Facilities", href: "/facilities" },
       { label: "Contact", href: "/contact" },
@@ -38,30 +38,42 @@ export default function Footer({
   const copyrightName = config?.copyrightName || brandName;
 
   return (
-    <footer className="border-t border-white/10 bg-[#0e0e0e] py-14">
-      <div className="mx-auto flex max-w-7xl flex-col gap-12 px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col justify-between gap-10 md:flex-row md:items-start">
-          <div>
-            <div className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.08em] text-white">
-              {brandName}
-            </div>
-            <p className="mt-4 max-w-sm text-sm leading-relaxed text-[#c4c7c7]">
+    <footer className="bg-[#0e0e0e]">
+      {/* Accent top line — indigo */}
+      <div className="h-[1px] w-full bg-[linear-gradient(90deg,#818cf8_0%,rgba(129,140,248,0.3)_40%,transparent_70%)]" />
+
+      <div className="mx-auto flex max-w-7xl flex-col gap-14 px-4 py-16 sm:px-6 lg:px-8">
+        <div className="flex flex-col justify-between gap-12 md:flex-row md:items-start">
+          {/* Brand */}
+          <div className="max-w-xs">
+            <Link href="/" className="flex items-center transition-opacity hover:opacity-75">
+              <span className="font-[family-name:var(--font-brand-serif)] text-[1.2rem] font-bold tracking-[-0.03em] text-white">
+                {brandName.split(' ')[0]}
+              </span>
+              {brandName.split(' ').slice(1).join(' ') && (
+                <span className="ml-2 font-[family-name:var(--font-brand-serif)] text-[1.1rem] font-normal tracking-[0.02em] text-[#818cf8]">
+                  {brandName.split(' ').slice(1).join(' ')}
+                </span>
+              )}
+            </Link>
+            <p className="mt-4 text-sm leading-relaxed text-[#c4c7c7]">
               {footerTagline}
             </p>
           </div>
 
+          {/* Link columns */}
           <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
             {COLS.map((col) => (
               <div key={col.heading}>
-                <h4 className="font-[family-name:var(--font-space-grotesk)] text-xs font-bold uppercase tracking-[0.2em] text-[#ffb59e]">
+                <h4 className="font-[family-name:var(--font-space-grotesk)] text-[10px] font-bold uppercase tracking-[0.22em] text-[#818cf8]">
                   {col.heading}
                 </h4>
-                <ul className="mt-5 space-y-3">
+                <ul className="mt-4 space-y-3">
                   {col.links.map((link) => (
                     <li key={link.label}>
                       <Link
                         href={link.href}
-                        className="text-xs font-medium uppercase tracking-[0.18em] text-[#c4c7c7] transition-colors hover:text-[#ffb59e]"
+                        className="text-xs font-medium uppercase tracking-[0.16em] text-[#c4c7c7] transition-colors hover:text-[#818cf8]"
                       >
                         {link.label}
                       </Link>
@@ -73,7 +85,8 @@ export default function Footer({
           </div>
         </div>
 
-        <div className="flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-[10px] uppercase tracking-[0.25em] text-[#c4c7c7]/60 md:flex-row">
+        {/* Bottom bar */}
+        <div className="flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-[10px] uppercase tracking-[0.22em] text-[#c4c7c7]/50 md:flex-row">
           <p>© {new Date().getFullYear()} {copyrightName}. All rights reserved.</p>
           <p>Built for disciplined training.</p>
         </div>
@@ -81,3 +94,4 @@ export default function Footer({
     </footer>
   );
 }
+

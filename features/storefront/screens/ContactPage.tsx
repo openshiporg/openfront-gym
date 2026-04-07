@@ -62,14 +62,14 @@ export async function ContactPage(props: {
       <div className="mx-auto max-w-7xl">
         <header className="mb-14 grid gap-8 lg:grid-cols-[1fr_0.7fr] lg:items-end">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Direct line</p>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Direct line</p>
             <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
               Contact
               <br />
               {config?.name || "the gym"}
             </h1>
           </div>
-          <p className="max-w-md border-l-2 border-[#ffb59e] pl-6 text-base leading-relaxed text-[#c4c7c7]">
+          <p className="max-w-md border-l-2 border-[#818cf8] pl-6 text-base leading-relaxed text-[#c4c7c7]">
             Reach the front desk, confirm facility details, ask about memberships, or book a tour of {config?.name || "the training environment"}.
           </p>
         </header>
@@ -80,7 +80,7 @@ export async function ContactPage(props: {
               const Icon = item.icon;
               return (
                 <div key={item.title} className={`${index % 2 === 0 ? "bg-[#1c1b1b]" : "bg-[#0e0e0e] border border-white/10"} flex gap-5 p-6`}>
-                  <Icon className="mt-1 h-5 w-5 shrink-0 text-[#ffb59e]" />
+                  <Icon className="mt-1 h-5 w-5 shrink-0 text-[#818cf8]" />
                   <div>
                     <h2 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.03em] text-white">
                       {item.title}
@@ -98,7 +98,7 @@ export async function ContactPage(props: {
 
           <section className="bg-[#1c1b1b] p-8">
             {status === "sent" ? (
-              <div className="mb-6 border border-[#7df4ff]/30 bg-[#00363a]/30 px-4 py-3 text-sm text-[#d3fbff]">
+              <div className="mb-6 border border-[#a5b4fc]/30 bg-[#00363a]/30 px-4 py-3 text-sm text-[#d3fbff]">
                 Thanks — your message has been sent to the front desk.
               </div>
             ) : null}
@@ -107,25 +107,25 @@ export async function ContactPage(props: {
                 We couldn't send your message right now. Please try again or contact the gym directly.
               </div>
             ) : null}
-            <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Inquiry form</p>
+            <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Inquiry form</p>
             <h2 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase tracking-[-0.05em] text-white">
               Send a message
             </h2>
             <form action={"/api/contact" as any} method="POST" className="mt-8 space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
-                <input name="firstName" required className="h-12 border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="First name" />
-                <input name="lastName" required className="h-12 border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="Last name" />
+                <input name="firstName" required className="h-12 border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#a5b4fc]" placeholder="First name" />
+                <input name="lastName" required className="h-12 border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#a5b4fc]" placeholder="Last name" />
               </div>
-              <input name="email" required className="h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="Email" type="email" />
-              <input name="phone" className="h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="Phone" type="tel" />
-              <select name="topic" className="h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-[#7df4ff]">
+              <input name="email" required className="h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#a5b4fc]" placeholder="Email" type="email" />
+              <input name="phone" className="h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#a5b4fc]" placeholder="Phone" type="tel" />
+              <select name="topic" className="h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white focus:outline-none focus:ring-1 focus:ring-[#a5b4fc]">
                 <option>Membership inquiry</option>
                 <option>Class information</option>
                 <option>Schedule a tour</option>
                 <option>General support</option>
               </select>
-              <textarea name="message" required className="min-h-[160px] w-full border border-white/10 bg-[#0e0e0e] px-4 py-3 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#7df4ff]" placeholder="How can we help?" />
-              <button type="submit" className="inline-flex bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95">
+              <textarea name="message" required className="min-h-[160px] w-full border border-white/10 bg-[#0e0e0e] px-4 py-3 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#a5b4fc]" placeholder="How can we help?" />
+              <button type="submit" className="inline-flex bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95">
                 Send message
               </button>
             </form>

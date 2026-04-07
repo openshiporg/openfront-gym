@@ -29,6 +29,7 @@ export const GymSettings = list({
     }),
 
     tagline: text({
+      defaultValue: "Movement is art. The body of work is you.",
       ui: { description: "Short brand tagline" },
     }),
 
@@ -85,7 +86,7 @@ export const GymSettings = list({
     }),
 
     heroHeadline: text({
-      defaultValue: "Train with structure. Recover with intent.",
+      defaultValue: "Movement is art.\nThe body of work\nis you.",
     }),
 
     heroSubheadline: text({
@@ -110,7 +111,7 @@ export const GymSettings = list({
     }),
 
     promoBanner: text({
-      defaultValue: "Memberships, schedules, and coaching all managed from one system.",
+      defaultValue: "Movement is art. The body of work is you.",
     }),
 
     footerTagline: text({

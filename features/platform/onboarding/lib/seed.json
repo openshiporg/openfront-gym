@@ -1,7 +1,7 @@
 {
   "gymSettings": {
     "name": "Kinetic Performance Club",
-    "tagline": "Structured training. Confident operations.",
+    "tagline": "Movement is art. The body of work is you.",
     "description": "A modern training club with memberships, coached classes, recovery support, and a storefront configured from real operational data.",
     "address": "123 Fitness Ave, San Francisco, CA 94102",
     "phone": "(415) 555-0100",
@@ -20,13 +20,13 @@
       "sunday": "7:00 AM - 4:00 PM"
     },
     "heroEyebrow": "Performance without compromise",
-    "heroHeadline": "Train hard. Recover well. Repeat with purpose.",
+    "heroHeadline": "Movement is art.\nThe body of work\nis you.",
     "heroSubheadline": "Membership access, class booking, instructor programming, and member operations all running from one coordinated platform.",
     "heroPrimaryCtaLabel": "Start membership",
     "heroPrimaryCtaHref": "/join",
     "heroSecondaryCtaLabel": "View schedule",
     "heroSecondaryCtaHref": "/schedule",
-    "promoBanner": "Get started fast — memberships, schedules, and instructor profiles are configured during onboarding.",
+    "promoBanner": "Movement is art. The body of work is you.",
     "footerTagline": "Built for disciplined training, clear scheduling, and a better member experience.",
     "copyrightName": "Kinetic Performance Club",
     "facilityHeadline": "Facility systems",

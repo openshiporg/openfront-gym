@@ -26,14 +26,14 @@ export async function InstructorsPage() {
       <div className="mx-auto max-w-7xl">
         <header className="mb-14 grid gap-8 lg:grid-cols-[1fr_0.7fr] lg:items-end">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Elite mentors</p>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Elite mentors</p>
             <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
               The coaching
               <br />
               team
             </h1>
           </div>
-          <p className="max-w-md border-l-2 border-[#ffb59e] pl-6 text-base leading-relaxed text-[#c4c7c7]">
+          <p className="max-w-md border-l-2 border-[#818cf8] pl-6 text-base leading-relaxed text-[#c4c7c7]">
             Every class, schedule, and progression path is anchored by a real instructor with a real teaching specialty.
           </p>
         </header>
@@ -55,8 +55,8 @@ export async function InstructorsPage() {
                 </div>
 
                 <div className="p-6">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffb59e]">Instructor</p>
-                  <h3 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.04em] text-white group-hover:text-[#ffb59e] transition-colors">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">Instructor</p>
+                  <h3 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.04em] text-white group-hover:text-[#818cf8] transition-colors">
                     {instructor.user.name}
                   </h3>
                   <p className="mt-4 text-sm leading-relaxed text-[#c4c7c7] line-clamp-3">{getBioText(instructor.bio)}</p>
@@ -67,7 +67,7 @@ export async function InstructorsPage() {
                     </p>
                   )}
 
-                  <div className="mt-6 border-t border-white/10 pt-4 text-xs font-bold uppercase tracking-[0.2em] text-[#7df4ff]">
+                  <div className="mt-6 border-t border-white/10 pt-4 text-xs font-bold uppercase tracking-[0.2em] text-[#a5b4fc]">
                     View profile
                   </div>
                 </div>

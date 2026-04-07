@@ -22,13 +22,13 @@ export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
   return (
     <div className="min-h-screen bg-[#131313] text-[#e5e2e1]">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-        <Link href="/memberships" className="inline-flex border-b border-[#ffb59e] pb-1 text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffb59e]">
+        <Link href="/memberships" className="inline-flex border-b border-[#818cf8] pb-1 text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">
           ← Back to memberships
         </Link>
 
         <div className="mt-10 grid gap-12 lg:grid-cols-[1fr_420px]">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">
               {config?.promoBanner || `Join ${config?.name || 'the gym'}`}
             </p>
             <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
@@ -55,7 +55,7 @@ export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
                       key={t.id}
                       href={`/join?tier=${t.id}`}
                       className={`flex flex-col gap-5 px-6 py-6 md:flex-row md:items-center md:justify-between ${
-                        isSelected ? "bg-[#1c1b1b] border-l-4 border-[#ffb59e]" : "bg-[#0e0e0e] border border-white/10 hover:bg-[#1c1b1b]"
+                        isSelected ? "bg-[#1c1b1b] border-l-4 border-[#818cf8]" : "bg-[#0e0e0e] border border-white/10 hover:bg-[#1c1b1b]"
                       }`}
                     >
                       <div>
@@ -71,7 +71,7 @@ export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
                           <p className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black tracking-[-0.04em] text-white">${Math.round(t.monthlyPrice)}</p>
                           <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">USD / month</p>
                         </div>
-                        {isSelected && <Check className="h-5 w-5 text-[#ffb59e]" strokeWidth={2.5} />}
+                        {isSelected && <Check className="h-5 w-5 text-[#818cf8]" strokeWidth={2.5} />}
                       </div>
                     </Link>
                   );
@@ -88,7 +88,7 @@ export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
             {user && selectedTier ? (
               <div className="space-y-6">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffb59e]">Signed in as</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">Signed in as</p>
                   <p className="mt-2 text-sm uppercase tracking-[0.16em] text-white">{user.email}</p>
                 </div>
 
@@ -120,14 +120,14 @@ export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
                   <form action={redirectToMembershipCheckout}>
                     <input type="hidden" name="tierId" value={selectedTier.id} />
                     <input type="hidden" name="billingCycle" value="monthly" />
-                    <button type="submit" className="w-full bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-5 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95">
+                    <button type="submit" className="w-full bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-5 py-4 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95">
                       Checkout monthly · ${Math.round(selectedTier.monthlyPrice)}
                     </button>
                   </form>
                   <form action={redirectToMembershipCheckout}>
                     <input type="hidden" name="tierId" value={selectedTier.id} />
                     <input type="hidden" name="billingCycle" value="annual" />
-                    <button type="submit" className="w-full border border-[#7df4ff] px-5 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7df4ff] transition-colors hover:bg-[#7df4ff]/10">
+                    <button type="submit" className="w-full border border-[#a5b4fc] px-5 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#a5b4fc] transition-colors hover:bg-[#a5b4fc]/10">
                       Checkout annual · ${Math.round(selectedTier.annualPrice)}
                     </button>
                   </form>
@@ -140,7 +140,7 @@ export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
             ) : (
               <div className="space-y-5">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffb59e]">Create your account</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">Create your account</p>
                   <h2 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.05em] text-white">
                     Identity first.
                     <br />

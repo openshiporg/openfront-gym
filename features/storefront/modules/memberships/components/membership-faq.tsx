@@ -36,7 +36,7 @@ export default function MembershipFAQ() {
   return (
     <div className="text-[#e5e2e1]">
       <div className="mb-8">
-        <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Protocol & access</p>
+        <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Protocol & access</p>
         <h2 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase tracking-[-0.06em] text-white">
           Questions
         </h2>
@@ -54,7 +54,7 @@ export default function MembershipFAQ() {
                 <span className="font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase tracking-[-0.03em] text-white">
                   {faq.q}
                 </span>
-                <ChevronDown className={`h-5 w-5 shrink-0 text-[#ffb59e] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                <ChevronDown className={`h-5 w-5 shrink-0 text-[#818cf8] transition-transform ${isOpen ? "rotate-180" : ""}`} />
               </button>
               {isOpen && <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[#c4c7c7]">{faq.a}</p>}
             </div>

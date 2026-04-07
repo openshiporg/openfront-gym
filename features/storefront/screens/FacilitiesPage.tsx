@@ -34,12 +34,12 @@ export async function FacilitiesPage() {
       <div className="mx-auto max-w-7xl">
         <header className="mb-14 grid gap-8 lg:grid-cols-[1fr_0.7fr] lg:items-end">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Built environment</p>
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Built environment</p>
             <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
               {config?.facilityHeadline || "Facility systems"}
             </h1>
           </div>
-          <p className="max-w-md border-l-2 border-[#ffb59e] pl-6 text-base leading-relaxed text-[#c4c7c7]">
+          <p className="max-w-md border-l-2 border-[#818cf8] pl-6 text-base leading-relaxed text-[#c4c7c7]">
             {config?.facilityDescription || "Training, coaching, recovery, and member access all live in one coordinated environment."}
           </p>
         </header>
@@ -49,7 +49,7 @@ export async function FacilitiesPage() {
             const Icon = ICONS[index % ICONS.length];
             return (
               <article key={facility.title} className={`${index % 2 === 0 ? "bg-[#1c1b1b]" : "bg-[#0e0e0e] border border-white/10"} p-8`}>
-                <Icon className="h-8 w-8 text-[#ffb59e]" />
+                <Icon className="h-8 w-8 text-[#818cf8]" />
                 <h2 className="mt-6 font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.04em] text-white">
                   {facility.title}
                 </h2>

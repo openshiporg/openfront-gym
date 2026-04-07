@@ -19,14 +19,14 @@ export async function MembershipsPage() {
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,181,158,0.18),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(125,244,255,0.12),transparent_32%)]" />
           <div className="relative z-10 grid gap-8 lg:grid-cols-[1fr_0.7fr] lg:items-end">
             <div>
-              <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Engineered access</p>
+              <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Engineered access</p>
               <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.88] tracking-[-0.08em] text-white sm:text-7xl">
                 Membership
                 <br />
                 architecture
               </h1>
             </div>
-            <p className="max-w-md border-l-2 border-[#ffb59e] pl-6 text-base leading-relaxed text-[#c4c7c7]">
+            <p className="max-w-md border-l-2 border-[#818cf8] pl-6 text-base leading-relaxed text-[#c4c7c7]">
               Every plan includes facility access. Class access, recovery depth, and coaching benefits scale with the tier you choose.
             </p>
           </div>

@@ -4,7 +4,6 @@ import { notFound } from "next/navigation"
 import { Clock, Flame, Dumbbell, ChevronLeft, Calendar } from "lucide-react"
 import { getClassTypeById, getSchedulesByClassType } from "@/features/storefront/lib/data/classes"
 
-// Helper to get description text
 function getDescriptionText(description: any): string {
   if (!description?.document?.[0]?.children?.[0]?.text) {
     return "Join us for this exciting fitness class.";
@@ -12,193 +11,184 @@ function getDescriptionText(description: any): string {
   return description.document[0].children[0].text;
 }
 
-// Helper to get difficulty color
-function getDifficultyColor(difficulty: string): string {
-  const colors: Record<string, string> = {
-    'beginner': 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-    'intermediate': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-    'advanced': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-    'all-levels': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  };
-  return colors[difficulty] || 'bg-primary/10 text-primary';
-}
+const DIFFICULTY_LABEL: Record<string, { label: string; color: string }> = {
+  beginner: { label: "Balanced", color: "#a5b4fc" },
+  intermediate: { label: "Intense", color: "#818cf8" },
+  advanced: { label: "Elite", color: "#4f46e5" },
+  "all-levels": { label: "Mixed", color: "#a5b4fc" },
+};
 
-// Map day codes
 const dayCodeToName: Record<string, string> = {
-  'sun': 'Sunday',
-  'mon': 'Monday',
-  'tue': 'Tuesday',
-  'wed': 'Wednesday',
-  'thu': 'Thursday',
-  'fri': 'Friday',
-  'sat': 'Saturday',
+  'sun': 'Sunday', 'mon': 'Monday', 'tue': 'Tuesday',
+  'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday',
 }
 
-export async function generateMetadata(props: {
-  params: Promise<{ id: string }>
-}): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const params = await props.params
   const classType = await getClassTypeById(params.id)
-
-  if (!classType) {
-    return {
-      title: 'Class Not Found - Openfront Gym',
-    }
-  }
-
+  if (!classType) return { title: 'Class Not Found - Openfront Gym' }
   return {
-    title: `${classType.name} - Openfront Gym`,
+    title: `${classType.name} — Openfront Gym`,
     description: getDescriptionText(classType.description),
   }
 }
 
-export async function ClassDetailPage(props: {
-  params: Promise<{ id: string }>
-}) {
+export async function ClassDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
   const classType = await getClassTypeById(params.id) as any
-
-  if (!classType) {
-    notFound()
-  }
+  if (!classType) notFound()
 
   const schedules = await getSchedulesByClassType(params.id) as any[]
   const description = getDescriptionText(classType.description)
+  const diff = DIFFICULTY_LABEL[classType.difficulty] ?? { label: "All Levels", color: "#a5b4fc" }
 
   return (
-    <div className="container py-8 md:py-12">
-      {/* Back button */}
-      <div className="mb-6">
+    <div className="min-h-screen bg-[#131313] px-4 pb-24 pt-14 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        {/* Back link */}
         <Link
           href="/classes"
-          className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+          className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7] transition-colors hover:text-[#818cf8]"
         >
-          <ChevronLeft className="w-4 h-4" />
-          Back to classes
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Training catalog
         </Link>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main content */}
-        <div className="lg:col-span-2 space-y-8">
-          {/* Header */}
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <span className={`text-xs font-semibold px-3 py-1 rounded-full ${getDifficultyColor(classType.difficulty)}`}>
-                {classType.difficulty?.replace('-', ' ') || 'All Levels'}
-              </span>
-              {classType.caloriesBurn && (
-                <div className="flex items-center gap-1 text-sm font-semibold">
-                  <Flame className="w-4 h-4 text-orange-500" />
-                  {classType.caloriesBurn} cal
+        <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_340px]">
+          {/* Main */}
+          <div className="space-y-8">
+            {/* Header */}
+            <div>
+              <div className="flex items-center gap-3 mb-5">
+                <span
+                  className="text-[10px] font-bold uppercase tracking-[0.22em]"
+                  style={{ color: diff.color }}
+                >
+                  {diff.label}
+                </span>
+                {classType.caloriesBurn && (
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#c4c7c7]">
+                    <Flame className="h-3.5 w-3.5 text-[#818cf8]" />
+                    {classType.caloriesBurn} cal
+                  </span>
+                )}
+              </div>
+              <h1 className="gym-heading">{classType.name}</h1>
+              <p className="gym-callout mt-6 max-w-xl">{description}</p>
+            </div>
+
+            {/* Stats row */}
+            <div className="grid grid-cols-3 gap-px bg-white/[0.06]">
+              <div className="flex flex-col items-center justify-center gap-2 bg-[#1c1b1b] py-7">
+                <Clock className="h-5 w-5 text-[#818cf8]" />
+                <div className="gym-stat-value text-2xl">{classType.duration}</div>
+                <div className="gym-stat-label">minutes</div>
+              </div>
+              <div className="flex flex-col items-center justify-center gap-2 bg-[#1c1b1b] py-7">
+                <Flame className="h-5 w-5 text-[#818cf8]" />
+                <div className="gym-stat-value text-2xl">{classType.caloriesBurn || '—'}</div>
+                <div className="gym-stat-label">calories</div>
+              </div>
+              <div className="flex flex-col items-center justify-center gap-2 bg-[#1c1b1b] py-7">
+                <Calendar className="h-5 w-5 text-[#818cf8]" />
+                <div className="gym-stat-value text-2xl">{schedules.length}</div>
+                <div className="gym-stat-label">sessions/wk</div>
+              </div>
+            </div>
+
+            {/* Equipment */}
+            {classType.equipmentNeeded && classType.equipmentNeeded.length > 0 && (
+              <div className="bg-[#1c1b1b] p-8">
+                <div className="flex items-center gap-3 mb-5">
+                  <Dumbbell className="h-5 w-5 text-[#818cf8]" />
+                  <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-black uppercase tracking-[-0.04em] text-white">
+                    Equipment needed
+                  </h2>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {classType.equipmentNeeded.map((item: string) => (
+                    <span key={item} className="gym-tag">{item}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Schedule */}
+            <div className="bg-[#1c1b1b] p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <Calendar className="h-5 w-5 text-[#818cf8]" />
+                <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-black uppercase tracking-[-0.04em] text-white">
+                  Weekly schedule
+                </h2>
+              </div>
+              {schedules.length === 0 ? (
+                <p className="text-sm uppercase tracking-[0.14em] text-[#c4c7c7]">
+                  No sessions scheduled at the moment. Check back soon.
+                </p>
+              ) : (
+                <div className="divide-y divide-white/10">
+                  {schedules.map((schedule: any) => (
+                    <div key={schedule.id} className="flex flex-col gap-4 py-5 md:flex-row md:items-center md:justify-between">
+                      <div className="flex items-start gap-8">
+                        <div className="min-w-[100px]">
+                          <div className="font-[family-name:var(--font-space-grotesk)] text-lg font-black uppercase tracking-[-0.03em] text-white">
+                            {schedule.dayOfWeek?.map((d: string) => dayCodeToName[d]).join(', ')}
+                          </div>
+                          <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[#c4c7c7]">
+                            {schedule.startTime}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-sm uppercase tracking-[0.1em] text-[#c4c7c7]">
+                            with {schedule.instructor?.name || 'TBD'}
+                          </div>
+                          {schedule.room && (
+                            <div className="mt-0.5 text-xs text-[#c4c7c7]/60">{schedule.room}</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 md:text-right">
+                        <div>
+                          <div className="font-[family-name:var(--font-space-grotesk)] text-lg font-black tracking-[-0.04em] text-white">
+                            {schedule.spotsAvailable} / {schedule.totalCapacity}
+                          </div>
+                          <div className="text-[9px] uppercase tracking-[0.18em] text-[#c4c7c7]">spots</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-            <h1 className="text-4xl font-bold mb-4">{classType.name}</h1>
-            <p className="text-lg text-muted-foreground">{description}</p>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="text-center p-6 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl">
-              <Clock className="w-6 h-6 mx-auto mb-2 text-primary" />
-              <div className="text-2xl font-bold">{classType.duration}</div>
-              <div className="text-sm text-muted-foreground">minutes</div>
-            </div>
-            <div className="text-center p-6 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl">
-              <Flame className="w-6 h-6 mx-auto mb-2 text-orange-500" />
-              <div className="text-2xl font-bold">{classType.caloriesBurn || 'N/A'}</div>
-              <div className="text-sm text-muted-foreground">calories</div>
-            </div>
-            <div className="text-center p-6 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl">
-              <Calendar className="w-6 h-6 mx-auto mb-2 text-primary" />
-              <div className="text-2xl font-bold">{schedules.length}</div>
-              <div className="text-sm text-muted-foreground">sessions/week</div>
-            </div>
-          </div>
-
-          {/* Equipment */}
-          {classType.equipmentNeeded && classType.equipmentNeeded.length > 0 && (
-            <div className="border rounded-xl p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Dumbbell className="w-5 h-5 text-primary" />
-                <h2 className="text-xl font-bold">Equipment Needed</h2>
+          {/* Sidebar */}
+          <div>
+            <div className="sticky top-24 space-y-4">
+              {/* Book CTA */}
+              <div className="relative overflow-hidden bg-[#1c1b1b] p-8">
+                <div className="absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,#818cf8_0%,#4f46e5_100%)]" />
+                <h3 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.04em] text-white">
+                  Ready to book?
+                </h3>
+                <p className="mt-3 text-sm leading-relaxed text-[#c4c7c7]">
+                  View the full schedule and book your spot in this class.
+                </p>
+                <Link href="/schedule" className="gym-btn-primary mt-6 block w-full text-center">
+                  View schedule
+                </Link>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {classType.equipmentNeeded.map((item: string, index: number) => (
-                  <span key={index} className="px-3 py-1 bg-muted rounded-full text-sm">
-                    {item}
-                  </span>
-                ))}
+
+              {/* Help */}
+              <div className="bg-[#0e0e0e] border border-white/10 p-6">
+                <h4 className="text-xs font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Need help?</h4>
+                <p className="mt-2 text-sm leading-relaxed text-[#c4c7c7]">
+                  Have questions about this class? Our team is here to help.
+                </p>
+                <Link href="/contact" className="gym-btn-ghost mt-4 inline-flex">
+                  Contact us
+                </Link>
               </div>
-            </div>
-          )}
-
-          {/* Schedule */}
-          <div className="border rounded-xl p-6">
-            <h2 className="text-xl font-bold mb-6">Weekly Schedule</h2>
-            {schedules.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">
-                No sessions scheduled at the moment. Check back soon!
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {schedules.map((schedule: any) => (
-                  <div key={schedule.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
-                    <div className="flex items-center gap-4">
-                      <div className="min-w-[100px]">
-                        <div className="font-semibold">
-                          {schedule.dayOfWeek?.map((d: string) => dayCodeToName[d]).join(', ')}
-                        </div>
-                        <div className="text-sm text-muted-foreground">{schedule.startTime}</div>
-                      </div>
-                      <div className="text-sm">
-                        <div>with {schedule.instructor?.name || 'TBD'}</div>
-                        {schedule.room && (
-                          <div className="text-muted-foreground">{schedule.room}</div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-semibold">
-                        {schedule.spotsAvailable} / {schedule.totalCapacity}
-                      </div>
-                      <div className="text-xs text-muted-foreground">spots</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="lg:col-span-1">
-          <div className="sticky top-24 space-y-4">
-            <div className="border-2 border-primary/20 rounded-xl p-6 bg-gradient-to-br from-primary/5 to-background">
-              <h3 className="font-bold text-lg mb-4">Ready to Book?</h3>
-              <p className="text-sm text-muted-foreground mb-6">
-                View our full schedule to book your spot in this class
-              </p>
-              <Link
-                href="/schedule"
-                className="block w-full bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-lg text-sm font-bold text-center transition-colors shadow-lg shadow-primary/20"
-              >
-                View Schedule
-              </Link>
-            </div>
-
-            <div className="border rounded-xl p-6">
-              <h3 className="font-semibold mb-3">Need Help?</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Have questions about this class? Our team is here to help.
-              </p>
-              <Link
-                href="/contact"
-                className="text-sm text-primary hover:underline font-medium"
-              >
-                Contact Us
-              </Link>
             </div>
           </div>
         </div>

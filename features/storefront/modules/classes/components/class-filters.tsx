@@ -44,8 +44,8 @@ export default function ClassFilters({
             const active = selectedDifficulty === item.id || (!selectedDifficulty && item.id === "all");
             return (
               <Link key={item.id} href={buildHref({ difficulty: item.id })} className="flex items-center gap-3">
-                <span className={`h-4 w-4 border transition-colors ${active ? "border-[#ffb59e] bg-[#ffb59e]" : "border-[#8e9192]"}`} />
-                <span className={`text-sm uppercase tracking-[0.14em] ${active ? "text-[#ffb59e]" : "text-[#e5e2e1]"}`}>
+                <span className={`h-4 w-4 border transition-colors ${active ? "border-[#818cf8] bg-[#818cf8]" : "border-[#8e9192]"}`} />
+                <span className={`text-sm uppercase tracking-[0.14em] ${active ? "text-[#818cf8]" : "text-[#e5e2e1]"}`}>
                   {item.name}
                 </span>
               </Link>
@@ -64,7 +64,7 @@ export default function ClassFilters({
                 key={item.id}
                 href={buildHref({ duration: item.id })}
                 className={`px-3 py-2 text-center text-[10px] font-bold uppercase tracking-[0.22em] transition-colors ${
-                  active ? "bg-[#ffb59e] text-[#3a0b00]" : "bg-[#353535] text-[#e5e2e1] hover:bg-[#393939]"
+                  active ? "bg-[#818cf8] text-white" : "bg-[#353535] text-[#e5e2e1] hover:bg-[#393939]"
                 }`}
               >
                 {item.name}
@@ -74,7 +74,7 @@ export default function ClassFilters({
         </div>
       </div>
 
-      <Link href="/classes" className="inline-flex items-center gap-2 border-b border-[#ffb59e] pb-1 text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffb59e]">
+      <Link href="/classes" className="inline-flex items-center gap-2 border-b border-[#818cf8] pb-1 text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">
         Reset all filters
       </Link>
     </aside>

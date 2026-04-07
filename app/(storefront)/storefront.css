@@ -120,3 +120,253 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ============================================================
+   GYM DESIGN SYSTEM — Openfront Gym storefront tokens
+   All storefront-specific styling should reference these vars.
+   ============================================================ */
+
+:root {
+  /* Palette */
+  --gym-accent:          #818cf8;
+  --gym-accent-dark:     #4f46e5;
+  --gym-accent-on:       #1e1b4b;
+  --gym-highlight:       #818cf8;
+  --gym-highlight-on:    #1e1b4b;
+
+  /* Backgrounds */
+  --gym-bg:              #131313;
+  --gym-bg-elevated:     #1c1b1b;
+  --gym-bg-deep:         #0e0e0e;
+  --gym-bg-interactive:  #353535;
+  --gym-bg-interactive-h:#393939;
+
+  /* Text */
+  --gym-text:            #e5e2e1;
+  --gym-text-muted:      #c4c7c7;
+  --gym-text-faint:      #8e9192;
+
+  /* Borders */
+  --gym-border:          rgba(255,255,255,0.10);
+  --gym-border-strong:   rgba(255,255,255,0.18);
+
+  /* Gradients */
+  --gym-gradient-accent: linear-gradient(45deg, #818cf8 0%, #4f46e5 100%);
+  --gym-gradient-hero:   radial-gradient(ellipse 80% 60% at -5% 30%, rgba(79,70,229,0.18), transparent),
+                         radial-gradient(circle at 90% 90%, rgba(99,102,241,0.12), transparent 40%);
+
+  /* Spacing scale (page-level) */
+  --gym-section-py:      5rem;
+  --gym-section-py-lg:   6rem;
+  --gym-container-px:    1rem;
+  --gym-container-mw:    80rem;
+}
+
+/* ---- Utility classes ---- */
+
+.gym-container {
+  width: 100%;
+  max-width: var(--gym-container-mw);
+  margin-inline: auto;
+  padding-inline: var(--gym-container-px);
+}
+@media (min-width: 640px)  { .gym-container { padding-inline: 1.5rem; } }
+@media (min-width: 1024px) { .gym-container { padding-inline: 2rem; } }
+
+.gym-section     { padding-block: var(--gym-section-py); }
+.gym-section-lg  { padding-block: var(--gym-section-py-lg); }
+
+.gym-page-header {
+  display: grid;
+  gap: 2rem;
+  margin-bottom: 3.5rem;
+  align-items: end;
+}
+@media (min-width: 1024px) {
+  .gym-page-header { grid-template-columns: 1fr 0.7fr; }
+}
+
+/* Typography */
+.gym-eyebrow {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  color: var(--gym-accent);
+  margin-bottom: 1rem;
+}
+
+.gym-heading {
+  font-family: var(--font-space-grotesk);
+  font-size: clamp(2.75rem, 7vw, 5.5rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: 0.88;
+  letter-spacing: -0.08em;
+  color: #fff;
+}
+
+.gym-heading-lg {
+  font-family: var(--font-space-grotesk);
+  font-size: clamp(3.5rem, 9vw, 7rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: 0.88;
+  letter-spacing: -0.08em;
+  color: #fff;
+}
+
+.gym-subheading {
+  font-family: var(--font-space-grotesk);
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.05em;
+  color: #fff;
+}
+
+.gym-body    { font-size: 0.9375rem; line-height: 1.7; color: var(--gym-text-muted); }
+.gym-label   { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.22em; color: var(--gym-text-muted); }
+
+.gym-callout {
+  border-left: 2px solid var(--gym-accent);
+  padding-left: 1.25rem;
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--gym-text-muted);
+}
+
+/* Buttons */
+.gym-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gym-gradient-accent);
+  color: var(--gym-accent-on);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  padding: 1rem 2rem;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+  cursor: pointer;
+  border: none;
+}
+.gym-btn-primary:active { transform: scale(0.97); }
+.gym-btn-primary:hover  { opacity: 0.92; }
+
+.gym-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 2px solid var(--gym-highlight);
+  color: var(--gym-highlight);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  padding: 1rem 2rem;
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+.gym-btn-outline:hover { background: rgba(129, 140, 248, 0.08); }
+
+.gym-btn-accent-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--gym-accent);
+  color: var(--gym-accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  padding: 0.75rem 1.5rem;
+  transition: background 0.15s ease;
+  cursor: pointer;
+}
+.gym-btn-accent-outline:hover { background: rgba(255, 181, 158, 0.08); }
+
+.gym-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--gym-accent);
+  padding-bottom: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--gym-accent);
+  transition: letter-spacing 0.2s ease;
+}
+.gym-btn-ghost:hover { letter-spacing: 0.28em; }
+
+/* Cards */
+.gym-card             { background: var(--gym-bg-elevated); padding: 2rem; }
+.gym-card-deep        { background: var(--gym-bg-deep); border: 1px solid var(--gym-border); padding: 2rem; }
+.gym-card-interactive { background: var(--gym-bg-interactive); padding: 2rem; transition: background 0.15s ease; }
+.gym-card-interactive:hover { background: var(--gym-bg-interactive-h); }
+
+/* Dividers */
+.gym-divider { border-color: var(--gym-border); }
+
+/* Stat display */
+.gym-stat-value {
+  font-family: var(--font-space-grotesk);
+  font-size: 2rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.06em;
+  color: #fff;
+}
+.gym-stat-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: var(--gym-text-muted);
+  margin-top: 0.2rem;
+}
+
+/* Tag / chip */
+.gym-tag {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  background: rgba(255, 181, 158, 0.12);
+  color: var(--gym-accent);
+  border: 1px solid rgba(255, 181, 158, 0.25);
+}
+
+/* Avatar placeholder */
+.gym-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #2a2a2a 0%, #1c1b1b 100%);
+  border: 2px solid var(--gym-border);
+  color: rgba(255,255,255,0.15);
+  font-family: var(--font-space-grotesk);
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+/* Section divider accent */
+.gym-section-accent {
+  height: 1px;
+  background: linear-gradient(90deg, var(--gym-accent) 0%, transparent 60%);
+  opacity: 0.4;
+}
+
+/* Scroll reveal animation support */
+@keyframes gym-fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.gym-fade-up { animation: gym-fade-up 0.5s ease forwards; }

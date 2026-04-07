@@ -31,8 +31,8 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
         <div className="bg-[#1c1b1b] p-10">
           {result.ok ? (
             <>
-              <CheckCircle2 className="h-10 w-10 text-[#7df4ff]" />
-              <p className="mt-5 text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Membership activated</p>
+              <CheckCircle2 className="h-10 w-10 text-[#a5b4fc]" />
+              <p className="mt-5 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Membership activated</p>
               <h1 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase tracking-[-0.07em] text-white">
                 Welcome to
                 <br />
@@ -42,17 +42,17 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
                 Your <span className="text-white font-medium">{result.tierName}</span> plan is now active on a <span className="text-white font-medium">{result.billingCycle}</span> billing cycle. You can now book classes, manage billing, and use your member account.
               </p>
               <div className="mt-10 flex flex-wrap gap-3">
-                <Link href="/account" className="inline-flex bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95">
+                <Link href="/account" className="inline-flex bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95">
                   Go to account
                 </Link>
-                <Link href="/schedule" className="inline-flex border border-[#7df4ff] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7df4ff] transition-colors hover:bg-[#7df4ff]/10">
+                <Link href="/schedule" className="inline-flex border border-[#a5b4fc] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#a5b4fc] transition-colors hover:bg-[#a5b4fc]/10">
                   Browse schedule
                 </Link>
               </div>
             </>
           ) : (
             <>
-              <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#ffb59e]">Checkout complete</p>
+              <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Checkout complete</p>
               <h1 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase tracking-[-0.07em] text-white">
                 Verification
                 <br />
@@ -60,10 +60,10 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
               </h1>
               <p className="mt-5 max-w-xl text-base leading-relaxed text-[#c4c7c7]">{result.message}</p>
               <div className="mt-10 flex flex-wrap gap-3">
-                <Link href="/account" className="inline-flex bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95">
+                <Link href="/account" className="inline-flex bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95">
                   Go to account
                 </Link>
-                <Link href="/join" className="inline-flex border border-[#7df4ff] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#7df4ff] transition-colors hover:bg-[#7df4ff]/10">
+                <Link href="/join" className="inline-flex border border-[#a5b4fc] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#a5b4fc] transition-colors hover:bg-[#a5b4fc]/10">
                   Back to join
                 </Link>
               </div>

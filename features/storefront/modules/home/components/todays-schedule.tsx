@@ -23,19 +23,18 @@ export default async function TodaysSchedule() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-10 flex items-end justify-between gap-6">
           <div>
-            <h2 className="font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase tracking-[-0.06em] text-white sm:text-5xl">
-              Live now & next
-            </h2>
-            <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.28em] text-[#c4c7c7]">
-              Precision class instrumentation
+            <p className="gym-eyebrow">Today</p>
+            <h2 className="gym-heading">Live now &amp; next</h2>
+            <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.28em] text-[#c4c7c7]">
+              Precision class tracking
             </p>
           </div>
-          <Link href="/schedule" className="hidden border-b border-[#ffb59e] pb-1 text-xs font-bold uppercase tracking-[0.22em] text-[#ffb59e] sm:inline-flex">
-            View full schedule
+          <Link href="/schedule" className="hidden sm:inline-flex items-center gap-1 border-b border-[#818cf8] pb-1 text-xs font-bold uppercase tracking-[0.22em] text-[#818cf8] hover:opacity-75 transition-opacity">
+            Full schedule
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 gap-1 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-px bg-white/[0.07] md:grid-cols-2 xl:grid-cols-4">
           {classes.slice(0, 4).map((cls: any) => {
             const duration = cls.classType?.duration ?? 60;
             const isNow = isClassNow(cls.startTime, duration);
@@ -46,28 +45,32 @@ export default async function TodaysSchedule() {
               <Link
                 key={cls.id}
                 href="/schedule"
-                className={`flex min-h-[320px] flex-col justify-between p-8 transition-colors ${
-                  isNow ? "bg-[#00eefc] text-[#00363a]" : "bg-[#353535] text-white hover:bg-[#393939]"
+                className={`group flex min-h-[320px] flex-col justify-between p-8 transition-colors ${
+                  isNow
+                    ? "bg-[#4f46e5] text-white"
+                    : "bg-[#252525] text-white hover:bg-[#2c2c2c]"
                 }`}
               >
                 <div>
-                  <span className={`inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-[0.24em] ${
-                    isNow ? "bg-[#00363a] text-[#d3fbff]" : "text-[#c4c7c7]"
-                  }`}>
+                  <span
+                    className={`inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-[0.24em] ${
+                      isNow ? "bg-white/15 text-white" : "bg-white/10 text-[#c4c7c7]"
+                    }`}
+                  >
                     {isNow ? "Live now" : `Starts ${cls.startTime}`}
                   </span>
-                  <h3 className="mt-8 font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase leading-none tracking-[-0.06em]">
+                  <h3 className="mt-8 font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase leading-none tracking-[-0.06em] text-white">
                     {(cls.classType?.name ?? cls.name).split(" ").slice(0, 2).join(" ")}
                   </h3>
                 </div>
 
                 <div className="space-y-4 text-sm uppercase tracking-[0.16em]">
-                  <div className={`flex items-center justify-between border-b pb-4 ${isNow ? "border-[#00363a]/20" : "border-white/10"}`}>
-                    <span className={isNow ? "text-[#004f54]" : "text-[#c4c7c7]"}>Instructor</span>
+                  <div className="flex items-center justify-between border-b border-white/20 pb-4">
+                    <span className="text-white/60">Instructor</span>
                     <span className="font-medium">{cls.instructor?.name ?? "TBD"}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className={isNow ? "text-[#004f54]" : "text-[#c4c7c7]"}>Spots left</span>
+                    <span className="text-white/60">Spots left</span>
                     <span className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black tracking-[-0.05em]">
                       {isFull ? "FULL" : String(spotsLeft).padStart(2, "0")}
                     </span>

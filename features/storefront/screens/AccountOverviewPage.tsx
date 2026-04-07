@@ -17,7 +17,7 @@ export default async function AccountOverviewPage() {
         <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.92] tracking-[-0.08em] text-white sm:text-7xl">
           Welcome back,
           <br />
-          <span className="text-[#ffb59e]">{firstName}</span>
+          <span className="text-[#818cf8]">{firstName}</span>
         </h1>
         <p className="mt-5 max-w-xl text-base leading-relaxed text-[#c4c7c7]">
           Your member account is where bookings, billing, and role-aware tools come together.
@@ -65,11 +65,11 @@ export default async function AccountOverviewPage() {
               </div>
             </div>
           </div>
-          <div className="pointer-events-none absolute -bottom-12 -right-12 h-64 w-64 rotate-12 border-[28px] border-[#ffb59e]/5" />
+          <div className="pointer-events-none absolute -bottom-12 -right-12 h-64 w-64 rotate-12 border-[28px] border-[#818cf8]/5" />
         </section>
 
         <section className="md:col-span-4 flex flex-col gap-4">
-          <Link href="/schedule" className="bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 py-6 text-sm font-bold uppercase tracking-[0.2em] text-[#3a0b00] transition-transform active:scale-95">
+          <Link href="/schedule" className="bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-6 text-sm font-bold uppercase tracking-[0.2em] text-white transition-transform active:scale-95">
             Book next class
           </Link>
           <Link href="/account/membership" className="bg-[#1c1b1b] px-6 py-6 text-sm font-bold uppercase tracking-[0.2em] text-white transition-colors hover:bg-[#2a2a2a]">
@@ -91,7 +91,7 @@ export default async function AccountOverviewPage() {
           <h2 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-bold uppercase tracking-[-0.04em] text-white">
             Upcoming bookings
           </h2>
-          <Link href="/account/bookings" className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffb59e]">
+          <Link href="/account/bookings" className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">
             View all
           </Link>
         </div>
@@ -114,7 +114,7 @@ export default async function AccountOverviewPage() {
                       : "Date TBD"}
                   </p>
                 </div>
-                <div className="text-sm font-bold uppercase tracking-[0.18em] text-[#7df4ff]">{booking.status}</div>
+                <div className="text-sm font-bold uppercase tracking-[0.18em] text-[#a5b4fc]">{booking.status}</div>
               </div>
             ))}
           </div>

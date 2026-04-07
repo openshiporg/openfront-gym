@@ -1,10 +1,9 @@
 import { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { Award, Calendar, ChevronLeft, Clock, Star } from "lucide-react"
+import { Award, Calendar, ChevronLeft, Clock } from "lucide-react"
 import { getInstructorById, getInstructorSchedules } from "@/features/storefront/lib/data/instructors"
 
-// Helper to get bio text
 function getBioText(bio: any): string {
   if (!bio?.document?.[0]?.children?.[0]?.text) {
     return "Expert fitness instructor passionate about helping you achieve your goals.";
@@ -12,200 +11,175 @@ function getBioText(bio: any): string {
   return bio.document[0].children[0].text;
 }
 
-// Map day codes to day names
 const dayCodeToName: Record<string, string> = {
-  'sun': 'Sunday',
-  'mon': 'Monday',
-  'tue': 'Tuesday',
-  'wed': 'Wednesday',
-  'thu': 'Thursday',
-  'fri': 'Friday',
-  'sat': 'Saturday',
+  'sun': 'Sunday', 'mon': 'Monday', 'tue': 'Tuesday',
+  'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday',
 }
 
-export async function generateMetadata(props: {
-  params: Promise<{ id: string }>
-}): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const params = await props.params
   const instructor = await getInstructorById(params.id)
-
-  if (!instructor) {
-    return {
-      title: 'Instructor Not Found - Openfront Gym',
-    }
-  }
-
+  if (!instructor) return { title: 'Instructor Not Found - Openfront Gym' }
   return {
-    title: `${instructor.user.name} - Instructor - Openfront Gym`,
+    title: `${instructor.user.name} — Instructor — Openfront Gym`,
     description: getBioText(instructor.bio),
   }
 }
 
-export async function InstructorDetailPage(props: {
-  params: Promise<{ id: string }>
-}) {
+export async function InstructorDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
   const instructor = await getInstructorById(params.id)
-
-  if (!instructor) {
-    notFound()
-  }
+  if (!instructor) notFound()
 
   const schedules = await getInstructorSchedules(params.id)
   const bio = getBioText(instructor.bio)
 
+  const initials = instructor.user.name
+    .split(" ")
+    .map((n: string) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
-    <div className="container py-8 md:py-12">
-      {/* Back button */}
-      <div className="mb-6">
+    <div className="min-h-screen bg-[#131313] px-4 pb-24 pt-14 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        {/* Back link */}
         <Link
           href="/instructors"
-          className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1 transition-colors"
+          className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7] transition-colors hover:text-[#818cf8]"
         >
-          <ChevronLeft className="w-4 h-4" />
-          Back to instructors
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Coaching team
         </Link>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Instructor info */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Header */}
-          <div className="flex flex-col md:flex-row gap-6">
-            <div className="relative w-full md:w-48 h-48 rounded-xl overflow-hidden bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center flex-shrink-0">
-              {instructor.photo ? (
-                <img
-                  src={instructor.photo}
-                  alt={instructor.user.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="text-6xl font-bold text-primary/30">
-                  {instructor.user.name.charAt(0)}
-                </div>
-              )}
-            </div>
-
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-3xl md:text-4xl font-bold">{instructor.user.name}</h1>
-                <span className="bg-primary/90 text-primary-foreground px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
-                  <Star className="w-3 h-3 fill-current" />
-                  Expert
-                </span>
+        <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_360px]">
+          {/* Main content */}
+          <div className="space-y-10">
+            {/* Header */}
+            <div className="flex flex-col gap-8 sm:flex-row sm:items-start">
+              {/* Avatar */}
+              <div className="gym-avatar h-36 w-36 shrink-0 text-6xl ring-1 ring-white/10">
+                {instructor.photo ? (
+                  <img
+                    src={instructor.photo}
+                    alt={instructor.user.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  initials
+                )}
               </div>
-              <p className="text-lg text-muted-foreground mb-6">{bio}</p>
 
-              {/* Specialties */}
-              {instructor.specialties && instructor.specialties.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="text-sm font-semibold mb-2">Specialties</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {instructor.specialties.map((specialty: string, index: number) => (
-                      <span
-                        key={index}
-                        className="px-3 py-1.5 bg-primary/10 text-primary text-sm font-medium rounded-lg"
-                      >
-                        {specialty}
-                      </span>
+              <div className="flex-1">
+                <p className="gym-eyebrow">Instructor</p>
+                <h1 className="gym-heading">{instructor.user.name}</h1>
+                <p className="gym-body mt-5 max-w-xl">{bio}</p>
+
+                {/* Specialties */}
+                {instructor.specialties && instructor.specialties.length > 0 && (
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {instructor.specialties.map((specialty: string) => (
+                      <span key={specialty} className="gym-tag">{specialty}</span>
                     ))}
                   </div>
-                </div>
-              )}
-
-              {/* Certifications */}
-              {instructor.certifications && instructor.certifications.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                    <Award className="w-4 h-4" />
-                    Certifications
-                  </h3>
-                  <ul className="space-y-1">
-                    {instructor.certifications.map((cert: string, index: number) => (
-                      <li key={index} className="text-sm text-muted-foreground flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                        {cert}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Class Schedule */}
-          <div className="border rounded-xl p-6">
-            <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-              <Calendar className="w-5 h-5" />
-              Weekly Schedule
-            </h2>
-            {schedules.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">
-                No classes scheduled at the moment.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {schedules.map((schedule: any) => (
-                  <div key={schedule.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="min-w-[100px]">
-                        <div className="font-semibold">
-                          {schedule.dayOfWeek?.map((d: string) => dayCodeToName[d]).join(', ')}
-                        </div>
-                        <div className="text-sm text-muted-foreground flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {schedule.startTime}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="font-medium">{schedule.name}</div>
-                        {schedule.description && (
-                          <div className="text-sm text-muted-foreground line-clamp-1">
-                            {schedule.description}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <Link
-                      href="/schedule"
-                      className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md text-sm font-semibold transition-colors whitespace-nowrap"
-                    >
-                      Book Class
-                    </Link>
-                  </div>
-                ))}
+            {/* Certifications */}
+            {instructor.certifications && instructor.certifications.length > 0 && (
+              <div className="bg-[#1c1b1b] p-8">
+                <div className="mb-5 flex items-center gap-3">
+                  <Award className="h-5 w-5 text-[#818cf8]" />
+                  <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-black uppercase tracking-[-0.04em] text-white">
+                    Certifications
+                  </h2>
+                </div>
+                <ul className="space-y-2">
+                  {instructor.certifications.map((cert: string) => (
+                    <li key={cert} className="flex items-center gap-3 text-sm text-[#c4c7c7]">
+                      <span className="h-1.5 w-1.5 shrink-0 bg-[#818cf8]" />
+                      {cert}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* Sidebar */}
-        <div className="lg:col-span-1">
-          <div className="sticky top-24 space-y-4">
-            <div className="border-2 border-primary/20 rounded-xl p-6 bg-gradient-to-br from-primary/5 to-background">
-              <h3 className="font-bold text-lg mb-4">Train with {instructor.user.name.split(' ')[0]}</h3>
-              <p className="text-sm text-muted-foreground mb-6">
-                Book a class and experience expert guidance to help you reach your fitness goals.
-              </p>
-              <Link
-                href="/schedule"
-                className="block w-full bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-3 rounded-lg text-sm font-bold text-center transition-colors shadow-lg shadow-primary/20"
-              >
-                View Schedule
-              </Link>
+            {/* Schedule */}
+            <div className="bg-[#1c1b1b] p-8">
+              <div className="mb-6 flex items-center gap-3">
+                <Calendar className="h-5 w-5 text-[#818cf8]" />
+                <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-black uppercase tracking-[-0.04em] text-white">
+                  Weekly schedule
+                </h2>
+              </div>
+              {schedules.length === 0 ? (
+                <p className="text-sm uppercase tracking-[0.14em] text-[#c4c7c7]">
+                  No classes scheduled at the moment.
+                </p>
+              ) : (
+                <div className="divide-y divide-white/10">
+                  {schedules.map((schedule: any) => (
+                    <div key={schedule.id} className="flex flex-col gap-4 py-5 md:flex-row md:items-center md:justify-between">
+                      <div className="flex items-start gap-8">
+                        <div className="min-w-[100px]">
+                          <div className="font-[family-name:var(--font-space-grotesk)] text-lg font-black uppercase tracking-[-0.03em] text-white">
+                            {schedule.dayOfWeek?.map((d: string) => dayCodeToName[d]).join(', ')}
+                          </div>
+                          <div className="mt-1 flex items-center gap-1 text-xs uppercase tracking-[0.16em] text-[#c4c7c7]">
+                            <Clock className="h-3 w-3" />
+                            {schedule.startTime}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-medium uppercase tracking-[0.1em] text-white">{schedule.name}</div>
+                          {schedule.description && (
+                            <div className="mt-1 text-xs text-[#c4c7c7] line-clamp-1">{schedule.description}</div>
+                          )}
+                        </div>
+                      </div>
+                      <Link
+                        href="/schedule"
+                        className="gym-btn-primary shrink-0 px-6 py-3 text-[10px]"
+                      >
+                        Book class
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          </div>
 
-            <div className="border rounded-xl p-6">
-              <h3 className="font-semibold mb-3">About Classes</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                All classes are included with your membership. Book your spot today!
-              </p>
-              <Link
-                href="/memberships"
-                className="text-sm text-primary hover:underline font-medium"
-              >
-                View Membership Plans
-              </Link>
+          {/* Sidebar */}
+          <div className="flex flex-col gap-4">
+            <div className="sticky top-24 space-y-4">
+              {/* CTA card */}
+              <div className="relative overflow-hidden bg-[#1c1b1b] p-8">
+                <div className="absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,#818cf8_0%,#4f46e5_100%)]" />
+                <h3 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.04em] text-white">
+                  Train with {instructor.user.name.split(' ')[0]}
+                </h3>
+                <p className="mt-3 text-sm leading-relaxed text-[#c4c7c7]">
+                  Book a class and experience expert guidance to help you reach your fitness goals.
+                </p>
+                <Link href="/schedule" className="gym-btn-primary mt-6 block w-full text-center">
+                  View schedule
+                </Link>
+              </div>
+
+              {/* Membership nudge */}
+              <div className="bg-[#0e0e0e] border border-white/10 p-6">
+                <h4 className="text-xs font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">About classes</h4>
+                <p className="mt-2 text-sm leading-relaxed text-[#c4c7c7]">
+                  All classes are included with your membership. Book your spot today.
+                </p>
+                <Link href="/memberships" className="gym-btn-ghost mt-4 inline-flex">
+                  View membership plans
+                </Link>
+              </div>
             </div>
           </div>
         </div>

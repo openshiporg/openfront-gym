@@ -98,8 +98,8 @@ export async function InstructorAccountPage() {
 
   return (
     <div className="space-y-10 text-[#e5e2e1]">
-      <header className="border-l-4 border-[#ffb59e] pl-4">
-        <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#ffb59e]">Personnel access only</p>
+      <header className="border-l-4 border-[#818cf8] pl-4">
+        <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#818cf8]">Personnel access only</p>
         <h1 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase tracking-[-0.08em] text-white sm:text-6xl">
           Instructor
           <br />
@@ -117,11 +117,11 @@ export async function InstructorAccountPage() {
         </div>
         <div className="bg-[#1c1b1b] p-6">
           <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Recurring offers</p>
-          <p className="mt-2 font-[family-name:var(--font-space-grotesk)] text-4xl font-black text-[#7df4ff]">{schedules.length}</p>
+          <p className="mt-2 font-[family-name:var(--font-space-grotesk)] text-4xl font-black text-[#a5b4fc]">{schedules.length}</p>
         </div>
         <div className="bg-[#1c1b1b] p-6">
           <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Booked athletes</p>
-          <p className="mt-2 font-[family-name:var(--font-space-grotesk)] text-4xl font-black text-[#ffb59e]">{totalBooked}</p>
+          <p className="mt-2 font-[family-name:var(--font-space-grotesk)] text-4xl font-black text-[#818cf8]">{totalBooked}</p>
         </div>
       </div>
 
@@ -129,7 +129,7 @@ export async function InstructorAccountPage() {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-bold uppercase tracking-[-0.04em] text-white">Upcoming calendar</h2>
-            <Link href="/dashboard/platform/scheduling" className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#ffb59e]">Scheduling center</Link>
+            <Link href="/dashboard/platform/scheduling" className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">Scheduling center</Link>
           </div>
 
           <div className="space-y-4">
@@ -150,9 +150,9 @@ export async function InstructorAccountPage() {
                     <div className="flex items-center gap-8">
                       <div>
                         <span className="block text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Occupancy</span>
-                        <span className="mt-1 block font-[family-name:var(--font-space-grotesk)] text-2xl font-black text-[#7df4ff]">{booked}/{cap}</span>
+                        <span className="mt-1 block font-[family-name:var(--font-space-grotesk)] text-2xl font-black text-[#a5b4fc]">{booked}/{cap}</span>
                       </div>
-                      <Link href={`/dashboard/platform/rosters/${session.id}`} className="border border-[#ffb59e] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-[#ffb59e] hover:bg-[#ffb59e]/10">
+                      <Link href={`/dashboard/platform/rosters/${session.id}`} className="border border-[#818cf8] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-[#818cf8] hover:bg-[#818cf8]/10">
                         View roster
                       </Link>
                     </div>
@@ -164,16 +164,16 @@ export async function InstructorAccountPage() {
         </section>
 
         <aside className="space-y-8">
-          <div className="border-t-4 border-[#7df4ff] bg-[#0e0e0e] p-8">
+          <div className="border-t-4 border-[#a5b4fc] bg-[#0e0e0e] p-8">
             <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase tracking-[-0.03em] text-white">Teaching tools</h2>
             <div className="mt-6 space-y-3">
               <Link href="/dashboard/platform/instructors" className="flex items-center justify-between bg-[#1c1b1b] px-4 py-4 text-sm font-bold uppercase tracking-[0.18em] text-white hover:bg-[#2a2a2a]">
                 <span>Instructor profile</span>
-                <GraduationCap className="h-4 w-4 text-[#ffb59e]" />
+                <GraduationCap className="h-4 w-4 text-[#818cf8]" />
               </Link>
               <Link href="/dashboard/platform/scheduling" className="flex items-center justify-between bg-[#1c1b1b] px-4 py-4 text-sm font-bold uppercase tracking-[0.18em] text-white hover:bg-[#2a2a2a]">
                 <span>Offer and manage classes</span>
-                <CalendarDays className="h-4 w-4 text-[#7df4ff]" />
+                <CalendarDays className="h-4 w-4 text-[#a5b4fc]" />
               </Link>
             </div>
           </div>
@@ -185,7 +185,7 @@ export async function InstructorAccountPage() {
                 <div key={day} className="bg-[#0e0e0e] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">{day}</p>
-                    <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#ffb59e]">{items.length} sessions</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#818cf8]">{items.length} sessions</span>
                   </div>
                   <div className="mt-3 space-y-2">
                     {items.length === 0 ? (
@@ -217,7 +217,7 @@ export async function InstructorAccountPage() {
               </div>
               <div className="flex items-center justify-between border-t border-white/10 pt-4">
                 <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Next roster action</span>
-                <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#ffb59e]">
+                <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#818cf8]">
                   <Users className="h-3.5 w-3.5" /> Open next class roster
                 </span>
               </div>

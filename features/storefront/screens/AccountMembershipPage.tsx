@@ -58,7 +58,7 @@ export default async function AccountMembershipPage() {
       ) : (
         <section className="bg-[#1c1b1b] px-6 py-16 text-center">
           <p className="text-sm uppercase tracking-[0.16em] text-[#c4c7c7]">No active membership.</p>
-          <Link href="/memberships" className="mt-6 inline-flex bg-[linear-gradient(45deg,#ffb59e_0%,#e44400_100%)] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-[#3a0b00] transition-transform active:scale-95">
+          <Link href="/memberships" className="mt-6 inline-flex bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95">
             View plans
           </Link>
         </section>
@@ -71,10 +71,10 @@ export default async function AccountMembershipPage() {
             {tiers.map((tier, index) => {
               const isCurrent = membership?.tier?.id === tier.id;
               return (
-                <div key={tier.id} className={`${isCurrent ? "bg-[#2a2a2a] border-t-4 border-[#ffb59e]" : index % 2 === 0 ? "bg-[#1c1b1b]" : "bg-[#0e0e0e] border border-white/10"} p-6`}>
+                <div key={tier.id} className={`${isCurrent ? "bg-[#2a2a2a] border-t-4 border-[#818cf8]" : index % 2 === 0 ? "bg-[#1c1b1b]" : "bg-[#0e0e0e] border border-white/10"} p-6`}>
                   <div className="flex items-start justify-between gap-4">
                     <h3 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.04em] text-white">{tier.name}</h3>
-                    {isCurrent && <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#ffb59e]">Current</span>}
+                    {isCurrent && <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#818cf8]">Current</span>}
                   </div>
                   <p className="mt-4 font-[family-name:var(--font-space-grotesk)] text-3xl font-black text-white">${Math.round(tier.monthlyPrice ?? 0)}</p>
                   <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">USD / month</p>
@@ -84,7 +84,7 @@ export default async function AccountMembershipPage() {
                     <li>{tier.accessHours} access</li>
                   </ul>
                   {!isCurrent && (
-                    <Link href={`/join?tier=${tier.id}`} className="mt-6 inline-flex border border-[#7df4ff] px-5 py-3 text-xs font-bold uppercase tracking-[0.22em] text-[#7df4ff] transition-colors hover:bg-[#7df4ff]/10">
+                    <Link href={`/join?tier=${tier.id}`} className="mt-6 inline-flex border border-[#a5b4fc] px-5 py-3 text-xs font-bold uppercase tracking-[0.22em] text-[#a5b4fc] transition-colors hover:bg-[#a5b4fc]/10">
                       Switch via checkout
                     </Link>
                   )}

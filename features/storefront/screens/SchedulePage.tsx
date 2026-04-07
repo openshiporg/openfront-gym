@@ -43,7 +43,7 @@ export async function SchedulePage() {
           <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
             Weekly Vanguard
             <br />
-            <span className="text-[#ffb59e]">Schedule</span>
+            <span className="text-[#818cf8]">Schedule</span>
           </h1>
           <p className="mt-5 max-w-xl text-base leading-relaxed text-[#c4c7c7]">
             Precision-engineered programming for members who want fast booking, clear availability, and schedule visibility at a glance.
