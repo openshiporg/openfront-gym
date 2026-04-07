@@ -1441,6 +1441,7 @@ var GymSettings = (0, import_core12.list)({
       ui: { description: "Public gym/storefront name" }
     }),
     tagline: (0, import_fields13.text)({
+      defaultValue: "Movement is art. The body of work is you.",
       ui: { description: "Short brand tagline" }
     }),
     description: (0, import_fields13.text)({
@@ -1486,7 +1487,7 @@ var GymSettings = (0, import_core12.list)({
       defaultValue: "Performance without compromise"
     }),
     heroHeadline: (0, import_fields13.text)({
-      defaultValue: "Train with structure. Recover with intent."
+      defaultValue: "Movement is art.\nThe body of work\nis you."
     }),
     heroSubheadline: (0, import_fields13.text)({
       defaultValue: "A modern gym storefront with memberships, classes, coaching, and facility access configured from one operational system."
@@ -1504,7 +1505,7 @@ var GymSettings = (0, import_core12.list)({
       defaultValue: "/schedule"
     }),
     promoBanner: (0, import_fields13.text)({
-      defaultValue: "Memberships, schedules, and coaching all managed from one system."
+      defaultValue: "Movement is art. The body of work is you."
     }),
     footerTagline: (0, import_fields13.text)({
       defaultValue: "Structured programming, confident operations, and a better member experience."
