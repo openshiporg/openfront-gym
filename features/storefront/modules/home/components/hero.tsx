@@ -2,100 +2,111 @@ import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 
+const HERO_IMAGE = 'url("https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80")';
+
+function getMaskWord(config: Awaited<ReturnType<typeof getStorefrontConfig>>) {
+  const brandSource = config?.name?.trim() || config?.tagline?.trim() || "Openfront Gym";
+  const [firstWord = "MOVE"] = brandSource.split(/\s+/);
+  return firstWord.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 9) || "MOVE";
+}
+
 export default async function Hero() {
   const config = await getStorefrontConfig();
-  const stats = config?.heroStats?.length
-    ? config.heroStats
-    : [
-        { value: "24/7", label: "Member access" },
-        { value: "0–∞", label: "Classes by plan" },
-        { value: "15+", label: "Weekly sessions" },
-        { value: "3", label: "Expert coaches" },
-      ];
-
-  const brandName = config?.name || 'Openfront Gym';
-  const headline = config?.heroHeadline || 'Movement is art.\nThe body of work\nis you.';
-  const subheadline = config?.heroSubheadline || 'Membership access, class booking, instructor programming, and member operations all running from one coordinated platform.';
+  const brandName = config?.name || "Openfront Gym";
+  const eyebrow = config?.heroEyebrow || config?.tagline || brandName;
+  const headline = config?.heroHeadline || "Movement is art. The body of work is you.";
+  const subheadline =
+    config?.heroSubheadline ||
+    "Membership access, class booking, instructor programming, and member operations all running from one coordinated platform.";
+  const maskWord = getMaskWord(config);
 
   return (
-    <section className="relative overflow-hidden bg-[#131313]">
-      {/* Subtle cool-toned background glow — no warm orange */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_-5%_40%,rgba(79,70,229,0.15),transparent),radial-gradient(circle_at_90%_85%,rgba(99,102,241,0.10),transparent_40%)]" />
-
-      <div className="relative mx-auto grid min-h-[88vh] max-w-7xl items-center gap-10 px-4 pb-16 pt-10 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:gap-20 lg:px-8">
-
-        {/* ── Left: editorial headline block ── */}
-        <div className="z-10 flex flex-col">
-          {/* Eyebrow */}
-          <p className="gym-eyebrow">{brandName} · {config?.heroEyebrow || 'Performance without compromise'}</p>
-
-          {/* Giant headline */}
-          <h1 className="font-[family-name:var(--font-space-grotesk)] text-[clamp(4rem,10vw,8rem)] font-black uppercase leading-[0.82] tracking-[-0.08em] text-white">
-            {headline.split('\n').map((line: string, i: number) => (
-              <span key={i} className="block">
-                {i === 1 ? (
-                  <span className="[-webkit-text-stroke:2px_#818cf8] text-transparent">{line}</span>
-                ) : line}
-              </span>
-            ))}
-          </h1>
-
-          {/* Subheadline */}
-          <p className="mt-8 max-w-md border-l-2 border-[#818cf8] pl-5 text-sm leading-relaxed text-[#c4c7c7]">
-            {subheadline}
-          </p>
-
-          {/* CTAs */}
-          <div className="mt-10 flex flex-wrap gap-4">
-            <Link
-              href={config?.heroPrimaryCtaHref || '/join'}
-              className="inline-flex items-center justify-center bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-8 py-4 text-xs font-bold uppercase tracking-[0.2em] text-white transition-opacity hover:opacity-90"
-            >
-              {config?.heroPrimaryCtaLabel || 'Start membership'}
-            </Link>
-            <Link
-              href={config?.heroSecondaryCtaHref || '/schedule'}
-              className="inline-flex items-center justify-center border-2 border-[#818cf8] px-8 py-4 text-xs font-bold uppercase tracking-[0.2em] text-[#818cf8] transition-colors hover:bg-[#818cf8]/10"
-            >
-              {config?.heroSecondaryCtaLabel || 'View schedule'}
-            </Link>
-          </div>
-
-          {/* Trust strip */}
-          <div className="mt-14 flex flex-wrap items-center gap-8 border-t border-white/10 pt-8">
-            {[
-              { n: '500+', l: 'Active members' },
-              { n: 'No', l: 'Hidden fees' },
-              { n: '5★', l: 'Member rating' },
-            ].map(({ n, l }) => (
-              <div key={l}>
-                <div className="font-[family-name:var(--font-space-grotesk)] text-xl font-black uppercase tracking-tight text-[#818cf8]">{n}</div>
-                <div className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">{l}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Right: stat panel ── */}
-        <div className="z-10 flex flex-col">
-          <div className="divide-y divide-white/10 border border-white/10">
-            {stats.map((item: any) => (
-              <div key={item.label} className="flex items-center gap-5 bg-[#1c1b1b] px-6 py-6 transition-colors hover:bg-[#232323]">
-                <div className="w-[3px] self-stretch bg-[linear-gradient(180deg,#818cf8,#4f46e5)] opacity-70" />
-                <div>
-                  <div className="gym-stat-value">{item.value}</div>
-                  <div className="gym-stat-label mt-1">{item.label}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+    <section className="relative isolate min-h-[40rem] overflow-hidden bg-[#111515] text-white">
+      <div className="absolute inset-0">
+        <div
+          className="absolute inset-[-5%] scale-[1.06] bg-cover bg-center"
+          style={{
+            backgroundImage: HERO_IMAGE,
+            filter: "blur(28px) saturate(0.82) brightness(0.5)",
+          }}
+        />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(203,204,204,0.72)_0%,rgba(162,171,175,0.34)_24%,rgba(39,69,80,0.16)_54%,rgba(12,21,22,0.52)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(255,222,201,0.24),transparent_22%),radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.07),transparent_48%),linear-gradient(180deg,rgba(0,0,0,0.04)_0%,rgba(0,0,0,0.18)_100%)]" />
+        <div className="absolute inset-x-0 top-0 h-px bg-white/35" />
       </div>
 
-      {/* Scroll indicator */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center gap-1 opacity-35">
-        <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-[#c4c7c7]">Scroll</span>
-        <ChevronDown className="h-4 w-4 text-[#c4c7c7] animate-bounce" />
+      <div className="relative flex min-h-[calc(100dvh-5rem)] items-center justify-center px-6 pb-24 pt-20 sm:px-8 lg:px-12">
+        <div className="absolute inset-x-[8%] top-[18%] h-[30rem] rounded-full bg-white/[0.04] blur-3xl" />
+
+        <svg aria-hidden="true" className="absolute inset-0 size-full">
+          <defs>
+            <mask id="hero-image-word-mask">
+              <rect width="100%" height="100%" fill="black" />
+              <text
+                x="50%"
+                y="56%"
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="white"
+                style={{
+                  fontFamily: "var(--font-space-grotesk)",
+                  fontSize: "clamp(6rem, 21vw, 16rem)",
+                  fontWeight: 900,
+                }}
+              >
+                {maskWord}
+              </text>
+            </mask>
+          </defs>
+
+          <image
+            href="https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80"
+            width="100%"
+            height="100%"
+            preserveAspectRatio="xMidYMid slice"
+            mask="url(#hero-image-word-mask)"
+            opacity="0.98"
+          />
+
+          <text
+            x="50%"
+            y="56%"
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="none"
+            stroke="rgba(255,255,255,0.52)"
+            strokeWidth="1.3"
+            style={{
+              fontFamily: "var(--font-space-grotesk)",
+              fontSize: "clamp(6rem, 21vw, 16rem)",
+              fontWeight: 900,
+              filter: "drop-shadow(0 0 18px rgba(255,255,255,0.08))",
+            }}
+          >
+            {maskWord}
+          </text>
+        </svg>
+
+        <div className="pointer-events-none absolute left-6 top-6 z-10 sm:left-8 sm:top-8 lg:left-12 lg:top-10">
+          <p className="max-w-[28rem] text-[0.78rem] font-semibold uppercase tracking-[0.34em] text-white/85 [text-wrap:balance]">
+            {eyebrow}
+          </p>
+        </div>
+
+        <div className="sr-only">
+          <h1>{headline}</h1>
+          <p>{subheadline}</p>
+          <Link href={config?.heroPrimaryCtaHref || "/join"}>{config?.heroPrimaryCtaLabel || "Start membership"}</Link>
+          <Link href={config?.heroSecondaryCtaHref || "/schedule"}>{config?.heroSecondaryCtaLabel || "View schedule"}</Link>
+        </div>
+
+        <div className="pointer-events-none absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3 text-center sm:bottom-10">
+          <span className="text-[0.78rem] font-medium uppercase tracking-[0.34em] text-[#e9d2c2]/80">
+            Scroll to explore
+          </span>
+          <div className="h-12 w-px bg-white/30" />
+          <ChevronDown className="h-4 w-4 text-white/75" />
+        </div>
       </div>
     </section>
   );

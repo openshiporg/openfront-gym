@@ -13,11 +13,11 @@ export default function Nav({ user, config }: { user?: any; config?: { name?: st
       <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
         {/* Brand wordmark — pure type, no icon */}
         <Link href="/" className="flex shrink-0 items-center transition-opacity hover:opacity-75">
-          <span className="font-[family-name:var(--font-brand-serif)] text-[1.35rem] font-bold tracking-[-0.03em] text-white">
+          <span className="font-[family-name:var(--font-space-grotesk)] text-[1.25rem] font-black uppercase tracking-[-0.08em] text-white">
             {first}
           </span>
           {rest && (
-            <span className="ml-2 font-[family-name:var(--font-brand-serif)] text-[1.25rem] font-normal tracking-[0.02em] text-[#818cf8]">
+            <span className="ml-1.5 font-[family-name:var(--font-space-grotesk)] text-[1.25rem] font-light uppercase tracking-[-0.04em] text-[#818cf8]">
               {rest}
             </span>
           )}

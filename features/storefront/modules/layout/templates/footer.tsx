@@ -47,11 +47,11 @@ export default function Footer({
           {/* Brand */}
           <div className="max-w-xs">
             <Link href="/" className="flex items-center transition-opacity hover:opacity-75">
-              <span className="font-[family-name:var(--font-brand-serif)] text-[1.2rem] font-bold tracking-[-0.03em] text-white">
+              <span className="font-[family-name:var(--font-space-grotesk)] text-lg font-black uppercase tracking-[-0.07em] text-white">
                 {brandName.split(' ')[0]}
               </span>
               {brandName.split(' ').slice(1).join(' ') && (
-                <span className="ml-2 font-[family-name:var(--font-brand-serif)] text-[1.1rem] font-normal tracking-[0.02em] text-[#818cf8]">
+                <span className="ml-1.5 font-[family-name:var(--font-space-grotesk)] text-lg font-light uppercase tracking-[-0.03em] text-[#818cf8]">
                   {brandName.split(' ').slice(1).join(' ')}
                 </span>
               )}
