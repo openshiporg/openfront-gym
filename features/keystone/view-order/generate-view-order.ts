@@ -178,6 +178,12 @@ function extractUniqueViews(jsonData: any) {
             if (viewMap && !viewsArray.includes(viewMap)) {
               viewsArray.push(viewMap);
             }
+            // Keystone assigns custom field views their own index in the same
+            // ordered view table. Preserve that slot so every later core view
+            // keeps the runtime adminMeta viewsIndex.
+            if (field.ui?.views && !viewsArray.includes("custom")) {
+              viewsArray.push("custom");
+            }
           }
         }
       }

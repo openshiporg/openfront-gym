@@ -1,16 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { GYM_TEMPLATES } from '../config/templates';
 import { getSeedForTemplate, getItemsFromJsonData } from '../utils/dataUtils';
 import seedData from '../lib/seed.json';
 
 export type OnboardingStep = 'template' | 'progress' | 'done';
-export type TemplateType = 'full' | 'minimal' | 'custom';
+export type TemplateType = 'full' | 'minimal';
 
 export interface OnboardingState {
   step: OnboardingStep;
   selectedTemplate: TemplateType;
   currentJsonData: any;
-  customJsonApplied: boolean;
   progressMessage: string;
   loadingItems: Record<string, string[]>;
   completedItems: Record<string, string[]>;
@@ -26,15 +25,14 @@ const initialItemsState = {
   classTypes: [],
   instructors: [],
   schedules: [],
-  demoMember: [],
+  paymentProviders: [],
 };
 
 export function useOnboardingState() {
   const [state, setState] = useState<OnboardingState>({
     step: 'template',
     selectedTemplate: 'minimal',
-    currentJsonData: null,
-    customJsonApplied: false,
+    currentJsonData: getSeedForTemplate('minimal', seedData),
     progressMessage: '',
     loadingItems: { ...initialItemsState },
     completedItems: { ...initialItemsState },
@@ -43,40 +41,21 @@ export function useOnboardingState() {
     isLoading: false,
   });
 
-  // Load JSON data when template changes
-  useEffect(() => {
-    if (state.selectedTemplate !== 'custom') {
-      const templateData = getSeedForTemplate(state.selectedTemplate, seedData);
-      setState((prev) => ({
-        ...prev,
-        currentJsonData: templateData,
-        customJsonApplied: false,
-      }));
-    } else {
-      // For custom, start with basic template data as placeholder
-      const basicData = getSeedForTemplate('minimal', seedData);
-      setState((prev) => ({
-        ...prev,
-        currentJsonData: basicData,
-        customJsonApplied: false,
-      }));
-    }
-  }, [state.selectedTemplate]);
-
   const setStep = (step: OnboardingStep) => {
     setState((prev) => ({ ...prev, step }));
   };
 
   const setSelectedTemplate = (template: TemplateType) => {
-    setState((prev) => ({ ...prev, selectedTemplate: template }));
+    const templateData = getSeedForTemplate(template, seedData);
+    setState((prev) => ({
+      ...prev,
+      selectedTemplate: template,
+      currentJsonData: templateData,
+    }));
   };
 
   const setCurrentJsonData = (data: any) => {
     setState((prev) => ({ ...prev, currentJsonData: data }));
-  };
-
-  const setCustomJsonApplied = (applied: boolean) => {
-    setState((prev) => ({ ...prev, customJsonApplied: applied }));
   };
 
   const setIsLoading = (loading: boolean) => {
@@ -112,7 +91,7 @@ export function useOnboardingState() {
       classTypes: getItemsFromJsonData(data, 'classTypes'),
       instructors: getItemsFromJsonData(data, 'instructors'),
       schedules: getItemsFromJsonData(data, 'schedules'),
-      demoMember: getItemsFromJsonData(data, 'demoMember'),
+      paymentProviders: getItemsFromJsonData(data, 'paymentProviders'),
     };
   };
 
@@ -137,7 +116,7 @@ export function useOnboardingState() {
         classTypes: [...displayNames.classTypes],
         instructors: [...displayNames.instructors],
         schedules: [...displayNames.schedules],
-        demoMember: [...displayNames.demoMember],
+        paymentProviders: [...displayNames.paymentProviders],
       },
     }));
   };
@@ -210,7 +189,6 @@ export function useOnboardingState() {
     setStep,
     setSelectedTemplate,
     setCurrentJsonData,
-    setCustomJsonApplied,
     setIsLoading,
     setError,
     setProgress,

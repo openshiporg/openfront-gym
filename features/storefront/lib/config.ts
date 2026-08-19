@@ -1,11 +1,12 @@
 import { GraphQLClient, type RequestDocument, type Variables } from "graphql-request";
 
 async function getGraphQLEndpoint(): Promise<string> {
-  if (process.env.NEXT_PUBLIC_BACKEND_URL) {
-    return `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/graphql`;
+  if (process.env.INTERNAL_GRAPHQL_URL) {
+    return `${process.env.INTERNAL_GRAPHQL_URL.replace(/\/$/, "")}/api/graphql`;
   }
-  // In the gym vertical Keystone runs on the same process as Next.js
-  return "http://localhost:3000/api/graphql";
+  // Storefront data/actions are server-only and must not traverse the public
+  // Portless TLS proxy. Keystone runs in the same process.
+  return `http://127.0.0.1:${process.env.PORT || process.env.PORTLESS_TARGET_PORT || "3000"}/api/graphql`;
 }
 
 class GymStorefrontClient {

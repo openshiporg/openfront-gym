@@ -1,11 +1,9 @@
-import { keystoneContext } from "@/features/keystone/context";
+import { gql } from "graphql-request";
+import { gymClient } from "@/features/storefront/lib/config";
 
 export type InstructorData = {
   id: string;
-  user: {
-    name: string;
-    email: string;
-  };
+  user: { name: string };
   bio: any;
   specialties: string[];
   certifications: string[];
@@ -13,70 +11,52 @@ export type InstructorData = {
   isActive: boolean;
 };
 
+type PublicInstructor = {
+  id: string;
+  name: string;
+  bio?: string | null;
+  specialties: string[];
+  certifications: string[];
+  imagePath?: string | null;
+};
+
+function instructorShape(instructor: PublicInstructor): InstructorData {
+  return {
+    id: instructor.id,
+    user: { name: instructor.name },
+    bio: instructor.bio ?? null,
+    specialties: instructor.specialties,
+    certifications: instructor.certifications,
+    photo: instructor.imagePath ?? null,
+    isActive: true,
+  };
+}
+
 export async function getInstructors(): Promise<InstructorData[]> {
-  const context = keystoneContext.sudo();
-
-  const instructors = await context.query.Instructor.findMany({
-    where: {
-      isActive: { equals: true },
-    },
-    query: `
-      id
-      user {
-        name
-        email
-      }
-      bio { document }
-      specialties
-      certifications
-      photo
-      isActive
-    `,
-  });
-
-  return instructors as InstructorData[];
+  const result = await gymClient.request<{ publicGymInstructors: PublicInstructor[] }>(gql`
+    query StorefrontInstructors {
+      publicGymInstructors(limit: 100) { id name bio specialties certifications imagePath }
+    }
+  `);
+  return result.publicGymInstructors.map(instructorShape);
 }
 
 export async function getInstructorById(id: string): Promise<InstructorData | null> {
-  const context = keystoneContext.sudo();
-
-  const instructor = await context.query.Instructor.findOne({
-    where: { id },
-    query: `
-      id
-      user {
-        name
-        email
-      }
-      bio { document }
-      specialties
-      certifications
-      photo
-      isActive
-    `,
-  });
-
-  return instructor as InstructorData | null;
+  const result = await gymClient.request<{ publicGymInstructor: PublicInstructor | null }>(gql`
+    query StorefrontInstructor($id: ID!) {
+      publicGymInstructor(id: $id) { id name bio specialties certifications imagePath }
+    }
+  `, { id });
+  return result.publicGymInstructor ? instructorShape(result.publicGymInstructor) : null;
 }
 
 export async function getInstructorSchedules(instructorId: string) {
-  const context = keystoneContext.sudo();
-
-  const schedules = await context.query.ClassSchedule.findMany({
-    where: {
-      instructor: { id: { equals: instructorId } },
-      isActive: { equals: true },
-    },
-    query: `
-      id
-      name
-      description
-      dayOfWeek
-      startTime
-      endTime
-      maxCapacity
-    `,
-  });
-
-  return schedules;
+  const result = await gymClient.request<{ publicGymSchedules: any[] }>(gql`
+    query StorefrontInstructorSchedules($instructorId: ID!) {
+      publicGymSchedules(instructorId: $instructorId, limit: 100) {
+        id name description dayOfWeek startTime endTime maxCapacity
+      }
+    }
+  `, { instructorId });
+  return result.publicGymSchedules;
 }

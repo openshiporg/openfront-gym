@@ -1,39 +1,27 @@
 import { requireDashboardManager } from '@/features/dashboard/lib/current-user'
-import { keystoneContext } from '@/features/keystone/context'
+import { keystoneClient } from '@/features/dashboard/lib/keystoneClient'
 import { InstructorsPage } from './InstructorsPage'
 
 export async function InstructorsPageServer() {
   await requireDashboardManager()
-
-  const [instructors, users] = await Promise.all([
-    keystoneContext.sudo().query.Instructor.findMany({
-      orderBy: [{ updatedAt: 'desc' }],
-      query: `
-        id
-        user { id name email }
-        bio { document }
-        specialties
-        certifications
-        photo
-        isActive
+  const now = new Date().toISOString()
+  const response = await keystoneClient<{ instructors: any[]; users: any[] }>(`
+    query InstructorWorkspace($now: DateTime!) {
+      instructors(orderBy: [{ updatedAt: desc }], take: 500) {
+        id user { id name email } bio { document } specialties certifications photo isActive
         classSchedules { id }
-        classInstances(where: { date: { gte: "${new Date().toISOString()}" } }) { id }
-      `,
-    }),
-    keystoneContext.sudo().query.User.findMany({
-      orderBy: [{ name: 'asc' }],
-      query: `
-        id
-        name
-        email
-        role { isInstructor }
-      `,
-    }),
-  ])
-
-  const userOptions = (users as any[]).filter((user) => user.role?.isInstructor)
-
-  return <InstructorsPage initialInstructors={instructors as any[]} userOptions={userOptions} />
+        classInstances(where: { date: { gte: $now } }, take: 500) { id }
+      }
+      users(orderBy: [{ name: asc }], take: 1000) { id name email role { isInstructor } }
+    }
+  `, { now })
+  if (!response.success) throw new Error(response.error)
+  return (
+    <InstructorsPage
+      initialInstructors={response.data.instructors}
+      userOptions={response.data.users.filter((user) => user.role?.isInstructor)}
+    />
+  )
 }
 
 export default InstructorsPageServer

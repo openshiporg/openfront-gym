@@ -43,7 +43,7 @@ export interface ClassBooking {
   class: GymClass;
   member: Member;
   scheduledDate: string;
-  status: 'confirmed' | 'waitlisted' | 'cancelled' | 'completed';
+  status: 'confirmed' | 'waitlist' | 'cancelled' | 'completed';
   createdAt: string;
 }
 

@@ -1,76 +1,92 @@
-import Link from "next/link";
+import { cookies } from "next/headers";
 import { CheckCircle2 } from "lucide-react";
-import { provisionMembershipFromCheckoutSession } from "@/features/integrations/payment/stripe";
+import {
+  clearCheckoutReturnAndRedirect,
+  completeMembershipCheckoutAction,
+} from "@/features/integrations/payment/membership-checkout";
+import { CHECKOUT_RETURN_COOKIE } from "@/features/integrations/payment/membership-checkout-contract";
+import { safeStorefrontReturnPath } from "@/features/storefront/lib/return-path";
 
 export default async function JoinSuccessPage({ sessionId }: { sessionId?: string }) {
-  let result:
-    | { ok: true; tierName: string; billingCycle: string }
-    | { ok: false; message: string };
+  const savedReturnTo = (await cookies()).get(CHECKOUT_RETURN_COOKIE)?.value;
+  const returnTo = savedReturnTo ? safeStorefrontReturnPath(savedReturnTo) : null;
+  let result: { ok: true; tierName: string; billingCycle: string } | { ok: false; message: string };
 
   if (!sessionId) {
     result = { ok: false, message: "Missing Stripe checkout session ID." };
   } else {
     try {
-      const provisioned = await provisionMembershipFromCheckoutSession(sessionId);
+      const provisioned = await completeMembershipCheckoutAction(sessionId);
       result = {
         ok: true,
         tierName: provisioned.tierName,
         billingCycle: provisioned.billingCycle,
       };
-    } catch (error) {
+    } catch {
       result = {
         ok: false,
-        message: error instanceof Error ? error.message : "Unable to verify membership activation.",
+        message: "Membership activation could not be confirmed yet. Do not start another payment; check your account or contact the front desk with the checkout time.",
       };
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#131313] text-[#e5e2e1]">
-      <div className="mx-auto max-w-3xl px-4 py-20 sm:px-6 lg:px-8">
-        <div className="bg-[#1c1b1b] p-10">
-          {result.ok ? (
-            <>
-              <CheckCircle2 className="h-10 w-10 text-[#a5b4fc]" />
-              <p className="mt-5 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Membership activated</p>
-              <h1 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase tracking-[-0.07em] text-white">
-                Welcome to
-                <br />
-                the program
-              </h1>
-              <p className="mt-5 max-w-xl text-base leading-relaxed text-[#c4c7c7]">
-                Your <span className="text-white font-medium">{result.tierName}</span> plan is now active on a <span className="text-white font-medium">{result.billingCycle}</span> billing cycle. You can now book classes, manage billing, and use your member account.
-              </p>
-              <div className="mt-10 flex flex-wrap gap-3">
-                <Link href="/account" className="inline-flex bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95">
-                  Go to account
-                </Link>
-                <Link href="/schedule" className="inline-flex border border-[#a5b4fc] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#a5b4fc] transition-colors hover:bg-[#a5b4fc]/10">
-                  Browse schedule
-                </Link>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Checkout complete</p>
-              <h1 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase tracking-[-0.07em] text-white">
-                Verification
-                <br />
-                still needed
-              </h1>
-              <p className="mt-5 max-w-xl text-base leading-relaxed text-[#c4c7c7]">{result.message}</p>
-              <div className="mt-10 flex flex-wrap gap-3">
-                <Link href="/account" className="inline-flex bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95">
-                  Go to account
-                </Link>
-                <Link href="/join" className="inline-flex border border-[#a5b4fc] px-6 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#a5b4fc] transition-colors hover:bg-[#a5b4fc]/10">
-                  Back to join
-                </Link>
-              </div>
-            </>
-          )}
-        </div>
+    <div className="sf-page px-5 py-20 sm:px-8">
+      <div className="mx-auto max-w-3xl border border-[var(--color-rule)] bg-[var(--color-surface)] p-10">
+        {result.ok ? (
+          <>
+            <CheckCircle2 className="h-10 w-10 text-[var(--color-accent)]" />
+            <p className="sf-eyebrow mt-5">Membership activated</p>
+            <h1 className="sf-display mt-3 text-[var(--text-display-s)]">Welcome to the club</h1>
+            <p className="mt-5 max-w-xl text-base leading-relaxed text-[var(--color-ink-muted)]">
+              Your <span className="font-medium text-[var(--color-ink)]">{result.tierName}</span> plan is now active on a{" "}
+              <span className="font-medium text-[var(--color-ink)]">{result.billingCycle}</span> billing cycle.
+            </p>
+            <div className="mt-10 flex flex-wrap gap-3">
+              <CheckoutReturnButton
+                destination={returnTo || "/account"}
+                className="sf-btn-primary px-6"
+              >
+                {returnTo?.startsWith("/schedule") ? "Continue class booking" : returnTo ? "Continue" : "Go to account"}
+              </CheckoutReturnButton>
+              <CheckoutReturnButton destination="/account/membership" className="sf-btn-outline px-6">
+                View membership
+              </CheckoutReturnButton>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="sf-eyebrow">Checkout complete</p>
+            <h1 className="sf-display mt-3 text-[var(--text-display-s)]">Verification still needed</h1>
+            <p className="mt-5 max-w-xl text-base leading-relaxed text-[var(--color-ink-muted)]">{result.message}</p>
+            <div className="mt-10 flex flex-wrap gap-3">
+              <CheckoutReturnButton destination="/account" className="sf-btn-primary px-6">
+                Go to account
+              </CheckoutReturnButton>
+              <CheckoutReturnButton destination="/contact" className="sf-btn-outline px-6">
+                Contact the front desk
+              </CheckoutReturnButton>
+            </div>
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+function CheckoutReturnButton({
+  destination,
+  className,
+  children,
+}: {
+  destination: string;
+  className: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <form action={clearCheckoutReturnAndRedirect}>
+      <input type="hidden" name="destination" value={destination} />
+      <button type="submit" className={className}>{children}</button>
+    </form>
   );
 }

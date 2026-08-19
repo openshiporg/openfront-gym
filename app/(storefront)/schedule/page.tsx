@@ -2,4 +2,9 @@ import { SchedulePage, generateMetadata } from "@/features/storefront/screens/Sc
 
 export { generateMetadata }
 
-export default SchedulePage
+export default async function Page(props: {
+  searchParams: Promise<{ book?: string }>;
+}) {
+  const { book } = await props.searchParams;
+  return <SchedulePage book={book} />;
+}

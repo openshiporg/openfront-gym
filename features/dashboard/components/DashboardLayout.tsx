@@ -1,7 +1,6 @@
 /**
- * DashboardLayout — client component that receives server-side data
- * Canonical pattern: Sidebar footer has OnboardingCards → clicking opens OnboardingDialog at layout level
- * Matches openfront and openfront-restaurant exactly.
+ * dashboardLayout - Client component that receives server-side data
+ * Follows Dashboard1's pattern: server layout fetches data, client layout provides it
  */
 
 'use client'
@@ -29,12 +28,15 @@ interface Message {
 }
 
 interface ChatModeContextType {
+  // Shared messages state
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  // Shared loading states
   loading: boolean;
   setLoading: (loading: boolean) => void;
   sending: boolean;
   setSending: (sending: boolean) => void;
+  // User data for personalization
   user?: any;
 }
 
@@ -56,7 +58,11 @@ interface DashboardLayoutProps {
 
 function FloatingChatButton() {
   const { toggleSidebar, open, isMobile } = useSidebarWithSide('right')
+
+  // On mobile, sidebar is always overlaid, so don't show chevron when "open"
+  // Only show chevron when sidebar is actually visible on screen (desktop + open)
   const showChevron = open && !isMobile
+
   const Icon = showChevron ? ChevronRight : Sparkles;
 
   return (
@@ -90,7 +96,7 @@ function DashboardLayoutContent({ children, adminMeta, authenticatedItem }: Dash
       </SidebarInset>
       <RightSidebar side="right" />
       <FloatingChatButton />
-      {/* OnboardingDialog is owned by the layout — not the sidebar — so it renders above the sidebar overlay */}
+      {/* Onboarding Dialog - Now at layout level, not hidden by sidebar */}
       <OnboardingDialog
         isOpen={isOnboardingDialogOpen}
         onClose={() => setIsOnboardingDialogOpen(false)}
@@ -100,6 +106,7 @@ function DashboardLayoutContent({ children, adminMeta, authenticatedItem }: Dash
 }
 
 function ChatModeProvider({ children, user }: { children: React.ReactNode; user?: any }) {
+  // Shared chat state
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)

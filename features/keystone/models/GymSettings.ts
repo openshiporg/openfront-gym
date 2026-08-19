@@ -1,19 +1,35 @@
 import { list } from "@keystone-6/core";
-import { text, integer, decimal, json } from "@keystone-6/core/fields";
+import { denyAll } from "@keystone-6/core/access";
+import { text, integer, decimal, json, relationship } from "@keystone-6/core/fields";
 
-import { permissions } from "../access";
+import { isSignedIn } from "../access";
+import { tenantFilter } from "../access/tenantPolicy";
 import { trackingFields } from "./trackingFields";
+import { requiredRelationshipDb } from "./tenantRelationships";
+import { sanitizeGymLogoSvg } from "../utils/gymLogo";
+import {
+  DEFAULT_STOREFRONT_HUE,
+  normalizeStorefrontHue,
+} from "../../platform/store-settings/lib/storefront-branding";
 
 export const GymSettings = list({
   access: {
     operation: {
-      query: () => true,
-      create: permissions.canManageSettings,
-      update: permissions.canManageSettings,
-      delete: permissions.canManageSettings,
+      query: isSignedIn,
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
+    },
+    filter: { query: tenantFilter },
+  },
+  db: {
+    extendPrismaSchema(schema) {
+      return schema.replace(
+        /\n}/,
+        '\n  @@unique([organizationId], map: "GymSettings_organization_key")\n}'
+      );
     },
   },
-  isSingleton: true,
   graphql: {
     plural: "gymSettingsItems",
   },
@@ -23,14 +39,52 @@ export const GymSettings = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.gymSettings",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     name: text({
       validation: { isRequired: true },
       ui: { description: "Public gym/storefront name" },
     }),
 
     tagline: text({
-      defaultValue: "Movement is art. The body of work is you.",
+      defaultValue: "",
       ui: { description: "Short brand tagline" },
+    }),
+
+    logoIcon: text({
+      ui: {
+        displayMode: "textarea",
+        description: "Optional inline SVG logo; executable and external content is rejected",
+      },
+      hooks: {
+        resolveInput: ({ resolvedData, fieldKey }) => {
+          const value = resolvedData[fieldKey];
+          if (value === undefined || value === null || value === "") return value;
+          return sanitizeGymLogoSvg(value);
+        },
+        validate: ({ inputData, resolvedData, fieldKey, addValidationError }) => {
+          const submitted = inputData?.[fieldKey];
+          if (typeof submitted === "string" && submitted.trim() && !resolvedData?.[fieldKey]) {
+            addValidationError("Logo must be a valid, safe SVG document");
+          }
+        },
+      },
+    }),
+
+    brandHue: integer({
+      defaultValue: DEFAULT_STOREFRONT_HUE,
+      validation: { isRequired: true, min: 0, max: 359 },
+      ui: { description: "Storefront accent hue from 0 through 359" },
+      hooks: {
+        resolveInput: ({ resolvedData, fieldKey }) => {
+          const value = resolvedData[fieldKey];
+          return value === undefined ? value : normalizeStorefrontHue(value);
+        },
+      },
     }),
 
     description: text({
@@ -69,67 +123,37 @@ export const GymSettings = list({
     }),
 
     hours: json({
-      defaultValue: {
-        monday: "5:00 AM - 11:00 PM",
-        tuesday: "5:00 AM - 11:00 PM",
-        wednesday: "5:00 AM - 11:00 PM",
-        thursday: "5:00 AM - 11:00 PM",
-        friday: "5:00 AM - 10:00 PM",
-        saturday: "6:00 AM - 8:00 PM",
-        sunday: "7:00 AM - 7:00 PM",
-      },
+      defaultValue: {},
       ui: { description: "Operating hours by day" },
     }),
 
-    heroEyebrow: text({
-      defaultValue: "Performance without compromise",
+    heroEyebrow: text({ defaultValue: "" }),
+
+    heroHeadline: text({ defaultValue: "" }),
+
+    heroSubheadline: text({ defaultValue: "" }),
+
+    heroImageUrl: text({
+      ui: { description: "Storefront hero image URL or local asset path" },
     }),
 
-    heroHeadline: text({
-      defaultValue: "Movement is art.\nThe body of work\nis you.",
-    }),
+    heroPrimaryCtaLabel: text({ defaultValue: "" }),
 
-    heroSubheadline: text({
-      defaultValue:
-        "A modern gym storefront with memberships, classes, coaching, and facility access configured from one operational system.",
-    }),
+    heroPrimaryCtaHref: text({ defaultValue: "" }),
 
-    heroPrimaryCtaLabel: text({
-      defaultValue: "Start membership",
-    }),
+    heroSecondaryCtaLabel: text({ defaultValue: "" }),
 
-    heroPrimaryCtaHref: text({
-      defaultValue: "/join",
-    }),
+    heroSecondaryCtaHref: text({ defaultValue: "" }),
 
-    heroSecondaryCtaLabel: text({
-      defaultValue: "View schedule",
-    }),
+    promoBanner: text({ defaultValue: "" }),
 
-    heroSecondaryCtaHref: text({
-      defaultValue: "/schedule",
-    }),
+    footerTagline: text({ defaultValue: "" }),
 
-    promoBanner: text({
-      defaultValue: "Movement is art. The body of work is you.",
-    }),
+    copyrightName: text({ defaultValue: "" }),
 
-    footerTagline: text({
-      defaultValue: "Structured programming, confident operations, and a better member experience.",
-    }),
+    facilityHeadline: text({ defaultValue: "" }),
 
-    copyrightName: text({
-      defaultValue: "Openfront Gym",
-    }),
-
-    facilityHeadline: text({
-      defaultValue: "Facility systems",
-    }),
-
-    facilityDescription: text({
-      defaultValue:
-        "Training, coaching, recovery, and member access all live in one coordinated environment.",
-    }),
+    facilityDescription: text({ defaultValue: "" }),
 
     facilityHighlights: json({
       defaultValue: [],

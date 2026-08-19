@@ -1,5 +1,5 @@
 import { list, graphql } from '@keystone-6/core';
-import { allOperations } from '@keystone-6/core/access';
+import { allOperations, denyAll } from '@keystone-6/core/access';
 import {
   relationship,
   timestamp,
@@ -8,13 +8,22 @@ import {
   virtual,
 } from '@keystone-6/core/fields';
 
-import { isSignedIn } from '../access';
+import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
+import { requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
 export const Waitlist = list({
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
+    },
+    filter: {
+      query: rules.canReadOwnWaitlist,
+      update: rules.canReadOwnWaitlist,
+      delete: rules.canReadOwnWaitlist,
     },
   },
   ui: {
@@ -23,6 +32,12 @@ export const Waitlist = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.waitlists",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     member: relationship({
       ref: 'Member.waitlistEntries',
       ui: {
@@ -86,25 +101,27 @@ export const Waitlist = list({
     estimatedWaitTime: virtual({
       field: graphql.field({
         type: graphql.String,
-        async resolve(item, args, context) {
-          // This is a placeholder - actual implementation would calculate
-          // based on class frequency and historical conversion rates
+        async resolve(item) {
           const position = item.position as number | null;
-          if (position && position > 0) {
-            const estimatedDays = Math.ceil(position / 2); // Rough estimate
-            return `~${estimatedDays} ${estimatedDays === 1 ? 'day' : 'days'}`;
-          }
-          return 'Unknown';
+          return position && position > 0
+            ? `Queue position ${position}; no time estimate available`
+            : 'No time estimate available';
         },
       }),
       ui: {
-        description: 'Estimated wait time based on position',
+        description: 'Queue position only; Gym does not estimate a conversion time',
       },
     }),
 
     ...trackingFields,
   },
   hooks: {
+    async validateInput(args: any) {
+      await validateTenantOwnership([
+        { field: "member", list: "member", required: true },
+        { field: "classSchedule", list: "classSchedule", required: true },
+      ])(args);
+    },
     // Calculate position automatically based on addedAt timestamp
     async beforeOperation({ operation, resolvedData, context, item }) {
       if (operation === 'create' && resolvedData.classSchedule) {

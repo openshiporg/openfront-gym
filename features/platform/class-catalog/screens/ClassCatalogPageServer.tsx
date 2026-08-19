@@ -1,24 +1,18 @@
 import { requireDashboardManager } from '@/features/dashboard/lib/current-user'
-import { keystoneContext } from '@/features/keystone/context'
+import { keystoneClient } from '@/features/dashboard/lib/keystoneClient'
 import { ClassCatalogPage } from './ClassCatalogPage'
 
 export async function ClassCatalogPageServer() {
   await requireDashboardManager()
-
-  const classTypes = await keystoneContext.sudo().query.ClassType.findMany({
-    orderBy: [{ name: 'asc' }],
-    query: `
-      id
-      name
-      description { document }
-      difficulty
-      duration
-      caloriesBurn
-      equipmentNeeded
-    `,
-  })
-
-  return <ClassCatalogPage initialClassTypes={classTypes as any[]} />
+  const response = await keystoneClient<{ classTypes: any[] }>(`
+    query ClassCatalogWorkspace {
+      classTypes(orderBy: [{ name: asc }], take: 500) {
+        id name description { document } difficulty duration caloriesBurn equipmentNeeded
+      }
+    }
+  `)
+  if (!response.success) throw new Error(response.error)
+  return <ClassCatalogPage initialClassTypes={response.data.classTypes} />
 }
 
 export default ClassCatalogPageServer

@@ -1,97 +1,95 @@
 import Link from "next/link";
+import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
 
-const COLS = [
-  {
-    heading: "Train",
-    links: [
-      { label: "Classes", href: "/classes" },
-      { label: "Schedule", href: "/schedule" },
-      { label: "Instructors", href: "/instructors" },
-    ],
-  },
-  {
-    heading: "Membership",
-    links: [
-      { label: "Plans", href: "/memberships" },
-      { label: "Join", href: "/join" },
-      { label: "Account", href: "/account" },
-    ],
-  },
-  {
-    heading: "Explore",
-    links: [
-      { label: "Facilities", href: "/facilities" },
-      { label: "Contact", href: "/contact" },
-    ],
-  },
+const links = [
+  { label: "Classes", href: "/classes" },
+  { label: "Schedule", href: "/schedule" },
+  { label: "Membership", href: "/memberships" },
+  { label: "Coaches", href: "/instructors" },
+  { label: "Facility", href: "/facilities" },
+  { label: "Contact", href: "/contact" },
 ];
 
 export default function Footer({
   config,
 }: {
-  config?: { name?: string | null; footerTagline?: string | null; copyrightName?: string | null } | null;
+  config?: {
+    name?: string | null;
+    tagline?: string | null;
+    logoIcon?: string | null;
+    description?: string | null;
+    footerTagline?: string | null;
+    copyrightName?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
 }) {
-  const brandName = config?.name || 'Openfront Gym';
-  const footerTagline =
-    config?.footerTagline ||
-    'Structured programming, confident operations, and a better member experience.';
-  const copyrightName = config?.copyrightName || brandName;
+  const brandName = getStorefrontBrandName(config);
+  const footerTagline = config?.footerTagline?.trim() || null;
+  const copyrightName = config?.copyrightName?.trim() || brandName;
 
   return (
-    <footer className="bg-[#0e0e0e]">
-      {/* Accent top line — indigo */}
-      <div className="h-[1px] w-full bg-[linear-gradient(90deg,#818cf8_0%,rgba(129,140,248,0.3)_40%,transparent_70%)]" />
-
-      <div className="mx-auto flex max-w-7xl flex-col gap-14 px-4 py-16 sm:px-6 lg:px-8">
-        <div className="flex flex-col justify-between gap-12 md:flex-row md:items-start">
-          {/* Brand */}
-          <div className="max-w-xs">
-            <Link href="/" className="flex items-center transition-opacity hover:opacity-75">
-              <span className="font-[family-name:var(--font-space-grotesk)] text-lg font-black uppercase tracking-[-0.07em] text-white">
-                {brandName.split(' ')[0]}
-              </span>
-              {brandName.split(' ').slice(1).join(' ') && (
-                <span className="ml-1.5 font-[family-name:var(--font-space-grotesk)] text-lg font-light uppercase tracking-[-0.03em] text-[#818cf8]">
-                  {brandName.split(' ').slice(1).join(' ')}
-                </span>
-              )}
-            </Link>
-            <p className="mt-4 text-sm leading-relaxed text-[#c4c7c7]">
-              {footerTagline}
+    <footer className="border-t border-[var(--sf-rule)] bg-[var(--sf-ink)] text-[oklch(94%_0.01_85)]">
+      <div className="sf-container py-16 lg:py-20">
+        <div className="grid gap-12 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-end">
+          <div>
+            <div className="flex items-center gap-4">
+              {config?.logoIcon ? (
+                <span
+                  className="h-11 w-11 shrink-0 [&>svg]:h-full [&>svg]:w-full"
+                  aria-hidden="true"
+                  dangerouslySetInnerHTML={{ __html: config.logoIcon }}
+                />
+              ) : null}
+              <p className="sf-eyebrow text-[oklch(72%_0.08_55)]">{brandName}</p>
+            </div>
+            <p className="sf-display mt-6 text-4xl italic sm:text-5xl lg:text-6xl">
+              {footerTagline || config?.tagline || brandName}
             </p>
+            {config?.description ? (
+              <p className="mt-8 max-w-lg text-sm leading-7 text-[oklch(78%_0.01_85)]">
+                {config.description}
+              </p>
+            ) : null}
           </div>
 
-          {/* Link columns */}
-          <div className="grid grid-cols-2 gap-10 sm:grid-cols-3">
-            {COLS.map((col) => (
-              <div key={col.heading}>
-                <h4 className="font-[family-name:var(--font-space-grotesk)] text-[10px] font-bold uppercase tracking-[0.22em] text-[#818cf8]">
-                  {col.heading}
-                </h4>
-                <ul className="mt-4 space-y-3">
-                  {col.links.map((link) => (
-                    <li key={link.label}>
-                      <Link
-                        href={link.href}
-                        className="text-xs font-medium uppercase tracking-[0.16em] text-[#c4c7c7] transition-colors hover:text-[#818cf8]"
-                      >
-                        {link.label}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+          <div className="grid gap-8 sm:grid-cols-2">
+            <div>
+              <p className="sf-eyebrow text-[oklch(72%_0.08_55)]">Visit</p>
+              <div className="mt-4 space-y-2 text-sm leading-6 text-[oklch(82%_0.01_85)]">
+                {config?.address ? <p>{config.address}</p> : null}
+                {config?.phone ? <p>{config.phone}</p> : null}
+                {config?.email ? <p>{config.email}</p> : null}
               </div>
-            ))}
+            </div>
+            <div>
+              <p className="sf-eyebrow text-[oklch(72%_0.08_55)]">Explore</p>
+              <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+                {links.map((link) => (
+                  <li key={link.href}>
+                    <Link
+                      href={link.href}
+                      className="text-sm text-[oklch(82%_0.01_85)] transition hover:text-white"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
 
-        {/* Bottom bar */}
-        <div className="flex flex-col justify-between gap-4 border-t border-white/10 pt-6 text-[10px] uppercase tracking-[0.22em] text-[#c4c7c7]/50 md:flex-row">
-          <p>© {new Date().getFullYear()} {copyrightName}. All rights reserved.</p>
-          <p>Built for disciplined training.</p>
+        <div className="mt-14 flex flex-col justify-between gap-3 border-t border-[oklch(35%_0.02_55)] pt-6 text-xs text-[oklch(62%_0.01_85)] sm:flex-row">
+          <p>
+            © {new Date().getFullYear()} {copyrightName}
+          </p>
+          <Link href="/account" className="transition hover:text-white">
+            Member sign in
+          </Link>
         </div>
       </div>
     </footer>
   );
 }
-

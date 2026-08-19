@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "./(storefront)/storefront.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Openfront Gym",
-  description: "Gym management platform for memberships, classes, and scheduling.",
+  title: "Gym storefront",
+  description: "Gym membership and class storefront.",
 };
 
 export default function RootLayout({
@@ -27,10 +28,8 @@ export default function RootLayout({
       <head>
         <link href="/favicon.svg" rel="icon" />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background font-sans`}
-      >
-        <main>{children}</main>
+      <body className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-background font-sans antialiased`}>
+        {children}
       </body>
     </html>
   );

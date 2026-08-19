@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, User, Calendar, LogOut, LayoutDashboard, GraduationCap } from "lucide-react";
+import { Calendar, ChevronDown, GraduationCap, LayoutDashboard, LogOut, User } from "lucide-react";
 import { signOut } from "@/features/storefront/lib/data/user";
 import {
   DropdownMenu,
@@ -19,85 +19,88 @@ type AuthNavProps = {
     email: string;
     role?: { isInstructor?: boolean; canAccessDashboard?: boolean } | null;
   } | null;
+  joinCta?: { label: string; href: string } | null;
 };
 
-export default function AuthNav({ user }: AuthNavProps) {
+export default function AuthNav({ user, joinCta }: AuthNavProps) {
   if (!user) {
     return (
-      <div className="flex items-center gap-3">
+      <div className="sf-auth-nav">
         <Link
           href="/account"
-          className="hidden text-sm font-bold uppercase tracking-widest text-[#e5e2e1] transition-colors hover:text-[#818cf8] sm:inline-flex"
+          className="sf-nav-link hidden sm:inline-flex"
         >
           Sign in
         </Link>
-        <Link
-          href="/join"
-          className="inline-flex items-center bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-5 py-2 text-xs font-bold uppercase tracking-[0.2em] text-white transition-transform active:scale-95"
-        >
-          Join now
-        </Link>
+        {joinCta ? (
+          <Link href={joinCta.href} className="sf-header-cta">
+            {joinCta.label}
+          </Link>
+        ) : null}
       </div>
     );
   }
 
   const initials = user.name
     .split(" ")
-    .map((n) => n[0])
+    .map((name) => name[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
 
   return (
-    <div className="flex items-center gap-3">
-      <Link
-        href="/schedule"
-        className="hidden border border-[#818cf8] px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-[#818cf8] transition-colors hover:bg-[#818cf8]/10 sm:inline-flex"
-      >
-        Book now
+    <div className="sf-auth-nav">
+      <Link href="/schedule" className="sf-btn-secondary hidden px-4 lg:inline-flex">
+        Book class
       </Link>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-3 rounded-none px-1 py-1 text-[#e5e2e1] transition-colors hover:text-[#818cf8]">
-            <span className="flex h-9 w-9 items-center justify-center border border-white/15 bg-[#1c1b1b] text-xs font-bold uppercase">
+          <button className="flex items-center gap-2 transition hover:text-[var(--sf-accent)]">
+            <span className="flex h-9 w-9 items-center justify-center border border-[var(--sf-rule)] bg-[var(--sf-paper-2)] text-xs font-semibold">
               {initials}
             </span>
-            <span className="hidden text-sm font-bold uppercase tracking-tight sm:block">
-              {user.name.split(" ")[0]}
-            </span>
-            <ChevronDown className="h-4 w-4 text-[#c4c7c7]" />
+            <span className="hidden text-sm font-medium md:block">{user.name.split(" ")[0]}</span>
+            <ChevronDown className="h-4 w-4 text-[var(--sf-ink-muted)]" />
           </button>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="end" className="w-64 rounded-none border-white/10 bg-[#1c1b1b] text-[#e5e2e1]">
+        <DropdownMenuContent align="end" className="w-64 border-[var(--sf-rule)] bg-[var(--sf-paper)]">
           <DropdownMenuLabel className="font-normal">
-            <p className="font-bold uppercase tracking-tight text-white">{user.name}</p>
-            <p className="mt-1 text-xs uppercase tracking-widest text-[#c4c7c7]">{user.email}</p>
+            <p className="font-semibold">{user.name}</p>
+            <p className="mt-1 text-xs text-[var(--sf-ink-muted)]">{user.email}</p>
           </DropdownMenuLabel>
-          <DropdownMenuSeparator className="bg-white/10" />
+          <DropdownMenuSeparator />
 
-          <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
-            <Link href="/account"><User className="mr-2 h-4 w-4" /> My account</Link>
+          <DropdownMenuItem asChild>
+            <Link href="/account">
+              <User className="mr-2 h-4 w-4" /> My account
+            </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
-            <Link href="/account/bookings"><Calendar className="mr-2 h-4 w-4" /> My bookings</Link>
+          <DropdownMenuItem asChild>
+            <Link href="/account/bookings">
+              <Calendar className="mr-2 h-4 w-4" /> My bookings
+            </Link>
           </DropdownMenuItem>
-          {user.role?.isInstructor && (
-            <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
-              <Link href="/account/instructor"><GraduationCap className="mr-2 h-4 w-4" /> Instructor console</Link>
+          {user.role?.isInstructor ? (
+            <DropdownMenuItem asChild>
+              <Link href="/account/instructor">
+                <GraduationCap className="mr-2 h-4 w-4" /> Instructor console
+              </Link>
             </DropdownMenuItem>
-          )}
-          {user.role?.canAccessDashboard && (
-            <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
-              <Link href="/dashboard"><LayoutDashboard className="mr-2 h-4 w-4" /> Admin dashboard</Link>
+          ) : null}
+          {user.role?.canAccessDashboard ? (
+            <DropdownMenuItem asChild>
+              <Link href="/dashboard">
+                <LayoutDashboard className="mr-2 h-4 w-4" /> Admin dashboard
+              </Link>
             </DropdownMenuItem>
-          )}
+          ) : null}
 
-          <DropdownMenuSeparator className="bg-white/10" />
-          <DropdownMenuItem asChild className="focus:bg-[#353535] focus:text-white">
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
             <form action={signOut} className="w-full">
-              <button type="submit" className="flex w-full items-center text-sm text-[#ffb4ab]">
+              <button type="submit" className="flex w-full items-center text-sm text-[var(--sf-accent)]">
                 <LogOut className="mr-2 h-4 w-4" /> Sign out
               </button>
             </form>

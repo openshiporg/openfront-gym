@@ -1,4 +1,6 @@
-import { Building2, Calendar, CircleCheck, MapPin, Package, UserRound } from 'lucide-react';
+import { Building2, Package } from 'lucide-react';
+
+export type SetupTemplate = 'full' | 'minimal';
 
 export interface GymTemplate {
   name: string;
@@ -14,23 +16,23 @@ export interface GymTemplate {
     classTypes: string[];
     instructors: string[];
     schedules: string[];
-    demoMember: string[];
+    paymentProviders: string[];
   };
 }
 
-export const GYM_TEMPLATES: Record<'full' | 'minimal' | 'custom', GymTemplate> = {
+export const GYM_TEMPLATES: Record<SetupTemplate, GymTemplate> = {
   full: {
-    name: 'Complete Setup',
+    name: 'Complete Starter Setup',
     description:
-      'Creates 3 membership plans, 6 class types, 3 instructors, recurring schedules, upcoming class instances, and a demo member account so every storefront page works immediately.',
+      'Creates sample plans, class types, instructors, recurring schedules, and a Stripe integration-status record that is enabled only when server credentials are configured. It never creates member credentials, charges, subscriptions, or revenue.',
     icon: <Building2 className="h-5 w-5" />,
-    membershipTiers: ['basic-monthly', 'premium-monthly', 'elite-monthly'],
+    membershipTiers: ['basic-monthly', 'premium-monthly'],
     classTypes: ['yoga', 'spin', 'hiit', 'pilates', 'zumba', 'boxing'],
     instructors: ['sarah-johnson', 'mike-rodriguez', 'emily-chen'],
     displayNames: {
-      gymSettings: ['Gym profile'],
-      location: ['Main location'],
-      membershipTiers: ['Basic Monthly', 'Premium Monthly', 'Elite Monthly'],
+      gymSettings: ['Kinetic Performance Club starter profile'],
+      location: ['Main Gym starter location'],
+      membershipTiers: ['Basic Monthly', 'Unlimited Monthly'],
       classTypes: ['Yoga', 'Spin Class', 'HIIT', 'Pilates', 'Zumba', 'Boxing'],
       instructors: ['Sarah Johnson', 'Mike Rodriguez', 'Emily Chen'],
       schedules: [
@@ -50,20 +52,20 @@ export const GYM_TEMPLATES: Record<'full' | 'minimal' | 'custom', GymTemplate> =
         'Boxing · Tuesday 18:00',
         'Boxing · Thursday 18:00',
       ],
-      demoMember: ['Alex Demo'],
+      paymentProviders: ['Stripe integration status (enabled only with server credentials)'],
     },
   },
   minimal: {
-    name: 'Basic Setup',
+    name: 'Basic Starter Setup',
     description:
-      'Essentials only — one membership plan, one class type, one instructor, recurring schedules, and a demo member to test sign-in.',
+      'Creates one sample plan, class type, instructor, recurring schedule set, and a Stripe integration-status record that is enabled only when server credentials are configured. It never creates member credentials or financial evidence.',
     icon: <Package className="h-5 w-5" />,
     membershipTiers: ['basic-monthly'],
     classTypes: ['yoga'],
     instructors: ['sarah-johnson'],
     displayNames: {
-      gymSettings: ['Gym profile'],
-      location: ['Main location'],
+      gymSettings: ['Kinetic Performance Club starter profile'],
+      location: ['Main Gym starter location'],
       membershipTiers: ['Basic Monthly'],
       classTypes: ['Yoga'],
       instructors: ['Sarah Johnson'],
@@ -72,25 +74,7 @@ export const GYM_TEMPLATES: Record<'full' | 'minimal' | 'custom', GymTemplate> =
         'Morning Yoga · Wednesday 07:00',
         'Morning Yoga · Friday 07:00',
       ],
-      demoMember: ['Alex Demo'],
-    },
-  },
-  custom: {
-    name: 'Custom Setup',
-    description:
-      'Customize your gym setup using your own JSON templates for gym profile, plans, classes, instructors, schedules, and demo member data.',
-    icon: <CircleCheck className="h-5 w-5" />,
-    membershipTiers: ['basic-monthly'],
-    classTypes: ['yoga'],
-    instructors: ['sarah-johnson'],
-    displayNames: {
-      gymSettings: ['Gym profile'],
-      location: ['Main location'],
-      membershipTiers: ['Basic Monthly'],
-      classTypes: ['Yoga'],
-      instructors: ['Sarah Johnson'],
-      schedules: ['Morning Yoga · Monday 07:00'],
-      demoMember: ['Alex Demo'],
+      paymentProviders: ['Stripe integration status (enabled only with server credentials)'],
     },
   },
 };
@@ -99,7 +83,7 @@ export interface SectionDefinition {
   id: number;
   type: string;
   label: string;
-  getItemsFn: (template: 'full' | 'minimal' | 'custom') => string[];
+  getItemsFn: (template: SetupTemplate) => string[];
   jsonKey:
     | 'gymSettings'
     | 'location'
@@ -107,57 +91,27 @@ export interface SectionDefinition {
     | 'classTypes'
     | 'instructors'
     | 'schedules'
-    | 'demoMember';
+    | 'paymentProviders';
 }
 
+const section = (
+  id: number,
+  type: SectionDefinition['jsonKey'],
+  label: string,
+): SectionDefinition => ({
+  id,
+  type,
+  label,
+  getItemsFn: (template) => GYM_TEMPLATES[template].displayNames[type],
+  jsonKey: type,
+});
+
 export const SECTION_DEFINITIONS: SectionDefinition[] = [
-  {
-    id: 1,
-    type: 'gymSettings',
-    label: 'Gym Profile',
-    getItemsFn: (template) => GYM_TEMPLATES[template].displayNames.gymSettings,
-    jsonKey: 'gymSettings',
-  },
-  {
-    id: 2,
-    type: 'location',
-    label: 'Location',
-    getItemsFn: (template) => GYM_TEMPLATES[template].displayNames.location,
-    jsonKey: 'location',
-  },
-  {
-    id: 3,
-    type: 'membershipTiers',
-    label: 'Membership Plans',
-    getItemsFn: (template) => GYM_TEMPLATES[template].displayNames.membershipTiers,
-    jsonKey: 'membershipTiers',
-  },
-  {
-    id: 4,
-    type: 'classTypes',
-    label: 'Class Types',
-    getItemsFn: (template) => GYM_TEMPLATES[template].displayNames.classTypes,
-    jsonKey: 'classTypes',
-  },
-  {
-    id: 5,
-    type: 'instructors',
-    label: 'Instructors',
-    getItemsFn: (template) => GYM_TEMPLATES[template].displayNames.instructors,
-    jsonKey: 'instructors',
-  },
-  {
-    id: 6,
-    type: 'schedules',
-    label: 'Recurring Schedules',
-    getItemsFn: (template) => GYM_TEMPLATES[template].displayNames.schedules,
-    jsonKey: 'schedules',
-  },
-  {
-    id: 7,
-    type: 'demoMember',
-    label: 'Demo Member',
-    getItemsFn: (template) => GYM_TEMPLATES[template].displayNames.demoMember,
-    jsonKey: 'demoMember',
-  },
+  section(1, 'gymSettings', 'Starter Gym Profile'),
+  section(2, 'location', 'Starter Location'),
+  section(3, 'membershipTiers', 'Sample Membership Plans'),
+  section(4, 'classTypes', 'Sample Class Types'),
+  section(5, 'instructors', 'Sample Instructors'),
+  section(6, 'schedules', 'Sample Recurring Schedules'),
+  section(7, 'paymentProviders', 'Stripe Integration Status'),
 ];

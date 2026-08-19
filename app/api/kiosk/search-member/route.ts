@@ -1,58 +1,25 @@
-import { NextRequest, NextResponse } from "next/server"
-import { getContext } from "@keystone-6/core/context"
-import config from "@/keystone"
-import * as PrismaModule from ".prisma/client"
+import { NextRequest, NextResponse } from "next/server";
+import { isKioskRequestAuthorized, readKioskJsonObject } from "@/features/platform/kiosk";
+import { executeKioskGraphQL } from "@/features/platform/kiosk/graphql";
 
 export async function POST(request: NextRequest) {
+  if (!isKioskRequestAuthorized(request)) {
+    return NextResponse.json({ error: "Kiosk authorization required", members: [] }, { status: 401 });
+  }
   try {
-    const { query } = await request.json()
-
-    if (!query || query.length < 2) {
-      return NextResponse.json({ members: [] })
-    }
-
-    const context = getContext(config, PrismaModule).sudo()
-
-    const members = await context.query.Member.findMany({
-      where: {
-        OR: [
-          { user: { name: { contains: query, mode: "insensitive" } } },
-          { user: { email: { contains: query, mode: "insensitive" } } },
-          { phoneNumber: { contains: query } },
-        ],
-      },
-      take: 10,
-      query: `
-        id
-        status
-        phoneNumber
-        user {
-          id
-          name
-          email
+    const body = await readKioskJsonObject(request);
+    const query = typeof body?.query === "string" ? body.query.trim() : "";
+    if (query.length < 2) return NextResponse.json({ members: [] });
+    if (query.length > 100) return NextResponse.json({ error: "Search query is too long", members: [] }, { status: 400 });
+    const data = await executeKioskGraphQL<{ kioskSearchMembers: unknown[] }>(`
+      query KioskSearch($query: String!, $organizationId: ID!, $credential: String!) {
+        kioskSearchMembers(query: $query, organizationId: $organizationId, credential: $credential) {
+          id name email phone status membershipTier membershipStatus classCreditsRemaining
         }
-        currentMembershipTier {
-          id
-          name
-        }
-      `,
-    })
-
-    return NextResponse.json({
-      members: members.map((m: any) => ({
-        id: m.id,
-        name: m.user?.name || "Unknown",
-        email: m.user?.email || "",
-        phone: m.phoneNumber,
-        status: m.status,
-        membershipTier: m.currentMembershipTier?.name,
-      })),
-    })
+      }
+    `, { query });
+    return NextResponse.json({ members: data.kioskSearchMembers });
   } catch (error) {
-    console.error("Member search error:", error)
-    return NextResponse.json(
-      { error: "Search failed", members: [] },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Search failed", members: [] }, { status: 400 });
   }
 }

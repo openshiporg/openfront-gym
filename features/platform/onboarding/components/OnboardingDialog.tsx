@@ -22,6 +22,7 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -36,7 +37,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge-button';
-import { CustomSetupSteps } from './CustomSetupSteps';
 import { SectionRenderer } from './SectionRenderer';
 import { useOnboardingState } from '../hooks/useOnboardingState';
 import { useOnboardingApi } from '../hooks/useOnboardingApi';
@@ -44,7 +44,7 @@ import { getItemsFromJsonData } from '../utils/dataUtils';
 import { GYM_TEMPLATES, SECTION_DEFINITIONS } from '../config/templates';
 
 // Stripe env var hint for gym membership payments
-const PAYMENT_ENV_VARS = ['NEXT_PUBLIC_STRIPE_KEY', 'STRIPE_SECRET_KEY'];
+const PAYMENT_ENV_VARS = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'];
 
 const StripeEnvHint = () => (
   <TooltipProvider>
@@ -55,7 +55,7 @@ const StripeEnvHint = () => (
       <TooltipContent side="bottom" align="start" className="p-3 text-xs max-w-sm z-[100]">
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground mb-3">
-            For Stripe-backed membership billing to work, add these env vars to your .env file:
+            For Stripe-backed membership billing, add these server env vars and configure monthly/annual Stripe Price IDs on each plan:
           </p>
           {PAYMENT_ENV_VARS.map((v) => (
             <div key={v} className="flex items-center gap-2">
@@ -73,13 +73,62 @@ interface OnboardingDialogProps {
   onClose: () => void;
 }
 
+function ActionButtons({
+  step,
+  isLoading,
+  runOnboarding,
+  fullWidth = false,
+}: {
+  step: 'template' | 'progress' | 'done';
+  isLoading: boolean;
+  runOnboarding: () => void;
+  fullWidth?: boolean;
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row gap-2 w-full">
+      {step === 'done' ? (
+        <>
+          <DialogClose asChild>
+            <Button type="button" variant="outline" className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
+              Close
+            </Button>
+          </DialogClose>
+          <Button asChild className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
+            <a href="/" target="_blank" rel="noopener noreferrer">
+              Preview starter site
+              <ArrowUpRight className="ml-1.5 h-4 w-4" />
+            </a>
+          </Button>
+        </>
+      ) : (
+        <>
+          <DialogClose asChild>
+            <Button type="button" variant="ghost" disabled={isLoading} className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
+              Cancel
+            </Button>
+          </DialogClose>
+          {isLoading ? (
+            <Button disabled className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Creating...
+            </Button>
+          ) : (
+            <Button onClick={runOnboarding} className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
+              Confirm
+            </Button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) => {
   const onboardingState = useOnboardingState();
   const {
     step,
     selectedTemplate,
     currentJsonData,
-    customJsonApplied,
     progressMessage,
     loadingItems,
     completedItems,
@@ -88,8 +137,6 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
     isLoading,
     setStep,
     setSelectedTemplate,
-    setCurrentJsonData,
-    setCustomJsonApplied,
     setProgress,
     setItemLoading,
     setItemCompleted,
@@ -123,58 +170,23 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
         classTypes: getItemsFromJsonData(currentJsonData, 'classTypes'),
         instructors: getItemsFromJsonData(currentJsonData, 'instructors'),
         schedules: getItemsFromJsonData(currentJsonData, 'schedules'),
-        demoMember: getItemsFromJsonData(currentJsonData, 'demoMember'),
+        paymentProviders: getItemsFromJsonData(currentJsonData, 'paymentProviders'),
       }
     : GYM_TEMPLATES[selectedTemplate].displayNames;
 
-  const ActionButtons = ({ fullWidth = false }: { fullWidth?: boolean }) => (
-    <div className={`flex flex-col sm:flex-row gap-2 w-full`}>
-      {step === 'done' ? (
-        <>
-          <DialogClose asChild>
-            <Button type="button" variant="outline" className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
-              Close
-            </Button>
-          </DialogClose>
-          <Button asChild className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
-            <a href="/" target="_blank" rel="noopener noreferrer">
-              View your gym site
-              <ArrowUpRight className="ml-1.5 h-4 w-4" />
-            </a>
-          </Button>
-        </>
-      ) : (
-        <>
-          <DialogClose asChild>
-            <Button type="button" variant="ghost" disabled={isLoading} className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
-              Cancel
-            </Button>
-          </DialogClose>
-          {isLoading ? (
-            <Button disabled className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Creating...
-            </Button>
-          ) : (
-            <Button onClick={runOnboarding} className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
-              Confirm
-            </Button>
-          )}
-        </>
-      )}
-    </div>
-  );
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="overflow-hidden p-0 sm:max-w-4xl gap-0 max-w-[95vw] max-h-[95vh]">
-        <DialogHeader className="border-b px-4 sm:px-6 py-4 mb-0">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-[95vw] flex-col overflow-hidden p-0 gap-0 sm:max-w-4xl">
+        <DialogHeader className="border-b px-4 sm:px-6 py-4 mb-0 shrink-0">
           <DialogTitle>Gym Setup</DialogTitle>
+          <DialogDescription>
+            Choose tenant-scoped starter data, review every section, and confirm setup without creating members or financial evidence.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col lg:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
           {/* Left panel — controls + status */}
-          <div className="flex flex-col lg:w-80 lg:border-r order-1 lg:order-none lg:justify-between">
+          <div className="order-1 flex shrink-0 flex-col lg:order-none lg:w-80 lg:justify-between lg:border-r">
             <div className="flex-1">
               <div className="p-4 sm:p-6">
                 {/* Header */}
@@ -186,10 +198,8 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                     <h3 className="text-sm font-medium text-foreground">Gym Setup</h3>
                     <p className="text-sm text-muted-foreground">
                       {step === 'done'
-                        ? 'Your gym is ready'
-                        : selectedTemplate === 'custom'
-                        ? 'Copy JSON templates for custom setup'
-                        : 'Configure your gym with demo data'}
+                        ? 'Starter configuration created'
+                        : 'Create transparent, non-financial starter data'}
                     </p>
                   </div>
                 </div>
@@ -199,7 +209,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                   <>
                     <h4 className="text-sm font-medium text-foreground mb-2">Setup Complete</h4>
                     <p className="text-sm text-muted-foreground mb-4">
-                      Your {selectedTemplate === 'minimal' ? 'basic' : 'complete'} gym setup is ready to use.
+                      Your {selectedTemplate === 'minimal' ? 'basic' : 'complete'} starter setup is ready to review. Replace sample business details before publishing.
                     </p>
                     <div className="flex items-center space-x-2 text-sm text-emerald-600 dark:text-emerald-500 mb-4">
                       <CircleCheck className="h-4 w-4 fill-emerald-500 text-background" />
@@ -234,7 +244,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                       <div className="flex items-center space-x-2 text-muted-foreground">
                         <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
                         <span className="font-medium">
-                          {displayNames.instructors.length} instructor{displayNames.instructors.length === 1 ? '' : 's'} created
+                          {displayNames.instructors.length} sample instructor{displayNames.instructors.length === 1 ? '' : 's'} created with reserved emails; replace each email before inviting a coach
                         </span>
                       </div>
                       <div className="flex items-center space-x-2 text-muted-foreground">
@@ -245,13 +255,14 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                       </div>
                       <div className="flex items-center space-x-2 text-muted-foreground">
                         <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">
-                          {displayNames.demoMember.length} demo member account{displayNames.demoMember.length === 1 ? '' : 's'} created
-                        </span>
+                        <span className="font-medium">Upcoming class instances generated for the next 14 days</span>
                       </div>
                       <div className="flex items-center space-x-2 text-muted-foreground">
                         <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">Upcoming class instances generated for the next 14 days</span>
+                        <span className="font-medium">
+                          Stripe integration status created from server credential configuration, without payment methods, subscriptions, charges, or revenue
+                        </span>
+                        <StripeEnvHint />
                       </div>
                     </div>
                   </>
@@ -263,7 +274,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                     <div className="block lg:hidden">
                       <Select
                         value={selectedTemplate}
-                        onValueChange={(value) => setSelectedTemplate(value as 'minimal' | 'full' | 'custom')}
+                        onValueChange={(value) => setSelectedTemplate(value as 'minimal' | 'full')}
                       >
                         <SelectTrigger className="w-full h-auto py-3">
                           <SelectValue />
@@ -278,13 +289,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                           <SelectItem value="full">
                             <div className="flex flex-col items-start text-left">
                               <span className="font-medium">Complete Setup</span>
-                              <span className="text-xs text-muted-foreground">Plans, classes, instructors, schedules, and a demo member</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="custom">
-                            <div className="flex flex-col items-start text-left">
-                              <span className="font-medium">Custom Setup</span>
-                              <span className="text-xs text-muted-foreground">Use your own JSON templates</span>
+                              <span className="text-xs text-muted-foreground">Sample plans, classes, instructors, and schedules; no member or financial records</span>
                             </div>
                           </SelectItem>
                         </SelectContent>
@@ -295,7 +300,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                     <div className="hidden lg:block">
                       <RadioGroup
                         value={selectedTemplate}
-                        onValueChange={(value) => setSelectedTemplate(value as 'minimal' | 'full' | 'custom')}
+                        onValueChange={(value) => setSelectedTemplate(value as 'minimal' | 'full')}
                         className="space-y-4"
                       >
                         {[
@@ -308,14 +313,8 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                           {
                             value: 'full' as const,
                             icon: Building2,
-                            label: 'Complete Setup',
-                            desc: 'Plans, classes, instructors, schedules, and a demo member',
-                          },
-                          {
-                            value: 'custom' as const,
-                            icon: CircleCheck,
-                            label: 'Custom Setup',
-                            desc: 'Copy JSON templates to create your own setup',
+                            label: 'Complete Starter Setup',
+                            desc: 'Sample plans, classes, instructors, and schedules; no member or financial records',
                           },
                         ].map(({ value, icon: Icon, label, desc }) => (
                           <div
@@ -366,56 +365,41 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
               {error && !isLoading && step !== 'done' && (
                 <Badge color="rose" className="rounded-none gap-3 text-sm border-b">
                   <AlertCircle className="size-4 sm:size-7" />
-                  <span className="text-xs sm:text-sm">
-                    Error: Please ensure you're using a fresh installation without existing data.
-                  </span>
+                  <span className="text-xs sm:text-sm">{error}</span>
                 </Badge>
               )}
               <div className="flex items-center justify-between p-4">
-                <ActionButtons />
+                <ActionButtons step={step} isLoading={isLoading} runOnboarding={runOnboarding} />
               </div>
             </div>
           </div>
 
           {/* Right panel — section renderer */}
-          <div className="flex-1 max-h-[60vh] lg:max-h-[70vh] overflow-y-auto p-4 sm:p-6 order-2 lg:order-none">
-            {selectedTemplate === 'custom' && step === 'template' && !customJsonApplied ? (
-              <CustomSetupSteps
-                currentJson={currentJsonData}
-                onJsonUpdate={(newJsonData) => {
-                  setCurrentJsonData(newJsonData);
-                  setCustomJsonApplied(true);
-                }}
-                onBack={() => setCustomJsonApplied(false)}
-              />
-            ) : (
-              <SectionRenderer
-                sections={SECTION_DEFINITIONS}
-                selectedTemplate={selectedTemplate}
-                isLoading={isLoading}
-                loadingItems={loadingItems}
-                completedItems={completedItems}
-                itemErrors={itemErrors}
-                error={error}
-                step={step}
-                currentJsonData={currentJsonData}
-              />
-            )}
+          <div className="order-2 min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:order-none">
+            <SectionRenderer
+              sections={SECTION_DEFINITIONS}
+              selectedTemplate={selectedTemplate}
+              isLoading={isLoading}
+              loadingItems={loadingItems}
+              completedItems={completedItems}
+              itemErrors={itemErrors}
+              error={error}
+              step={step}
+              currentJsonData={currentJsonData}
+            />
           </div>
         </div>
 
         {/* Mobile buttons */}
-        <div className="flex lg:hidden flex-col border-t">
+        <div className="flex shrink-0 flex-col border-t lg:hidden">
           {error && !isLoading && step !== 'done' && (
             <Badge color="rose" className="rounded-none gap-3 text-sm border-b">
               <AlertCircle className="size-4 sm:size-7" />
-              <span className="text-xs sm:text-sm">
-                Error: Please ensure you're using a fresh installation without existing data.
-              </span>
+              <span className="text-xs sm:text-sm">{error}</span>
             </Badge>
           )}
           <div className="flex items-center justify-between p-4">
-            <ActionButtons fullWidth />
+            <ActionButtons step={step} isLoading={isLoading} runOnboarding={runOnboarding} fullWidth />
           </div>
         </div>
       </DialogContent>

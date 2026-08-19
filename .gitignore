@@ -20,6 +20,9 @@
 # production
 /build
 
+# local runtime state and credentials
+/.runtime/
+
 # misc
 .DS_Store
 *.pem

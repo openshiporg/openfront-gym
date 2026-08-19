@@ -1,5 +1,5 @@
 import { list } from "@keystone-6/core";
-import { allOperations } from "@keystone-6/core/access";
+import { allOperations, denyAll } from "@keystone-6/core/access";
 import {
   relationship,
   select,
@@ -9,13 +9,33 @@ import {
   text,
 } from "@keystone-6/core/fields";
 
-import { isSignedIn } from "../access";
+import { isSignedIn, permissions, rules } from "../access";
 import { trackingFields } from "./trackingFields";
+import { membershipLifecycleHooks } from "../mutations/gymLifecyclePolicy";
+import { requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 
 export const Membership = list({
+  hooks: {
+    async validateInput(args: any) {
+      membershipLifecycleHooks.validateInput(args);
+      await validateTenantOwnership([
+        { field: "member", list: "user", required: true },
+        { field: "tier", list: "membershipTier", required: true },
+      ])(args);
+    },
+  },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      // Membership state and credits are changed by checkout/webhook workflows only.
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
+    },
+    filter: {
+      query: rules.canReadOwnMembership,
+      update: rules.canReadOwnMembership,
+      delete: rules.canReadOwnMembership,
     },
   },
   ui: {
@@ -24,8 +44,15 @@ export const Membership = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.memberships",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     member: relationship({
       ref: "User.membership",
+      access: { update: denyAll },
       ui: {
         displayMode: "select",
       },
@@ -33,12 +60,14 @@ export const Membership = list({
 
     tier: relationship({
       ref: "MembershipTier",
+      access: { update: denyAll },
       ui: {
         displayMode: "select",
       },
     }),
 
     status: select({
+      access: { update: denyAll },
       type: "string",
       options: [
         { label: "Active", value: "active" },
@@ -52,10 +81,12 @@ export const Membership = list({
     }),
 
     startDate: timestamp({
+      access: { update: denyAll },
       validation: { isRequired: true },
     }),
 
     billingCycle: select({
+      access: { update: denyAll },
       type: "string",
       options: [
         { label: "Monthly", value: "monthly" },
@@ -65,13 +96,15 @@ export const Membership = list({
       validation: { isRequired: true },
     }),
 
-    nextBillingDate: timestamp(),
+    nextBillingDate: timestamp({ access: { update: denyAll } }),
 
     autoRenew: checkbox({
+      access: { update: denyAll },
       defaultValue: true,
     }),
 
     classCreditsRemaining: integer({
+      access: { update: denyAll },
       defaultValue: 0,
       ui: {
         description: "Remaining class credits for current billing period",
@@ -79,12 +112,14 @@ export const Membership = list({
     }),
 
     freezeStartDate: timestamp({
+      access: { update: denyAll },
       ui: {
         description: "Start date of membership freeze",
       },
     }),
 
     freezeEndDate: timestamp({
+      access: { update: denyAll },
       ui: {
         description: "End date of membership freeze",
       },
@@ -93,6 +128,7 @@ export const Membership = list({
     payments: relationship({
       ref: 'MembershipPayment.membership',
       many: true,
+      access: { create: denyAll, update: denyAll },
       ui: {
         description: "Payment history for this membership",
       },
@@ -100,6 +136,11 @@ export const Membership = list({
 
     // Stripe integration - only set when membership is linked to Stripe subscription
     stripeSubscriptionId: text({
+      access: {
+        read: isSignedIn,
+        create: permissions.canManageAllRecords,
+        update: denyAll,
+      },
       isIndexed: 'unique',
       db: { isNullable: true },
       ui: {
@@ -108,6 +149,7 @@ export const Membership = list({
     }),
 
     cancelReason: text({
+      access: { update: denyAll },
       ui: {
         displayMode: "textarea",
         description: "Reason for cancellation",
@@ -115,9 +157,25 @@ export const Membership = list({
     }),
 
     cancelledAt: timestamp({
+      access: { update: denyAll },
       ui: {
         description: "When the membership was cancelled",
       },
+    }),
+
+    billingAttempts: relationship({
+      ref: "MembershipBillingAttempt.membership",
+      many: true,
+      access: { create: denyAll, update: denyAll },
+    }),
+
+    // Monotonic membership-wide fence for all provider billing operations.
+    // Durable attempt rows carry the matching generation; no generated CRUD
+    // path may observe or mutate this internal coordination value.
+    billingGeneration: integer({
+      defaultValue: 0,
+      validation: { isRequired: true },
+      access: { read: denyAll, create: denyAll, update: denyAll },
     }),
 
     ...trackingFields,

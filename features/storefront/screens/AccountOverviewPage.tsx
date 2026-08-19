@@ -2,119 +2,130 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getUser } from "@/features/storefront/lib/data/user";
 import { getUpcomingBookings } from "@/features/storefront/lib/data/bookings";
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
+import { formatOccurrenceDate, formatOccurrenceTime } from "@/features/storefront/lib/class-occurrence";
 
 export default async function AccountOverviewPage() {
   const user = await getUser();
   if (!user) notFound();
 
+  const organizationId = user.organization?.id;
+  if (!organizationId) notFound();
   const firstName = user.name?.split(" ")[0] ?? "Member";
   const membership = user.membership;
-  const upcomingBookings = await getUpcomingBookings(user.id).catch(() => []);
+  const [upcomingBookings, config] = await Promise.all([
+    getUpcomingBookings(user.id, organizationId),
+    getStorefrontConfig(),
+  ]);
+  const timeZone = config?.timezone || "UTC";
+  const location = config?.address || config?.locationName || "Main studio";
 
   return (
-    <div className="space-y-12 text-[#e5e2e1]">
+    <div className="space-y-12">
       <header>
-        <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.92] tracking-[-0.08em] text-white sm:text-7xl">
-          Welcome back,
-          <br />
-          <span className="text-[#818cf8]">{firstName}</span>
+        <h1 className="sf-display text-[var(--text-display-s)]">
+          Welcome back, <span className="text-[var(--color-accent)]">{firstName}</span>
         </h1>
-        <p className="mt-5 max-w-xl text-base leading-relaxed text-[#c4c7c7]">
-          Your member account is where bookings, billing, and role-aware tools come together.
+        <p className="mt-5 max-w-xl text-base leading-relaxed text-[var(--color-ink-muted)]">
+          Your bookings, membership, and profile in one place.
         </p>
       </header>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
-        <section className="md:col-span-8 relative overflow-hidden bg-[#1c1b1b] p-8">
-          <div className="relative z-10 flex h-full flex-col justify-between gap-10">
-            <div>
-              <div className="mb-8 flex items-start justify-between gap-4">
-                <span className="text-xs font-bold uppercase tracking-[0.28em] text-[#c4c7c7]">Current status</span>
-                <span className={`px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${membership?.status === "active" ? "bg-[#d3fbff] text-[#00363a]" : "bg-[#353535] text-[#e5e2e1]"}`}>
-                  {membership?.status ?? "No active plan"}
-                </span>
-              </div>
-              <h2 className="font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase tracking-[-0.06em] text-white sm:text-5xl">
-                {membership?.tier?.name ?? "Membership required"}
-              </h2>
-              <p className="mt-3 max-w-md text-sm leading-relaxed text-[#c4c7c7]">
-                {membership
-                  ? "Your current plan controls facility access, class access, renewal timing, and billing status."
-                  : "Activate a membership to unlock booking, billing, and full facility access."}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-8 border-t border-white/10 pt-8 sm:grid-cols-3">
-              <div>
-                <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Credits</span>
-                <span className="mt-2 block font-[family-name:var(--font-space-grotesk)] text-2xl font-bold uppercase italic text-white">
-                  {membership?.tier?.classCreditsPerMonth === -1 ? "Unlimited" : membership?.classCreditsRemaining ?? 0}
-                </span>
-              </div>
-              <div>
-                <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Next billing</span>
-                <span className="mt-2 block font-[family-name:var(--font-space-grotesk)] text-2xl font-bold uppercase italic text-white">
-                  {membership?.nextBillingDate ? new Date(membership.nextBillingDate).toLocaleDateString() : "—"}
-                </span>
-              </div>
-              <div>
-                <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Upcoming</span>
-                <span className="mt-2 block font-[family-name:var(--font-space-grotesk)] text-2xl font-bold uppercase italic text-white">
-                  {upcomingBookings.length}
-                </span>
-              </div>
-            </div>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-8 lg:col-span-8">
+          <div className="flex items-start justify-between gap-4">
+            <p className="sf-label">Current membership</p>
+            <span
+              className={`border px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${
+                membership?.status === "active"
+                  ? "border-emerald-700/25 bg-emerald-50 text-emerald-800"
+                  : membership?.status === "frozen"
+                    ? "border-amber-700/25 bg-amber-50 text-amber-800"
+                    : "border-[var(--color-rule)] bg-[var(--color-paper-2)] text-[var(--color-ink-muted)]"
+              }`}
+            >
+              {membership?.status ?? "No active plan"}
+            </span>
           </div>
-          <div className="pointer-events-none absolute -bottom-12 -right-12 h-64 w-64 rotate-12 border-[28px] border-[#818cf8]/5" />
+          <h2 className="mt-4 text-3xl font-semibold">{membership?.tier?.name ?? "Membership required"}</h2>
+          <p className="mt-3 max-w-md text-sm leading-relaxed text-[var(--color-ink-muted)]">
+            {membership
+              ? "Your plan controls facility access, class credits, renewal timing, and billing."
+              : "Activate a membership to unlock booking and full facility access."}
+          </p>
+
+          <dl className="mt-8 grid grid-cols-1 gap-6 border-t border-[var(--color-rule)] pt-8 sm:grid-cols-3">
+            <div>
+              <dt className="sf-label">Credits</dt>
+              <dd className="mt-2 text-2xl font-medium">
+                {membership?.tier?.classCreditsPerMonth === -1 ? "Unlimited" : membership?.classCreditsRemaining ?? 0}
+              </dd>
+            </div>
+            <div>
+              <dt className="sf-label">Next billing</dt>
+              <dd className="mt-2 text-2xl font-medium">
+                {membership?.nextBillingDate ? new Date(membership.nextBillingDate).toLocaleDateString() : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="sf-label">Upcoming</dt>
+              <dd className="mt-2 text-2xl font-medium">{upcomingBookings.length}</dd>
+            </div>
+          </dl>
         </section>
 
-        <section className="md:col-span-4 flex flex-col gap-4">
-          <Link href="/schedule" className="bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-6 text-sm font-bold uppercase tracking-[0.2em] text-white transition-transform active:scale-95">
+        <section className="flex flex-col gap-3 lg:col-span-4">
+          <Link href="/schedule" className="sf-btn-primary px-6 py-5 text-center">
             Book next class
           </Link>
-          <Link href="/account/membership" className="bg-[#1c1b1b] px-6 py-6 text-sm font-bold uppercase tracking-[0.2em] text-white transition-colors hover:bg-[#2a2a2a]">
+          <Link href="/account/membership" className="sf-btn-outline px-6 py-5 text-center">
             Manage membership
           </Link>
-          <Link href="/account/profile" className="bg-[#1c1b1b] px-6 py-6 text-sm font-bold uppercase tracking-[0.2em] text-white transition-colors hover:bg-[#2a2a2a]">
+          {membership?.status === "active" ? (
+            <Link href="/member/check-in-code" className="sf-btn-outline px-6 py-5 text-center">
+              Open check-in QR code
+            </Link>
+          ) : null}
+          <Link href="/account/profile" className="sf-btn-outline px-6 py-5 text-center">
             Update profile
           </Link>
-          {user.role?.isInstructor && (
-            <Link href="/account/instructor" className="bg-[#00eefc] px-6 py-6 text-sm font-bold uppercase tracking-[0.2em] text-[#00363a] transition-transform active:scale-95">
+          {user.role?.isInstructor ? (
+            <Link
+              href="/account/instructor"
+              className="border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-6 py-5 text-center text-sm font-medium text-[var(--color-accent)]"
+            >
               Instructor console
             </Link>
-          )}
+          ) : null}
         </section>
       </div>
 
       <section>
         <div className="mb-6 flex items-end justify-between gap-4">
-          <h2 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-bold uppercase tracking-[-0.04em] text-white">
-            Upcoming bookings
-          </h2>
-          <Link href="/account/bookings" className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">
+          <h2 className="text-2xl font-semibold">Upcoming bookings</h2>
+          <Link href="/account/bookings" className="text-sm font-medium text-[var(--color-accent)] hover:underline">
             View all
           </Link>
         </div>
 
         {upcomingBookings.length === 0 ? (
-          <div className="bg-[#1c1b1b] px-6 py-16 text-sm uppercase tracking-[0.16em] text-[#c4c7c7]">
+          <div className="border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-16 text-sm text-[var(--color-ink-muted)]">
             No upcoming classes booked yet.
           </div>
         ) : (
-          <div className="space-y-4">
-            {upcomingBookings.slice(0, 3).map((booking: any, index: number) => (
-              <div key={booking.id} className={`flex flex-col gap-5 px-6 py-6 md:flex-row md:items-center md:justify-between ${index === 0 ? "bg-[#1c1b1b]" : "bg-[#0e0e0e] border border-white/10"}`}>
+          <div className="divide-y divide-[var(--color-rule)] border-y border-[var(--color-rule)]">
+            {upcomingBookings.slice(0, 3).map((booking: any) => (
+              <div key={booking.id} className="flex flex-col gap-4 py-6 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.04em] text-white">
-                    {booking.classInstance?.classSchedule?.name ?? "Class"}
-                  </p>
-                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#c4c7c7]">
+                  <p className="text-xl font-semibold">{booking.classInstance?.classSchedule?.name ?? "Class"}</p>
+                  <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
                     {booking.classInstance?.date
-                      ? new Date(booking.classInstance.date).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-                      : "Date TBD"}
+                      ? `${formatOccurrenceDate(booking.classInstance.date, timeZone)} · ${formatOccurrenceTime(booking.classInstance.date, timeZone)}`
+                      : "Date unavailable"}
                   </p>
+                  <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{location}</p>
                 </div>
-                <div className="text-sm font-bold uppercase tracking-[0.18em] text-[#a5b4fc]">{booking.status}</div>
+                <div className="text-sm font-medium text-[var(--color-ink-muted)]">{booking.status}</div>
               </div>
             ))}
           </div>

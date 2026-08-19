@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { updateProfile } from "@/features/storefront/lib/data/user";
 
 interface ProfileFormProps {
@@ -15,37 +15,60 @@ interface ProfileFormProps {
 
 export default function ProfileForm({ user }: ProfileFormProps) {
   const [state, action, pending] = useActionState(updateProfile, null);
-  const inputClass = "h-12 w-full border border-white/10 bg-[#0e0e0e] px-4 text-sm text-white placeholder:text-[#8e9192] focus:outline-none focus:ring-1 focus:ring-[#a5b4fc]";
-  const labelClass = "text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]";
+  const inputClass =
+    "h-12 w-full border border-[var(--color-rule)] bg-[var(--color-paper)] px-4 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)] outline-none focus:ring-2 focus:ring-[var(--color-focus)]";
+  const labelClass = "text-sm font-medium text-[var(--color-ink)]";
 
   return (
-    <form action={action} className="space-y-5">
-      <div className="space-y-1.5">
-        <label htmlFor="name" className={labelClass}>Full name</label>
-        <input id="name" name="name" defaultValue={user.name} required className={inputClass} />
-      </div>
-      <div className="space-y-1.5">
-        <label htmlFor="email" className={labelClass}>Email</label>
-        <input id="email" name="email" type="email" defaultValue={user.email} required className={inputClass} />
-      </div>
-      <div className="space-y-1.5">
-        <label htmlFor="phone" className={labelClass}>Phone</label>
-        <input id="phone" name="phone" type="tel" defaultValue={user.phone ?? ""} className={inputClass} />
-      </div>
-      <div className="space-y-1.5">
-        <label htmlFor="password" className={labelClass}>New password</label>
-        <input id="password" name="password" type="password" placeholder="Leave blank to keep current" minLength={8} className={inputClass} />
+    <form action={action} className="space-y-6">
+      <div className="grid gap-5 sm:grid-cols-2">
+        <div className="space-y-2">
+          <label htmlFor="name" className={labelClass}>Full name</label>
+          <input id="name" name="name" defaultValue={user.name} required maxLength={120} autoComplete="name" className={inputClass} />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="phone" className={labelClass}>Phone</label>
+          <input id="phone" name="phone" type="tel" defaultValue={user.phone ?? ""} maxLength={40} autoComplete="tel" className={inputClass} />
+        </div>
       </div>
 
-      {state?.error && <p className="border border-[#ffb4ab]/30 bg-[#93000a]/20 px-3 py-2 text-sm text-[#ffdad6]">{state.error}</p>}
-      {state?.success && (
-        <p className="flex items-center gap-2 text-sm uppercase tracking-[0.16em] text-[#a5b4fc]">
+      <div className="space-y-2">
+        <label htmlFor="email" className={labelClass}>Email</label>
+        <input id="email" name="email" type="email" defaultValue={user.email} required maxLength={320} autoComplete="email" className={inputClass} />
+        <p className="text-xs leading-5 text-[var(--color-ink-muted)]">
+          This email is used for sign-in and is mirrored to the linked member profile.
+        </p>
+      </div>
+
+      <div className="border-t border-[var(--color-rule)] pt-6">
+        <div className="space-y-2">
+          <label htmlFor="password" className={labelClass}>New password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            placeholder="Leave blank to keep the current password"
+            minLength={12}
+            maxLength={128}
+            autoComplete="new-password"
+            className={inputClass}
+          />
+          <p className="text-xs leading-5 text-[var(--color-ink-muted)]">Use 12–128 characters. Existing credentials stay unchanged when blank.</p>
+        </div>
+      </div>
+
+      {state?.error ? (
+        <p className="border border-red-700/25 bg-red-50 px-4 py-3 text-sm text-red-900">{state.error}</p>
+      ) : null}
+      {state?.success ? (
+        <p className="flex items-center gap-2 border border-emerald-700/25 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           <CheckCircle2 className="h-4 w-4" /> Profile updated
         </p>
-      )}
+      ) : null}
 
-      <button type="submit" disabled={pending} className="flex h-12 items-center justify-center gap-2 bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 text-sm font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95 disabled:opacity-50">
-        {pending && <Loader2 className="h-4 w-4 animate-spin" />} Save changes
+      <button type="submit" disabled={pending} className="sf-btn-primary inline-flex min-w-44 items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50">
+        {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        Save profile
       </button>
     </form>
   );

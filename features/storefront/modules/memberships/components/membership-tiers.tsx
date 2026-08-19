@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { Check } from "lucide-react";
 import { getMembershipTiers, type MembershipTierData } from "@/features/storefront/lib/data/memberships";
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
+import { formatMajorUnits } from "@/features/platform/lib/currency";
 
 function buildFeatures(tier: MembershipTierData): string[] {
-  const f: string[] = ["Full gym access"];
+  const f: string[] = [];
   if (tier.classCreditsPerMonth === -1) {
     f.push("Unlimited classes");
   } else if (tier.classCreditsPerMonth > 0) {
@@ -13,94 +15,56 @@ function buildFeatures(tier: MembershipTierData): string[] {
   } else {
     f.push("No classes included");
   }
-  if (tier.accessHours === "24/7") f.push("24 / 7 facility access");
-  else f.push("Staffed-hours access");
-  if (tier.personalTrainingSessions > 0) {
-    f.push(`${tier.personalTrainingSessions} PT session${tier.personalTrainingSessions > 1 ? "s" : ""} / month`);
-  }
-  if (tier.guestPasses > 0) {
-    f.push(`${tier.guestPasses} guest pass${tier.guestPasses > 1 ? "es" : ""} / month`);
-  }
-  if (tier.freezeAllowed) f.push("Membership freeze option");
-  if (tier.contractLength === 0) f.push("No contract — cancel any time");
+  if (tier.freezeAllowed) f.push("Provider-backed membership freeze option");
   f.push("Online class booking");
-  f.push("Locker room access");
+  f.push("Member check-in code");
   return f;
 }
 
 export default async function MembershipTiers() {
-  const tiers = await getMembershipTiers();
+  const [tiers, config] = await Promise.all([getMembershipTiers(), getStorefrontConfig()]);
+  const currencyCode = config?.currencyCode || "USD";
 
   if (!tiers.length) {
     return (
-      <div className="bg-[#1c1b1b] px-6 py-10 text-sm uppercase tracking-[0.14em] text-[#c4c7c7]">
+      <div className="sf-card px-6 py-10 text-sm text-[var(--sf-ink-muted)]">
         Membership plans will appear here after setup.
       </div>
     );
   }
 
-  const recIdx = tiers.length > 1 ? 1 : 0;
-
   return (
-    <div className="grid grid-cols-1 gap-px bg-white/[0.06] sm:grid-cols-3">
-      {tiers.map((tier, i) => {
-        const isRec = i === recIdx;
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      {tiers.map((tier) => {
         const features = buildFeatures(tier);
-        const annualSaving = tier.annualPrice
-          ? Math.round(tier.monthlyPrice * 12 - tier.annualPrice)
-          : null;
-
+        const annualSaving = tier.annualPrice ? tier.monthlyPrice * 12 - tier.annualPrice : null;
         return (
-          <div
-            key={tier.id}
-            className={`relative flex flex-col px-8 py-10 ${isRec ? "bg-[#242424]" : "bg-[#1c1b1b]"}`}
-          >
-            {/* Recommended top accent */}
-            {isRec && (
-              <div className="absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,#818cf8_0%,#4f46e5_100%)]" />
-            )}
-            {isRec && (
-              <p className="mb-4 text-[9px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">
-                Most popular
-              </p>
-            )}
-
-            <p className="gym-label">{tier.name}</p>
+          <div key={tier.id} className="sf-card relative flex flex-col p-8">
+            <h3 className="text-xl font-semibold">{tier.name}</h3>
 
             <div className="mt-4 flex items-baseline gap-1">
-              <span className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black tracking-tight text-white">
-                ${tier.monthlyPrice}
-              </span>
-              <span className="text-xs text-[#c4c7c7]">/mo</span>
+              <span className="sf-display text-5xl">{formatMajorUnits(tier.monthlyPrice, currencyCode)}</span>
+              <span className="text-sm text-[var(--sf-ink-muted)]">/mo</span>
             </div>
 
-            {annualSaving && annualSaving > 0 && (
-              <p className="mt-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#a5b4fc]">
-                Save ${annualSaving} / year billed annually
-              </p>
-            )}
+            {annualSaving && annualSaving > 0 ? (
+              <p className="mt-2 text-xs text-[var(--sf-ink-muted)]">Save {formatMajorUnits(annualSaving, currencyCode)} / year billed annually</p>
+            ) : null}
 
             <ul className="mt-8 flex-1 space-y-3">
               {features.map((f) => (
                 <li key={f} className="flex items-start gap-3 text-sm">
-                  <Check
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#818cf8]"
-                    strokeWidth={2.5}
-                  />
-                  <span className="text-[#c4c7c7]">{f}</span>
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-[var(--sf-accent)]" strokeWidth={2.5} />
+                  <span className="text-[var(--sf-ink-muted)]">{f}</span>
                 </li>
               ))}
             </ul>
 
             <Link
               href={`/join?tier=${tier.id}`}
-              className={`mt-10 block w-full py-4 text-center text-xs font-bold uppercase tracking-[0.2em] transition-all ${
-                isRec
-                  ? "bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] text-white"
-                  : "border-2 border-white/30 text-[#e5e2e1] hover:border-[#818cf8] hover:text-[#818cf8]"
-              }`}
+              className="sf-btn-secondary mt-10 block w-full text-center"
             >
-              Get started
+              Review {tier.name}
             </Link>
           </div>
         );

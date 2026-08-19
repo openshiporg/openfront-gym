@@ -1,4 +1,5 @@
-import { keystoneContext } from "@/features/keystone/context";
+import { gql } from "graphql-request";
+import { gymClient } from "@/features/storefront/lib/config";
 
 export type MembershipTierData = {
   id: string;
@@ -12,50 +13,34 @@ export type MembershipTierData = {
   personalTrainingSessions: number;
   freezeAllowed: boolean;
   contractLength: number;
+  monthlyCheckoutAvailable: boolean;
+  annualCheckoutAvailable: boolean;
 };
 
-export async function getMembershipTiers(): Promise<MembershipTierData[]> {
-  const context = keystoneContext.sudo();
+const FIELDS = gql`
+  fragment StorefrontMembershipTier on PublicGymMembershipTier {
+    id name description monthlyPrice annualPrice classCreditsPerMonth accessHours
+    guestPasses personalTrainingSessions freezeAllowed contractLength
+    monthlyCheckoutAvailable annualCheckoutAvailable
+  }
+`;
 
-  const tiers = await context.query.MembershipTier.findMany({
-    orderBy: [{ monthlyPrice: "asc" }],
-    query: `
-      id
-      name
-      description { document }
-      monthlyPrice
-      annualPrice
-      classCreditsPerMonth
-      accessHours
-      guestPasses
-      personalTrainingSessions
-      freezeAllowed
-      contractLength
-    `,
-  });
-
-  return tiers as MembershipTierData[];
+export async function getMembershipTiers(_organizationId?: string | null): Promise<MembershipTierData[]> {
+  const result = await gymClient.request<{ publicGymMembershipTiers: MembershipTierData[] }>(gql`
+    ${FIELDS}
+    query StorefrontMembershipTiers {
+      publicGymMembershipTiers(limit: 100) { ...StorefrontMembershipTier }
+    }
+  `);
+  return result.publicGymMembershipTiers;
 }
 
 export async function getMembershipTierById(id: string): Promise<MembershipTierData | null> {
-  const context = keystoneContext.sudo();
-
-  const tier = await context.query.MembershipTier.findOne({
-    where: { id },
-    query: `
-      id
-      name
-      description { document }
-      monthlyPrice
-      annualPrice
-      classCreditsPerMonth
-      accessHours
-      guestPasses
-      personalTrainingSessions
-      freezeAllowed
-      contractLength
-    `,
-  });
-
-  return tier as MembershipTierData | null;
+  const result = await gymClient.request<{ publicGymMembershipTier: MembershipTierData | null }>(gql`
+    ${FIELDS}
+    query StorefrontMembershipTier($id: ID!) {
+      publicGymMembershipTier(id: $id) { ...StorefrontMembershipTier }
+    }
+  `, { id });
+  return result.publicGymMembershipTier;
 }

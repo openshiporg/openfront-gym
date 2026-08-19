@@ -1,85 +1,51 @@
-import { keystoneContext } from "@/features/keystone/context";
+import { gql } from "graphql-request";
+import { gymClient } from "@/features/storefront/lib/config";
+import { getAuthHeaders } from "./cookies";
 
-const BOOKING_QUERY = `
-  id
-  status
-  waitlistPosition
-  bookedAt
-  cancelledAt
-  classInstance {
-    id
-    date
-    classSchedule {
-      name
-      startTime
-      endTime
-    }
-    instructor {
-      user { name }
+const BOOKING_FIELDS = gql`
+  fragment StorefrontBooking on ClassBooking {
+    id status waitlistPosition bookedAt cancelledAt
+    classInstance {
+      id date
+      classSchedule { name startTime endTime }
+      instructor { user { name } }
     }
   }
 `;
 
-/**
- * Upcoming bookings for a user (by User.id).
- * ClassBooking.member → Member → user relation.
- */
-export async function getUpcomingBookings(userId: string) {
-  const context = keystoneContext.sudo();
-  const now = new Date().toISOString();
-
-  return context.query.ClassBooking.findMany({
-    where: {
-      member: { user: { id: { equals: userId } } },
-      status: { in: ["confirmed", "waitlist"] },
-      classInstance: { date: { gte: now } },
-    },
-    orderBy: [{ bookedAt: "asc" }],
-    query: BOOKING_QUERY,
-  });
+async function bookings(where: Record<string, unknown>, orderBy: Array<Record<string, string>>, take: number) {
+  const result = await gymClient.request<{ classBookings: any[] }>(gql`
+    ${BOOKING_FIELDS}
+    query StorefrontBookings($where: ClassBookingWhereInput!, $orderBy: [ClassBookingOrderByInput!]!, $take: Int!) {
+      classBookings(where: $where, orderBy: $orderBy, take: $take) { ...StorefrontBooking }
+    }
+  `, { where, orderBy, take }, await getAuthHeaders());
+  return result.classBookings;
 }
 
-/** Past / cancelled bookings. */
-export async function getBookingHistory(userId: string) {
-  const context = keystoneContext.sudo();
-  const now = new Date().toISOString();
-
-  return context.query.ClassBooking.findMany({
-    where: {
-      member: { user: { id: { equals: userId } } },
-      OR: [
-        { status: { equals: "cancelled" } },
-        { classInstance: { date: { lt: now } } },
-      ],
-    },
-    orderBy: [{ bookedAt: "desc" }],
-    take: 20,
-    query: BOOKING_QUERY,
-  });
+export async function getUpcomingBookings(userId: string, organizationId: string) {
+  return bookings({
+    organization: { id: { equals: organizationId } },
+    member: { user: { id: { equals: userId } } },
+    status: { in: ["confirmed", "waitlist"] },
+    classInstance: { date: { gte: new Date().toISOString() }, isCancelled: { equals: false } },
+  }, [{ bookedAt: "asc" }], 100);
 }
 
-/** All bookings (upcoming + past). */
-export async function getUserBookings(userId: string) {
-  const context = keystoneContext.sudo();
-
-  return context.query.ClassBooking.findMany({
-    where: {
-      member: { user: { id: { equals: userId } } },
-    },
-    orderBy: [{ bookedAt: "desc" }],
-    query: BOOKING_QUERY,
-  });
+export async function getBookingHistory(userId: string, organizationId: string) {
+  return bookings({
+    organization: { id: { equals: organizationId } },
+    member: { user: { id: { equals: userId } } },
+    OR: [
+      { status: { equals: "cancelled" } },
+      { classInstance: { date: { lt: new Date().toISOString() } } },
+    ],
+  }, [{ bookedAt: "desc" }], 20);
 }
 
-export async function cancelBooking(bookingId: string): Promise<boolean> {
-  try {
-    const context = keystoneContext.sudo();
-    await context.query.ClassBooking.updateOne({
-      where: { id: bookingId },
-      data: { status: "cancelled", cancelledAt: new Date().toISOString() },
-    });
-    return true;
-  } catch {
-    return false;
-  }
+export async function getUserBookings(userId: string, organizationId: string) {
+  return bookings({
+    organization: { id: { equals: organizationId } },
+    member: { user: { id: { equals: userId } } },
+  }, [{ bookedAt: "desc" }], 100);
 }

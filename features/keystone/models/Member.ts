@@ -1,5 +1,5 @@
 import { list, graphql } from '@keystone-6/core';
-import { allOperations } from '@keystone-6/core/access';
+import { allOperations, denyAll } from '@keystone-6/core/access';
 import {
   text,
   relationship,
@@ -12,16 +12,23 @@ import {
 
 import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
 export const Member = list({
+  db: { extendPrismaSchema: compoundUniqueDb("organizationId, userId") },
+  hooks: { validateInput: validateTenantOwnership([
+    { field: "user", list: "user" },
+    { field: "membershipTier", list: "membershipTier" },
+  ]) },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn,
+      query: isSignedIn, create: permissions.canManagePeople, update: isSignedIn,
       delete: permissions.canManagePeople,
     },
     filter: {
-      query: rules.canReadPeople,
-      update: rules.canUpdatePeople,
+      query: rules.canReadOwnMember,
+      update: rules.canReadOwnMember,
+      delete: rules.canDeletePeople,
     },
   },
   ui: {
@@ -43,6 +50,13 @@ export const Member = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: 'Organization.members',
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb('organization') },
+      ui: { description: 'Tenant organization for this member' },
+    }),
     name: text({
       validation: { isRequired: true },
       ui: {
@@ -52,6 +66,7 @@ export const Member = list({
 
     email: text({
       isIndexed: 'unique',
+      access: { update: permissions.canManagePeople },
       validation: { isRequired: true },
       ui: {
         description: 'Member email address',
@@ -71,6 +86,7 @@ export const Member = list({
     }),
 
     joinDate: timestamp({
+      access: { update: permissions.canManagePeople },
       defaultValue: { kind: 'now' },
       validation: { isRequired: true },
       ui: {
@@ -80,6 +96,7 @@ export const Member = list({
 
     membershipTier: relationship({
       ref: 'MembershipTier',
+      access: { update: denyAll },
       ui: {
         displayMode: 'select',
         description: 'Current membership plan',
@@ -111,6 +128,7 @@ export const Member = list({
     }),
 
     status: select({
+      access: { update: denyAll },
       type: 'string',
       options: [
         { label: 'Active', value: 'active' },
@@ -127,6 +145,7 @@ export const Member = list({
     // Relationship to User for authentication
     user: relationship({
       ref: 'User',
+      access: { update: denyAll },
       ui: {
         description: 'Linked user account for authentication',
       },
@@ -135,15 +154,18 @@ export const Member = list({
     // Relationships to other entities
     bookings: relationship({
       ref: 'ClassBooking.member',
+      access: { create: denyAll, update: denyAll },
       many: true,
       ui: {
         description: 'Class bookings made by this member',
       },
     }),
 
-    // NOTE: Uncomment these as the models are created
+    // Inverse collections are read-only. Their owning records are changed only
+    // through tenant-checked lifecycle operations, never nested parent writes.
     checkIns: relationship({
       ref: 'CheckIn.member',
+      access: { create: denyAll, update: denyAll },
       many: true,
       ui: {
         description: 'Check-in history',
@@ -152,6 +174,7 @@ export const Member = list({
 
     payments: relationship({
       ref: 'GymPayment.member',
+      access: { create: denyAll, update: denyAll },
       many: true,
       ui: {
         description: 'Payment history',
@@ -160,6 +183,7 @@ export const Member = list({
 
     workoutLogs: relationship({
       ref: 'WorkoutLog.member',
+      access: { create: denyAll, update: denyAll },
       many: true,
       ui: {
         description: 'Workout tracking history',
@@ -168,6 +192,7 @@ export const Member = list({
 
     subscriptions: relationship({
       ref: 'Subscription.member',
+      access: { create: denyAll, update: denyAll },
       many: true,
       ui: {
         description: 'Subscription billing history',
@@ -176,14 +201,23 @@ export const Member = list({
 
     waitlistEntries: relationship({
       ref: 'Waitlist.member',
+      access: { create: denyAll, update: denyAll },
       many: true,
       ui: {
         description: 'Waitlist entries for full classes',
       },
     }),
 
+    trainerAppointments: relationship({
+      ref: 'TrainerAppointment.member',
+      access: { create: denyAll, update: denyAll },
+      many: true,
+      ui: { description: 'One-to-one trainer appointments' },
+    }),
+
     attendanceRecords: relationship({
       ref: 'AttendanceRecord.member',
+      access: { create: denyAll, update: denyAll },
       many: true,
       ui: {
         description: 'Class attendance tracking',
@@ -191,21 +225,28 @@ export const Member = list({
     }),
 
     lifetimeValue: virtual({
+      access: { read: permissions.canManageAllRecords },
       field: graphql.field({
         type: graphql.Float,
         async resolve(item, args, context) {
           const sudoContext = context.sudo();
           const payments = await sudoContext.query.GymPayment.findMany({
             where: { member: { id: { equals: item.id.toString() } } },
-            query: 'amount status',
+            query: 'amount refundAmount currencyCode status',
           });
 
-          return payments
-            .filter((p: any) => p.status === 'completed' || p.status === 'succeeded')
-            .reduce((sum: number, p: any) => sum + (p.amount || 0), 0) / 100;
+          const settled = payments.filter((payment: any) =>
+            ['completed', 'succeeded', 'refunded'].includes(payment.status),
+          );
+          const currencies = new Set(settled.map((payment: any) => String(payment.currencyCode || 'USD').toUpperCase()));
+          if (currencies.size > 1 || (currencies.size === 1 && !currencies.has('USD'))) return null;
+          return settled.reduce(
+            (sum: number, payment: any) => sum + Math.max((payment.amount || 0) - (payment.refundAmount || 0), 0),
+            0,
+          ) / 100;
         },
       }),
-      ui: { description: 'Total lifetime payments in dollars' },
+      ui: { description: 'Net settled lifetime payments in USD; unavailable for mixed/non-USD evidence' },
     }),
 
     membershipLengthDays: virtual({
@@ -215,14 +256,15 @@ export const Member = list({
           const joinDate = item.joinDate as Date | null;
           if (!joinDate) return 0;
           const now = new Date();
-          const diffTime = Math.abs(now.getTime() - new Date(joinDate).getTime());
-          return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          const diffTime = now.getTime() - new Date(joinDate).getTime();
+          return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
         },
       }),
       ui: { description: 'Days since member joined' },
     }),
 
     attendanceRate: virtual({
+      access: { read: rules.canReadOwnMemberField },
       field: graphql.field({
         type: graphql.Float,
         async resolve(item, args, context) {
@@ -249,24 +291,30 @@ export const Member = list({
     }),
 
     lastCheckIn: virtual({
+      access: { read: rules.canReadOwnMemberField },
       field: graphql.field({
         type: graphql.DateTime,
         async resolve(item, args, context) {
           const sudoContext = context.sudo();
           const checkIns = await sudoContext.query.CheckIn.findMany({
-            where: { member: { id: { equals: item.id.toString() } } },
+            where: {
+              member: { id: { equals: item.id.toString() } },
+              isGuest: { equals: false },
+            },
             orderBy: { checkInTime: 'desc' },
             take: 1,
             query: 'checkInTime',
           });
 
-          return checkIns[0]?.checkInTime || null;
+          const checkInTime = checkIns[0]?.checkInTime;
+          return checkInTime ? new Date(checkInTime) : null;
         },
       }),
       ui: { description: 'Last gym check-in timestamp' },
     }),
 
     currentMembershipTier: virtual({
+      access: { read: rules.canReadOwnMemberField },
       field: graphql.field({
         type: graphql.object<{ id: string; name: string }>()({
           name: 'MemberCurrentTier',
@@ -285,9 +333,11 @@ export const Member = list({
           const sudoContext = context.sudo();
           const member = await sudoContext.query.Member.findOne({
             where: { id: item.id.toString() },
-            query: 'membershipTier { id name }',
+            query: 'user { membership { tier { id name } } } membershipTier { id name }',
           });
-          return (member?.membershipTier as { id: string; name: string } | null) || null;
+          return (member?.user?.membership?.tier as { id: string; name: string } | null)
+            || (member?.membershipTier as { id: string; name: string } | null)
+            || null;
         },
       }),
       ui: {

@@ -26,7 +26,7 @@ const FAQS = [
   },
   {
     q: "What happens if I miss a class?",
-    a: "Cancellation and no-show policy can vary by gym. In the current product direction, class access, credits, and future attendance policy will all tie back to your membership tier and booking state.",
+    a: "Cancellation and no-show policy can vary by gym. Class access, credits, and attendance policy tie back to your membership tier and booking state.",
   },
 ];
 
@@ -34,14 +34,12 @@ export default function MembershipFAQ() {
   const [open, setOpen] = useState<number | null>(0);
 
   return (
-    <div className="text-[#e5e2e1]">
+    <div>
       <div className="mb-8">
-        <p className="text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Protocol & access</p>
-        <h2 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-4xl font-black uppercase tracking-[-0.06em] text-white">
-          Questions
-        </h2>
+        <p className="sf-eyebrow">Questions</p>
+        <h2 className="sf-display mt-3 text-4xl text-[var(--color-ink)]">Before you join</h2>
       </div>
-      <div className="divide-y divide-white/10">
+      <div className="divide-y divide-[var(--color-rule)]">
         {FAQS.map((faq, i) => {
           const isOpen = open === i;
           return (
@@ -50,13 +48,16 @@ export default function MembershipFAQ() {
                 type="button"
                 onClick={() => setOpen(isOpen ? null : i)}
                 className="flex w-full items-center justify-between gap-6 text-left"
+                aria-expanded={isOpen}
               >
-                <span className="font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase tracking-[-0.03em] text-white">
-                  {faq.q}
-                </span>
-                <ChevronDown className={`h-5 w-5 shrink-0 text-[#818cf8] transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                <span className="text-lg font-medium text-[var(--color-ink)]">{faq.q}</span>
+                <ChevronDown
+                  className={`h-5 w-5 shrink-0 text-[var(--color-accent)] transition-transform ${isOpen ? "rotate-180" : ""}`}
+                />
               </button>
-              {isOpen && <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[#c4c7c7]">{faq.a}</p>}
+              {isOpen ? (
+                <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[var(--color-ink-muted)]">{faq.a}</p>
+              ) : null}
             </div>
           );
         })}

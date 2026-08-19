@@ -1,5 +1,5 @@
 import { list } from '@keystone-6/core';
-import { allOperations } from '@keystone-6/core/access';
+import { allOperations, denyAll } from '@keystone-6/core/access';
 import {
   relationship,
   select,
@@ -7,13 +7,25 @@ import {
   checkbox,
 } from '@keystone-6/core/fields';
 
-import { isSignedIn } from '../access';
+import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
+import { requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
 export const PaymentMethod = list({
+  hooks: { validateInput: validateTenantOwnership([
+    { field: "member", list: "member", required: true },
+  ]) },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      create: permissions.canManageAllRecords,
+      update: permissions.canManageAllRecords,
+      delete: permissions.canManageAllRecords,
+    },
+    filter: {
+      query: rules.canReadOwnMemberResource,
+      update: rules.canReadOwnMemberResource,
+      delete: rules.canReadOwnMemberResource,
     },
   },
   ui: {
@@ -22,6 +34,12 @@ export const PaymentMethod = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.paymentMethods",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     member: relationship({
       ref: 'Member',
       ui: {
@@ -65,6 +83,7 @@ export const PaymentMethod = list({
 
     // Stripe integration - required because PaymentMethod records are only created from Stripe
     stripePaymentMethodId: text({
+      access: { read: permissions.canManageAllRecords },
       isIndexed: 'unique',
       validation: { isRequired: true },
       ui: {
@@ -87,6 +106,7 @@ export const PaymentMethod = list({
     subscriptions: relationship({
       ref: 'Subscription.paymentMethod',
       many: true,
+      access: { create: denyAll, update: denyAll },
       ui: {
         description: 'Subscriptions using this payment method',
       },

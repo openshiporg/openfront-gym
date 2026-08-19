@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { gql, request } from 'graphql-request'
 import { PageContainer } from '@/features/dashboard/components/PageContainer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +15,9 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { CreditCard, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react'
+import { formatMajorUnits } from '@/features/platform/lib/currency'
+import { saveMembershipPlan } from '../actions/membership-plans'
+import { membershipCheckoutReadiness } from '../actions/membership-plan-policy'
 
 type MembershipPlan = {
   id?: string
@@ -38,27 +40,10 @@ type MembershipPlan = {
   stripeProductId?: string | null
 }
 
-const UPDATE_PLAN = gql`
-  mutation UpdateMembershipTier($id: ID!, $data: MembershipTierUpdateInput!) {
-    updateMembershipTier(where: { id: $id }, data: $data) {
-      id
-      name
-    }
-  }
-`
-
-const CREATE_PLAN = gql`
-  mutation CreateMembershipTier($data: MembershipTierCreateInput!) {
-    createMembershipTier(data: $data) {
-      id
-      name
-    }
-  }
-`
-
 function documentToText(value: any): string {
-  if (!Array.isArray(value)) return ''
-  return value
+  const document = Array.isArray(value) ? value : value?.document
+  if (!Array.isArray(document)) return ''
+  return document
     .flatMap((node: any) => node?.children || [])
     .map((child: any) => child?.text || '')
     .join(' ')
@@ -94,13 +79,26 @@ function normalizePlan(plan?: MembershipPlan | null) {
 
 const emptyPlan = normalizePlan(null)
 
-export function MembershipPlansPage({ initialPlans }: { initialPlans: MembershipPlan[] }) {
+export function MembershipPlansPage({
+  initialPlans,
+  currencyCode,
+  stripeProviderInstalled,
+}: {
+  initialPlans: MembershipPlan[];
+  currencyCode: string;
+  stripeProviderInstalled: boolean;
+}) {
   const [plans, setPlans] = useState<MembershipPlan[]>(initialPlans)
   const [selectedPlanId, setSelectedPlanId] = useState<string | 'new'>(initialPlans[0]?.id || 'new')
   const [form, setForm] = useState(() => normalizePlan(initialPlans[0] || null))
   const [isSaving, setIsSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [planQuery, setPlanQuery] = useState('')
+
+  const filteredPlans = useMemo(() => plans
+    .filter((plan) => `${plan.name} ${plan.billingInterval || ''}`.toLowerCase().includes(planQuery.trim().toLowerCase()))
+    .sort((a, b) => (a.monthlyPrice || 0) - (b.monthlyPrice || 0)), [plans, planQuery])
 
   const breadcrumbs = [
     { type: 'link' as const, label: 'Dashboard', href: '/dashboard' },
@@ -117,7 +115,7 @@ export function MembershipPlansPage({ initialPlans }: { initialPlans: Membership
   const activePlans = useMemo(() => plans.length, [plans])
   const avgMonthly = useMemo(() => {
     if (!plans.length) return 0
-    return Math.round(plans.reduce((sum, plan) => sum + (plan.monthlyPrice || 0), 0) / plans.length)
+    return plans.reduce((sum, plan) => sum + (plan.monthlyPrice || 0), 0) / plans.length
   }, [plans])
 
   const selectPlan = (id: string | 'new') => {
@@ -163,14 +161,14 @@ export function MembershipPlansPage({ initialPlans }: { initialPlans: Membership
       }
 
       if (selectedPlanId === 'new' || !form.id) {
-        const result = await request<any>('/api/graphql', CREATE_PLAN, { data })
-        const created = { ...data, id: result?.createMembershipTier?.id, description: toDocument(form.description) }
+        const result = await saveMembershipPlan(data)
+        const created = { ...data, id: result.id, description: toDocument(form.description) }
         const nextPlans = [...plans, created]
         setPlans(nextPlans)
         if (created.id) setSelectedPlanId(created.id)
         setForm(normalizePlan(created))
       } else {
-        await request('/api/graphql', UPDATE_PLAN, { id: form.id, data })
+        await saveMembershipPlan(data, form.id)
         const nextPlans = plans.map((plan) =>
           plan.id === form.id ? { ...plan, ...data, description: toDocument(form.description) } : plan
         )
@@ -191,6 +189,12 @@ export function MembershipPlansPage({ initialPlans }: { initialPlans: Membership
       : Number(form.classCreditsPerMonth) === 0
         ? 'Gym access only'
         : `${form.classCreditsPerMonth} classes / month`
+  const checkoutReadiness = membershipCheckoutReadiness({
+    providerInstalled: stripeProviderInstalled,
+    monthlyPriceId: form.stripeMonthlyPriceId,
+    annualPriceId: form.stripeAnnualPriceId,
+    productId: form.stripeProductId,
+  })
 
   return (
     <PageContainer title="Membership Plans" header={header} breadcrumbs={breadcrumbs}>
@@ -207,6 +211,10 @@ export function MembershipPlansPage({ initialPlans }: { initialPlans: Membership
         </div>
       </div>
 
+      <div className={`mx-4 border px-4 py-3 text-sm md:mx-6 ${checkoutReadiness.any ? 'border-emerald-300 bg-emerald-50 text-emerald-950' : 'border-amber-300 bg-amber-50 text-amber-950'}`}>
+        <span className="font-semibold">Selected plan checkout: </span>{checkoutReadiness.message}
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 divide-x border-b border-border">
         <div className="px-5 py-3">
           <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Active plans</p>
@@ -214,7 +222,7 @@ export function MembershipPlansPage({ initialPlans }: { initialPlans: Membership
         </div>
         <div className="px-5 py-3">
           <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Average monthly</p>
-          <p className="text-xl font-semibold mt-1">${avgMonthly}</p>
+          <p className="text-xl font-semibold mt-1">{formatMajorUnits(avgMonthly, currencyCode)}</p>
         </div>
         <div className="px-5 py-3">
           <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Selected credits</p>
@@ -228,14 +236,15 @@ export function MembershipPlansPage({ initialPlans }: { initialPlans: Membership
 
       <div className="grid w-full grid-cols-1 gap-6 px-4 md:px-6 py-4 md:py-5 xl:grid-cols-[340px_1fr] xl:items-start overflow-auto">
         <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="px-5 py-3 flex items-center justify-between border-b border-border bg-muted/20">
-            <span className="text-[11px] uppercase tracking-wider font-semibold text-foreground">Plans</span>
-            <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={createNewPlan}>
+          <div className="space-y-3 border-b border-border bg-muted/20 px-4 py-3">
+            <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">Plans</span>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={createNewPlan}>
               <Plus className="mr-1 h-3.5 w-3.5" /> New plan
-            </Button>
+            </Button></div>
+            <label><span className="sr-only">Search membership plans</span><Input type="search" value={planQuery} onChange={(event) => setPlanQuery(event.target.value)} placeholder="Search name or billing cycle" /></label>
           </div>
           <div className="divide-y divide-border">
-            {plans.map((plan) => {
+            {filteredPlans.map((plan) => {
               const active = selectedPlanId === plan.id
               return (
                 <button
@@ -247,15 +256,15 @@ export function MembershipPlansPage({ initialPlans }: { initialPlans: Membership
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-foreground">{plan.name}</p>
-                      <p className="text-xs text-muted-foreground mt-1">${Math.round(plan.monthlyPrice || 0)} / month</p>
+                      <p className="text-xs text-muted-foreground mt-1">{formatMajorUnits(plan.monthlyPrice || 0, currencyCode)} / month</p>
                     </div>
-                    <Badge variant="outline">{plan.classCreditsPerMonth === -1 ? 'Unlimited' : `${plan.classCreditsPerMonth}`}</Badge>
+                    <div className="flex flex-col items-end gap-1"><Badge variant="outline">{plan.classCreditsPerMonth === -1 ? 'Unlimited' : `${plan.classCreditsPerMonth} credits`}</Badge><span className="text-[11px] text-muted-foreground">{membershipCheckoutReadiness({ providerInstalled: stripeProviderInstalled, monthlyPriceId: plan.stripeMonthlyPriceId, annualPriceId: plan.stripeAnnualPriceId, productId: plan.stripeProductId }).any ? 'Checkout mapped' : 'Mapping incomplete'}</span></div>
                   </div>
                 </button>
               )
             })}
-            {plans.length === 0 && (
-              <div className="px-5 py-10 text-sm text-muted-foreground">No plans yet. Create your first membership plan.</div>
+            {filteredPlans.length === 0 && (
+              <div className="px-5 py-10"><p className="text-sm font-medium">{plans.length ? 'No plans match this search.' : 'No plans yet.'}</p><p className="mt-1 text-xs text-muted-foreground">{plans.length ? 'Clear the search to restore all plans.' : 'Create a plan before publishing membership options.'}</p></div>
             )}
           </div>
         </div>
@@ -323,6 +332,9 @@ export function MembershipPlansPage({ initialPlans }: { initialPlans: Membership
               <Users size={13} className="text-muted-foreground" />
               <span className="text-[11px] uppercase tracking-wider font-semibold text-foreground">Entitlements & Limits</span>
             </div>
+            <div className="border-b border-amber-300/60 bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-900">
+              Class credits and membership freezes are enforced. Guest passes, personal-training allowances, access-hours text, contract length, and max-booking values are reference fields only in this launch scope; keep them at zero or enforce them operationally outside Gym.
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-border">
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Guest passes</p>
@@ -363,6 +375,7 @@ export function MembershipPlansPage({ initialPlans }: { initialPlans: Membership
             <div className="px-5 py-3 flex items-center gap-2 bg-muted/20">
               <ShieldCheck size={13} className="text-muted-foreground" />
               <span className="text-[11px] uppercase tracking-wider font-semibold text-foreground">Stripe Mapping</span>
+              <Badge variant="outline" className="ml-auto">{checkoutReadiness.any ? 'Checkout ready' : 'Setup required'}</Badge>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 divide-x divide-border">
               <div className="px-5 py-3">

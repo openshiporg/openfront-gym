@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { gql, request } from 'graphql-request'
 import { PageContainer } from '@/features/dashboard/components/PageContainer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { GraduationCap, Plus, Save, UserRound } from 'lucide-react'
+import { prepareInstructorClaim, saveInstructor as saveInstructorRecord } from '../actions/instructors'
 
 type InstructorRecord = {
   id?: string
@@ -35,27 +35,10 @@ type InstructorUserOption = {
   email?: string | null
 }
 
-const UPDATE_INSTRUCTOR = gql`
-  mutation UpdateInstructor($id: ID!, $data: InstructorUpdateInput!) {
-    updateInstructor(where: { id: $id }, data: $data) {
-      id
-      isActive
-    }
-  }
-`
-
-const CREATE_INSTRUCTOR = gql`
-  mutation CreateInstructor($data: InstructorCreateInput!) {
-    createInstructor(data: $data) {
-      id
-      isActive
-    }
-  }
-`
-
 function documentToText(value: any): string {
-  if (!Array.isArray(value)) return ''
-  return value
+  const document = Array.isArray(value) ? value : value?.document
+  if (!Array.isArray(document)) return ''
+  return document
     .flatMap((node: any) => node?.children || [])
     .map((child: any) => child?.text || '')
     .join(' ')
@@ -70,6 +53,7 @@ function normalizeInstructor(record?: InstructorRecord | null) {
   return {
     id: record?.id,
     userId: record?.user?.id || '',
+    accountEmail: record?.user?.email || '',
     bio: documentToText(record?.bio),
     specialties: Array.isArray(record?.specialties) ? record.specialties.join('\n') : '',
     certifications: Array.isArray(record?.certifications) ? record.certifications.join('\n') : '',
@@ -91,8 +75,15 @@ export function InstructorsPage({
   const [selectedInstructorId, setSelectedInstructorId] = useState<string | 'new'>(initialInstructors[0]?.id || 'new')
   const [form, setForm] = useState(() => normalizeInstructor(initialInstructors[0] || null))
   const [isSaving, setIsSaving] = useState(false)
+  const [isInviting, setIsInviting] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [claimNotice, setClaimNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [instructorQuery, setInstructorQuery] = useState('')
+
+  const filteredInstructors = useMemo(() => instructors
+    .filter((instructor) => `${instructor.user?.name || ''} ${instructor.user?.email || ''} ${(instructor.specialties || []).join(' ')}`.toLowerCase().includes(instructorQuery.trim().toLowerCase()))
+    .sort((a, b) => (a.user?.name || '').localeCompare(b.user?.name || '')), [instructors, instructorQuery])
 
   const breadcrumbs = [
     { type: 'link' as const, label: 'Dashboard', href: '/dashboard' },
@@ -114,6 +105,7 @@ export function InstructorsPage({
 
   const selectInstructor = (id: string | 'new') => {
     setSelectedInstructorId(id)
+    setClaimNotice(null)
     if (id === 'new') {
       setForm(emptyInstructor)
       return
@@ -126,10 +118,32 @@ export function InstructorsPage({
     setSelectedInstructorId('new')
     setForm(emptyInstructor)
     setSavedAt(null)
+    setClaimNotice(null)
     setError(null)
   }
 
   const selectedUser = userOptions.find((user) => user.id === form.userId)
+
+  const sendClaimLink = async () => {
+    if (!form.id) return
+    setError(null)
+    setClaimNotice(null)
+    setIsInviting(true)
+    try {
+      const claimed = await prepareInstructorClaim(form.id, form.accountEmail)
+      setForm((current) => ({ ...current, accountEmail: claimed.email }))
+      setInstructors((current) => current.map((instructor) =>
+        instructor.id === form.id
+          ? { ...instructor, user: instructor.user ? { ...instructor.user, email: claimed.email } : instructor.user }
+          : instructor
+      ))
+      setClaimNotice(`Claim link sent to ${claimed.email}`)
+    } catch (claimError) {
+      setError(claimError instanceof Error ? claimError.message : 'Unable to prepare instructor account')
+    } finally {
+      setIsInviting(false)
+    }
+  }
 
   const saveInstructor = async () => {
     setError(null)
@@ -146,8 +160,8 @@ export function InstructorsPage({
       }
 
       if (selectedInstructorId === 'new' || !form.id) {
-        const result = await request<any>('/api/graphql', CREATE_INSTRUCTOR, { data })
-        const createdId = result?.createInstructor?.id
+        const result = await saveInstructorRecord(data)
+        const createdId = result.id
         const user = userOptions.find((option) => option.id === form.userId)
         const created = {
           id: createdId,
@@ -165,7 +179,7 @@ export function InstructorsPage({
         if (createdId) setSelectedInstructorId(createdId)
         setForm(normalizeInstructor(created))
       } else {
-        await request('/api/graphql', UPDATE_INSTRUCTOR, { id: form.id, data })
+        await saveInstructorRecord(data, form.id)
         const next = instructors.map((inst) =>
           inst.id === form.id
             ? {
@@ -232,14 +246,15 @@ export function InstructorsPage({
 
       <div className="grid w-full grid-cols-1 gap-6 px-4 md:px-6 py-4 md:py-5 xl:grid-cols-[340px_1fr] xl:items-start overflow-auto">
         <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="px-5 py-3 flex items-center justify-between border-b border-border bg-muted/20">
-            <span className="text-[11px] uppercase tracking-wider font-semibold text-foreground">Instructor roster</span>
-            <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={createNewInstructor}>
+          <div className="space-y-3 border-b border-border bg-muted/20 px-4 py-3">
+            <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">Instructor roster</span>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={createNewInstructor}>
               <Plus className="mr-1 h-3.5 w-3.5" /> New instructor
-            </Button>
+            </Button></div>
+            <label><span className="sr-only">Search instructors</span><Input type="search" value={instructorQuery} onChange={(event) => setInstructorQuery(event.target.value)} placeholder="Search coach, email, or specialty" /></label>
           </div>
           <div className="divide-y divide-border">
-            {instructors.map((inst) => {
+            {filteredInstructors.map((inst) => {
               const active = selectedInstructorId === inst.id
               return (
                 <button
@@ -258,8 +273,8 @@ export function InstructorsPage({
                 </button>
               )
             })}
-            {instructors.length === 0 && (
-              <div className="px-5 py-10 text-sm text-muted-foreground">No instructors yet. Create your first instructor profile.</div>
+            {filteredInstructors.length === 0 && (
+              <div className="px-5 py-10"><p className="text-sm font-medium">{instructors.length ? 'No instructors match this search.' : 'No instructors yet.'}</p><p className="mt-1 text-xs text-muted-foreground">{instructors.length ? 'Clear the search to restore the full roster.' : 'Create a coach profile and link an instructor user.'}</p></div>
             )}
           </div>
         </div>
@@ -272,7 +287,10 @@ export function InstructorsPage({
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Linked user account</p>
-              <Select value={form.userId} onValueChange={(value) => setForm((current) => ({ ...current, userId: value }))}>
+              <Select value={form.userId} onValueChange={(value) => {
+                const user = userOptions.find((option) => option.id === value)
+                setForm((current) => ({ ...current, userId: value, accountEmail: user?.email || '' }))
+              }}>
                 <SelectTrigger className="mt-1.5"><SelectValue placeholder="Select an instructor user" /></SelectTrigger>
                 <SelectContent>
                   {userOptions.map((user) => (
@@ -283,6 +301,24 @@ export function InstructorsPage({
                 </SelectContent>
               </Select>
             </div>
+            {form.id ? (
+              <div className="px-5 py-3">
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Coach account email</p>
+                <p className="mt-1 text-xs text-muted-foreground">Replace an onboarding <code>@example.invalid</code> address, then send the coach a password-setup link.</p>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    type="email"
+                    value={form.accountEmail}
+                    onChange={(event) => setForm((current) => ({ ...current, accountEmail: event.target.value }))}
+                    placeholder="coach@example.com"
+                  />
+                  <Button type="button" variant="outline" onClick={sendClaimLink} disabled={isInviting || !form.accountEmail}>
+                    {isInviting ? 'Sending…' : 'Save email & send claim link'}
+                  </Button>
+                </div>
+                {claimNotice ? <p className="mt-2 text-xs text-emerald-600">{claimNotice}</p> : null}
+              </div>
+            ) : null}
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Photo URL</p>
               <Input value={form.photo} onChange={(e) => setForm((current) => ({ ...current, photo: e.target.value }))} placeholder="https://..." className="mt-1.5" />
@@ -311,7 +347,8 @@ export function InstructorsPage({
                 <Textarea value={form.specialties} onChange={(e) => setForm((current) => ({ ...current, specialties: e.target.value }))} placeholder="One specialty per line" className="mt-1.5 min-h-[120px]" />
               </div>
               <div className="px-5 py-3">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Certifications</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Certification notes</p>
+                <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Descriptive only — Gym does not verify issuer, scope, expiry, or current qualification.</p>
                 <Textarea value={form.certifications} onChange={(e) => setForm((current) => ({ ...current, certifications: e.target.value }))} placeholder="One certification per line" className="mt-1.5 min-h-[120px]" />
               </div>
             </div>

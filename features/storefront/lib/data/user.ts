@@ -2,9 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { consumeAuthAttempt, normalizeAuthIdentity } from "@/lib/authRateLimit";
 import { gql } from "graphql-request";
 import { gymClient } from "@/features/storefront/lib/config";
+import { keystoneContext } from "@/features/keystone/context";
 import { getAuthHeaders, setAuthToken, removeAuthToken } from "./cookies";
+import { safeStorefrontReturnPath } from "../return-path";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -14,6 +17,8 @@ export type StorefrontUser = {
   email: string;
   phone?: string | null;
   createdAt?: string;
+  stripeCustomerId?: string | null;
+  organization?: { id: string; defaultCurrency?: string | null } | null;
   role?: {
     id: string;
     name: string;
@@ -26,12 +31,18 @@ export type StorefrontUser = {
     startDate: string | null;
     cancelledAt: string | null;
     nextBillingDate: string | null;
+    autoRenew: boolean;
+    billingCycle: string;
     classCreditsRemaining: number | null;
+    stripeSubscriptionId?: string | null;
+    freezeStartDate?: string | null;
+    freezeEndDate?: string | null;
     tier: {
       id: string;
       name: string;
       monthlyPrice: number;
       classCreditsPerMonth: number;
+      freezeAllowed?: boolean | null;
     } | null;
   } | null;
 };
@@ -53,6 +64,8 @@ export async function getUser(): Promise<StorefrontUser | null> {
               email
               phone
               createdAt
+              stripeCustomerId
+              organization { id defaultCurrency }
               role {
                 id
                 name
@@ -65,12 +78,18 @@ export async function getUser(): Promise<StorefrontUser | null> {
                 startDate
                 cancelledAt
                 nextBillingDate
+                autoRenew
+                billingCycle
                 classCreditsRemaining
+                stripeSubscriptionId
+                freezeStartDate
+                freezeEndDate
                 tier {
                   id
                   name
                   monthlyPrice
                   classCreditsPerMonth
+                  freezeAllowed
                 }
               }
             }
@@ -104,6 +123,9 @@ export async function login(
 ): Promise<string | null> {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+  const normalizedEmail = normalizeAuthIdentity(email);
+  const redirectTo = safeStorefrontReturnPath(formData.get("redirectTo"));
+  if (!normalizedEmail || !(await consumeAuthAttempt(keystoneContext.prisma, "signin:global", 500, 15 * 60 * 1000)) || !(await consumeAuthAttempt(keystoneContext.prisma, `signin:${normalizedEmail}`, 10, 15 * 60 * 1000))) return "Sign in failed. Please try again later.";
 
   try {
     const result = await gymClient.request<any>(
@@ -120,7 +142,7 @@ export async function login(
           }
         }
       `,
-      { email, password }
+      { email: normalizedEmail, password }
     );
 
     const auth = result.authenticateUserWithPassword;
@@ -136,7 +158,7 @@ export async function login(
 
   // redirect() must be called outside try/catch
   revalidatePath("/", "layout");
-  redirect("/account");
+  redirect(redirectTo);
 }
 
 /**
@@ -148,23 +170,27 @@ export async function signUp(
   _currentState: string | null,
   formData: FormData
 ): Promise<string | null> {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const name = formData.get("name") as string;
-  const phone = (formData.get("phone") as string) ?? "";
-  const redirectTo = (formData.get("redirectTo") as string) || "/account";
+  const email = String(formData.get("email") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const name = String(formData.get("name") ?? "");
+  const phone = String(formData.get("phone") ?? "");
+  const normalizedEmail = normalizeAuthIdentity(email);
+  if (!normalizedEmail || password.length < 12 || password.length > 128 || !name.trim() || name.trim().length > 120 || phone.length > 40) {
+    return "Unable to create account. Check the details or try again later.";
+  }
+  const redirectTo = safeStorefrontReturnPath(formData.get("redirectTo"));
 
   try {
-    const { createUser } = await gymClient.request<any>(
+    const { registerMember } = await gymClient.request<any>(
       gql`
-        mutation StorefrontCreateUser($data: UserCreateInput!) {
-          createUser(data: $data) { id email }
+        mutation StorefrontRegisterMember($data: RegisterMemberInput!) {
+          registerMember(data: $data) { id email }
         }
       `,
-      { data: { email, password, name, ...(phone ? { phone } : {}) } }
+      { data: { email: normalizedEmail, password, name, ...(phone ? { phone } : {}) } }
     );
 
-    if (!createUser?.id) return "Failed to create account. Please try again.";
+    if (!registerMember?.id) return "Failed to create account. Please try again.";
 
     // Auto sign-in
     const authResult = await gymClient.request<any>(
@@ -176,7 +202,7 @@ export async function signUp(
           }
         }
       `,
-      { email, password }
+      { email: normalizedEmail, password }
     );
 
     const auth = authResult.authenticateUserWithPassword;
@@ -207,8 +233,8 @@ export async function signOut() {
 // ─── Profile update ─────────────────────────────────────────────────────────
 
 /**
- * updateProfile uses updateUser(where, data) — there is no updateActiveUser mutation.
- * Resolves the caller's User.id from the session first.
+ * Updates the authenticated User and Member atomically through the bounded
+ * updateMemberProfile application mutation.
  */
 export async function updateProfile(
   _prevState: { success: boolean; error: string | null } | null,
@@ -220,41 +246,38 @@ export async function updateProfile(
       return { success: false, error: "Not logged in." };
     }
 
-    // Resolve session user ID
-    const { authenticatedItem } = await gymClient.request<any>(
-      gql`query { authenticatedItem { ... on User { id } } }`,
-      {},
-      headers
-    );
-    const userId: string | undefined = authenticatedItem?.id;
-    if (!userId) return { success: false, error: "Session expired." };
+    const name = formData.get("name")?.toString().trim() ?? "";
+    const email = formData.get("email")?.toString().trim() ?? "";
+    const phone = formData.get("phone")?.toString().trim() ?? "";
+    const password = formData.get("password")?.toString().trim() ?? "";
 
-    // Build update payload — only include non-empty values
-    const data: Record<string, string> = {};
-    const name = (formData.get("name") as string)?.trim();
-    const email = (formData.get("email") as string)?.trim();
-    const phone = (formData.get("phone") as string)?.trim();
-    const password = (formData.get("password") as string)?.trim();
-    if (name) data.name = name;
-    if (email) data.email = email;
-    if (phone) data.phone = phone;
-    if (password) data.password = password;
-
-    if (!Object.keys(data).length) {
-      return { success: false, error: "No changes to save." };
+    if (!name || name.length > 120) {
+      return { success: false, error: "Name must be between 1 and 120 characters." };
+    }
+    if (!email || email.length > 320 || !/^\S+@\S+\.\S+$/.test(email)) {
+      return { success: false, error: "Enter a valid email address." };
+    }
+    if (phone.length > 40) {
+      return { success: false, error: "Phone number must be 40 characters or fewer." };
+    }
+    if (password && (password.length < 12 || password.length > 128)) {
+      return { success: false, error: "Password must be between 12 and 128 characters." };
     }
 
-    await gymClient.request<any>(
+    const data: Record<string, string> = { name, email, phone };
+    if (password) data.password = password;
+    await gymClient.request(
       gql`
-        mutation StorefrontUpdateUser($id: ID!, $data: UserUpdateInput!) {
-          updateUser(where: { id: $id }, data: $data) { id name email phone }
+        mutation StorefrontUpdateProfile($data: MemberProfileUpdateInput!) {
+          updateMemberProfile(data: $data) { id name email phone }
         }
       `,
-      { id: userId, data },
-      headers
+      { data },
+      headers,
     );
 
-    revalidatePath("/account");
+    revalidatePath("/account", "layout");
+    revalidatePath("/account/profile");
     return { success: true, error: null };
   } catch (error) {
     return {

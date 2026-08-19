@@ -1,5 +1,5 @@
 import { list, graphql } from "@keystone-6/core";
-import { allOperations } from "@keystone-6/core/access";
+import { allOperations, denyAll } from "@keystone-6/core/access";
 import {
   text,
   json,
@@ -9,13 +9,39 @@ import {
 } from "@keystone-6/core/fields";
 import { document } from "@keystone-6/fields-document";
 
-import { isSignedIn } from "../access";
+import { isSignedIn, permissions, rules } from "../access";
+import { tenantFilter } from "../access/tenantPolicy";
 import { trackingFields } from "./trackingFields";
+import { normalizeOnboardingMediaPath } from "../mutations/gymSettingsLifecycle";
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 
 export const Instructor = list({
+  db: { extendPrismaSchema: compoundUniqueDb("organizationId, userId") },
+  hooks: {
+    async validateInput(args: any) {
+      await validateTenantOwnership([
+        { field: "user", list: "user" },
+      ])(args);
+      const { resolvedData, addValidationError } = args;
+      if (resolvedData.photo === undefined) return;
+      try {
+        resolvedData.photo = normalizeOnboardingMediaPath(resolvedData.photo);
+      } catch (error) {
+        addValidationError(error instanceof Error ? error.message : String(error));
+      }
+    },
+  },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      create: permissions.canManageAllRecords,
+      update: permissions.canManageAllRecords,
+      delete: permissions.canManageAllRecords,
+    },
+    filter: {
+      query: rules.canReadInstructor,
+      update: tenantFilter,
+      delete: tenantFilter,
     },
   },
   ui: {
@@ -25,9 +51,19 @@ export const Instructor = list({
     labelField: "user",
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.instructors",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+      ui: { description: "Tenant organization for this instructor" },
+    }),
     // Link to User account
     user: relationship({
       ref: "User",
+      access: { read: permissions.canManageAllRecords, update: denyAll },
+      isFilterable: permissions.canManageAllRecords,
+      isOrderable: permissions.canManageAllRecords,
       ui: {
         displayMode: "select",
         description: "The user account for this instructor",
@@ -56,6 +92,7 @@ export const Instructor = list({
     }),
 
     photo: text({
+      access: { create: permissions.canManageOnboarding, update: denyAll },
       ui: {
         description: "URL to instructor's photo",
       },
@@ -72,14 +109,44 @@ export const Instructor = list({
     classSchedules: relationship({
       ref: "ClassSchedule.instructor",
       many: true,
+      access: { create: denyAll, update: denyAll },
     }),
 
     classInstances: relationship({
       ref: "ClassInstance.instructor",
       many: true,
+      access: { create: denyAll, update: denyAll },
+    }),
+
+    availability: relationship({
+      ref: "TrainerAvailability.instructor",
+      many: true,
+      access: { create: denyAll, update: denyAll },
+    }),
+
+    appointments: relationship({
+      ref: "TrainerAppointment.instructor",
+      many: true,
+      access: { create: denyAll, update: denyAll },
+    }),
+
+    displayName: virtual({
+      access: { read: isSignedIn },
+      field: graphql.field({
+        type: graphql.String,
+        async resolve(item, args, context) {
+          const instructor = await context.sudo().query.Instructor.findOne({
+            where: { id: item.id.toString() },
+            query: "user { name }",
+          });
+          return instructor?.user?.name ?? "Coach";
+        },
+      }),
+      ui: { description: "Public instructor display name" },
     }),
 
     totalClassesTaught: virtual({
+      access: { read: permissions.canManageAllRecords },
       field: graphql.field({
         type: graphql.Int,
         async resolve(item, args, context) {
@@ -88,6 +155,7 @@ export const Instructor = list({
             where: {
               instructor: { id: { equals: item.id.toString() } },
               date: { lte: new Date().toISOString() },
+              isCancelled: { equals: false },
             },
           });
           return count;
@@ -97,42 +165,31 @@ export const Instructor = list({
     }),
 
     averageRating: virtual({
+      access: { read: permissions.canManageAllRecords },
       field: graphql.field({
         type: graphql.Float,
-        async resolve(item, args, context) {
-          return 4.5;
+        async resolve() {
+          // Ratings are not modeled yet; do not expose a fabricated score.
+          return null;
         },
       }),
-      ui: { description: 'Average rating from members (placeholder)' },
+      ui: { description: 'Unavailable until member ratings are modeled' },
     }),
 
     totalRevenue: virtual({
+      access: { read: permissions.canManageAllRecords },
       field: graphql.field({
         type: graphql.Float,
-        async resolve(item, args, context) {
-          const sudoContext = context.sudo();
-
-          const instances = await sudoContext.query.ClassInstance.findMany({
-            where: {
-              instructor: { id: { equals: item.id.toString() } },
-              date: { lte: new Date().toISOString() },
-            },
-            query: 'bookings(where: { status: { equals: "confirmed" } }) { id }',
-          });
-
-          const totalBookings = instances.reduce(
-            (sum: number, inst: any) => sum + (inst.bookings?.length || 0),
-            0
-          );
-
-          const revenuePerClass = 15;
-          return totalBookings * revenuePerClass;
+        async resolve() {
+          // Instructor pricing/revenue is not modeled; do not expose a fabricated amount.
+          return null;
         },
       }),
-      ui: { description: 'Total revenue attributed to this instructor' },
+      ui: { description: 'Unavailable until instructor pricing is modeled' }
     }),
 
     upcomingClasses: virtual({
+      access: { read: permissions.canManageAllRecords },
       field: graphql.field({
         type: graphql.Int,
         async resolve(item, args, context) {
@@ -141,6 +198,7 @@ export const Instructor = list({
             where: {
               instructor: { id: { equals: item.id.toString() } },
               date: { gte: new Date().toISOString() },
+              isCancelled: { equals: false },
             },
           });
           return count;

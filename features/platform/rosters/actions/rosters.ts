@@ -1,107 +1,35 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { keystoneContext } from "@/features/keystone/context";
+import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
+import {
+  MARK_CLASS_ATTENDANCE_DOCUMENT,
+  PROMOTE_FROM_WAITLIST_DOCUMENT,
+  ROSTER_DETAIL_DOCUMENT,
+  ROSTER_SESSIONS_DOCUMENT,
+} from "../graphql";
+
+function revalidateRosterViews(classInstanceId: string) {
+  revalidatePath(`/dashboard/platform/rosters/${classInstanceId}`);
+  revalidatePath("/dashboard/platform/rosters");
+  revalidatePath("/account/instructor");
+}
 
 export async function getUpcomingRosterSessions() {
-  const ctx = keystoneContext.sudo();
-  const now = new Date().toISOString();
-
-  const sessions = await ctx.query.ClassInstance.findMany({
-    where: {
-      date: { gte: now },
-      isCancelled: { equals: false },
-    },
-    orderBy: [{ date: "asc" }],
-    take: 20,
-    query: `
-      id
-      date
-      bookingsCount
-      classSchedule {
-        id
-        name
-        maxCapacity
-        startTime
-        endTime
-      }
-      instructor {
-        user { name }
-      }
-    `,
-  });
-
-  return sessions as any[];
+  const response = await keystoneClient<{ rosterSessions: any[] }>(
+    ROSTER_SESSIONS_DOCUMENT,
+  );
+  if (!response.success) throw new Error(response.error);
+  return response.data.rosterSessions;
 }
 
 export async function getRosterDetail(classInstanceId: string) {
-  const ctx = keystoneContext.sudo();
-
-  const instance = await ctx.query.ClassInstance.findOne({
-    where: { id: classInstanceId },
-    query: `
-      id
-      date
-      isCancelled
-      cancellationReason
-      classSchedule {
-        id
-        name
-        dayOfWeek
-        startTime
-        endTime
-        maxCapacity
-      }
-      instructor {
-        id
-        user { name email }
-      }
-      bookings(orderBy: [{ bookedAt: asc }]) {
-        id
-        status
-        bookedAt
-        waitlistPosition
-        memberName
-        memberEmail
-        memberPhone
-        member {
-          id
-          name
-          email
-          phone
-        }
-      }
-    `,
-  });
-
-  if (!instance) return null;
-
-  const bookings = (instance as any).bookings ?? [];
-  const attendanceByBookingId = new Map<string, any>();
-
-  for (const booking of bookings) {
-    const records = await ctx.query.AttendanceRecord.findMany({
-      where: { booking: { id: { equals: booking.id } } },
-      take: 1,
-      query: `
-        id
-        attended
-        lateArrival
-        minutesLate
-        noShowReason
-        markedAt
-      `,
-    });
-    if (records.length) attendanceByBookingId.set(booking.id, records[0]);
-  }
-
-  return {
-    ...(instance as any),
-    bookings: bookings.map((booking: any) => ({
-      ...booking,
-      attendance: attendanceByBookingId.get(booking.id) ?? null,
-    })),
-  };
+  const response = await keystoneClient<{ rosterDetail: any | null }>(
+    ROSTER_DETAIL_DOCUMENT,
+    { classInstanceId },
+  );
+  if (!response.success) throw new Error(response.error);
+  return response.data.rosterDetail;
 }
 
 export async function markRosterAttendance(formData: FormData): Promise<void> {
@@ -110,42 +38,31 @@ export async function markRosterAttendance(formData: FormData): Promise<void> {
   const classScheduleId = formData.get("classScheduleId")?.toString();
   const classInstanceId = formData.get("classInstanceId")?.toString();
   const outcome = formData.get("outcome")?.toString() || "attended";
+  const minutesLateRaw = formData.get("minutesLate")?.toString();
+  const notes = formData.get("notes")?.toString().trim();
+  if (!bookingId || !memberId || !classScheduleId || !classInstanceId) throw new Error("Missing attendance inputs.");
 
-  if (!bookingId || !memberId || !classScheduleId || !classInstanceId) {
-    throw new Error("Missing attendance inputs.");
-  }
-
-  const ctx = keystoneContext.sudo();
-  const existing = await ctx.query.AttendanceRecord.findMany({
-    where: { booking: { id: { equals: bookingId } } },
-    take: 1,
-    query: "id",
+  const parsedMinutesLate = Number.parseInt(minutesLateRaw || "", 10);
+  const response = await keystoneClient(MARK_CLASS_ATTENDANCE_DOCUMENT, {
+    bookingId,
+    outcome,
+    minutesLate: Number.isFinite(parsedMinutesLate) ? parsedMinutesLate : null,
+    notes: notes || null,
   });
+  if (!response.success) throw new Error(response.error);
+  revalidateRosterViews(classInstanceId);
+}
 
-  const data: Record<string, any> = {
-    booking: { connect: { id: bookingId } },
-    classSchedule: { connect: { id: classScheduleId } },
-    member: { connect: { id: memberId } },
-    markedAt: new Date().toISOString(),
-    attended: outcome === "attended" || outcome === "late",
-    lateArrival: outcome === "late",
-    minutesLate: outcome === "late" ? 5 : null,
-    noShowReason: outcome === "no-show" ? "Marked from roster" : null,
-  };
+export async function promoteWaitlistBooking(formData: FormData): Promise<void> {
+  const classInstanceId = formData.get("classInstanceId")?.toString();
+  if (!classInstanceId) throw new Error("Missing waitlist promotion input.");
 
-  if (existing.length) {
-    await ctx.query.AttendanceRecord.updateOne({
-      where: { id: existing[0].id },
-      data,
-      query: "id",
-    });
-  } else {
-    await ctx.query.AttendanceRecord.createOne({
-      data,
-      query: "id",
-    });
+  const response = await keystoneClient(PROMOTE_FROM_WAITLIST_DOCUMENT, {
+    classInstanceId,
+  });
+  if (!response.success) throw new Error(response.error);
+  if (!response.data?.promoteFromWaitlist?.promoted) {
+    throw new Error(response.data?.promoteFromWaitlist?.message || "Waitlist promotion failed.");
   }
-
-  revalidatePath(`/dashboard/platform/rosters/${classInstanceId}`);
-  revalidatePath("/dashboard/platform/rosters");
+  revalidateRosterViews(classInstanceId);
 }

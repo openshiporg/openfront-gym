@@ -6,13 +6,26 @@ import {
   json,
 } from '@keystone-6/core/fields';
 
-import { isSignedIn } from '../access';
+import { isSignedIn, permissions } from '../access';
+import { tenantFilter } from '../access/tenantPolicy';
 import { trackingFields } from './trackingFields';
+import { relationship } from '@keystone-6/core/fields';
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
 export const Exercise = list({
+  db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
+  hooks: { validateInput: validateTenantOwnership([]) },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      create: permissions.canManageAllRecords,
+      update: permissions.canManageAllRecords,
+      delete: permissions.canManageAllRecords,
+    },
+    filter: {
+      query: tenantFilter,
+      update: tenantFilter,
+      delete: tenantFilter,
     },
   },
   ui: {
@@ -21,6 +34,12 @@ export const Exercise = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.exercises",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     name: text({
       validation: { isRequired: true },
       ui: {

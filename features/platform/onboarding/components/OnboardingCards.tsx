@@ -52,23 +52,16 @@ const InfoCardContent = React.memo(
 );
 InfoCardContent.displayName = "InfoCardContent";
 
-const InfoCardFooter = ({
-  children,
-  className,
-  isHovered,
-}: CommonCardProps & { isHovered: boolean }) => {
-  return (
-    <div
-      className={cn(
-        "flex justify-between text-xs text-muted-foreground mt-2 overflow-hidden transition-all duration-300 ease-spring",
-        isHovered ? "max-h-[60px] opacity-100" : "max-h-0 opacity-0",
-        className
-      )}
-    >
-      {children}
-    </div>
-  );
-};
+const InfoCardFooter = ({ children, className }: CommonCardProps) => (
+  <div
+    className={cn(
+      "mt-2 flex justify-between overflow-hidden text-xs text-muted-foreground",
+      className,
+    )}
+  >
+    {children}
+  </div>
+);
 
 export function OnboardingCards({
   steps,
@@ -130,7 +123,6 @@ function OnboardingCard({
   onDismiss?: () => void;
   onOpenDialog: () => void;
 }) {
-  const [isHovered, setIsHovered] = React.useState(false);
   const [isDismissed, setIsDismissed] = React.useState(false);
 
   const handleDismiss = () => {
@@ -151,8 +143,6 @@ function OnboardingCard({
           "opacity-100 translate-y-0",
           "hover:shadow-sm"
         )}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
       >
         <div className="absolute -top-1 -right-1.5 z-10">
           <div className="h-3 w-3 rounded-full bg-blue-700 dark:bg-blue-400 border-blue-200 dark:border-blue-800/50 border-3 animate-pulse" />
@@ -164,7 +154,7 @@ function OnboardingCard({
           </InfoCardContent>
         </div>
 
-        <InfoCardFooter isHovered={isHovered}>
+        <InfoCardFooter>
           <div className="m-2 space-x-2">
             <Button size="sm" onClick={onOpenDialog} className="text-xs h-6">
               Get started

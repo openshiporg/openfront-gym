@@ -10,12 +10,13 @@
  */
 export const VIEW_ORDER = [
   "text",
-  "password",
-  "relationship",
   "select",
-  "timestamp",
   "checkbox",
+  "relationship",
+  "timestamp",
+  "password",
   "json",
+  "custom",
   "image",
   "virtual",
   "document",

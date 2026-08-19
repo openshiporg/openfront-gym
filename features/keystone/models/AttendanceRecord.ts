@@ -1,5 +1,5 @@
 import { list, graphql } from '@keystone-6/core';
-import { allOperations } from '@keystone-6/core/access';
+import { allOperations, denyAll } from '@keystone-6/core/access';
 import {
   relationship,
   timestamp,
@@ -9,13 +9,23 @@ import {
   virtual,
 } from '@keystone-6/core/fields';
 
-import { isSignedIn } from '../access';
+import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
 export const AttendanceRecord = list({
+  db: { extendPrismaSchema: compoundUniqueDb("organizationId, bookingId") },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
+    },
+    filter: {
+      query: rules.canReadOwnAttendance,
+      update: rules.canReadOwnAttendance,
+      delete: rules.canReadOwnAttendance,
     },
   },
   ui: {
@@ -24,6 +34,12 @@ export const AttendanceRecord = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.attendanceRecords",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     booking: relationship({
       ref: 'ClassBooking',
       ui: {
@@ -92,6 +108,7 @@ export const AttendanceRecord = list({
     // Virtual field for attendance rate per member
     // This would typically be calculated at the Member level, but included here as a reference
     memberAttendanceRate: virtual({
+      access: { read: permissions.canManageAllRecords },
       field: graphql.field({
         type: graphql.Float,
         async resolve(item, args, context) {
@@ -127,6 +144,14 @@ export const AttendanceRecord = list({
     ...trackingFields,
   },
   hooks: {
+    async validateInput(args: any) {
+      await validateTenantOwnership([
+        { field: "booking", list: "classBooking" },
+        { field: "classSchedule", list: "classSchedule", required: true },
+        { field: "member", list: "member", required: true },
+        { field: "markedBy", list: "user" },
+      ])(args);
+    },
     // Automatically create attendance records when class starts
     async beforeOperation({ operation, resolvedData, context }) {
       if (operation === 'create') {
@@ -134,9 +159,6 @@ export const AttendanceRecord = list({
         if (!resolvedData.markedAt) {
           resolvedData.markedAt = new Date();
         }
-
-        // If attended is true and markedAt is set, ensure markedBy is set
-        // (This would typically be set from session, but left as placeholder)
       }
     },
   },

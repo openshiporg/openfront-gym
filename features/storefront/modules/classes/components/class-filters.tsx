@@ -2,14 +2,14 @@ import Link from "next/link";
 
 const difficulties = [
   { id: "all", name: "All levels" },
-  { id: "beginner", name: "Balanced" },
-  { id: "intermediate", name: "Intense" },
-  { id: "advanced", name: "Elite" },
+  { id: "beginner", name: "Beginner" },
+  { id: "intermediate", name: "Intermediate" },
+  { id: "advanced", name: "Advanced" },
   { id: "all-levels", name: "Mixed" },
 ];
 
 const durations = [
-  { id: "all", name: "Any duration" },
+  { id: "all", name: "Any" },
   { id: "30", name: "30 min" },
   { id: "45", name: "45 min" },
   { id: "60", name: "60 min" },
@@ -36,35 +36,20 @@ export default function ClassFilters({
   };
 
   return (
-    <aside className="space-y-10">
+    <aside className="space-y-10 lg:sticky lg:top-24 lg:self-start">
       <div>
-        <h3 className="mb-6 text-xs font-bold uppercase tracking-[0.28em] text-[#c4c7c7]">Difficulty</h3>
-        <div className="space-y-3">
+        <h3 className="sf-label mb-4">Difficulty</h3>
+        <div className="space-y-2">
           {difficulties.map((item) => {
             const active = selectedDifficulty === item.id || (!selectedDifficulty && item.id === "all");
             return (
-              <Link key={item.id} href={buildHref({ difficulty: item.id })} className="flex items-center gap-3">
-                <span className={`h-4 w-4 border transition-colors ${active ? "border-[#818cf8] bg-[#818cf8]" : "border-[#8e9192]"}`} />
-                <span className={`text-sm uppercase tracking-[0.14em] ${active ? "text-[#818cf8]" : "text-[#e5e2e1]"}`}>
-                  {item.name}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        <h3 className="mb-6 text-xs font-bold uppercase tracking-[0.28em] text-[#c4c7c7]">Duration</h3>
-        <div className="grid grid-cols-2 gap-2">
-          {durations.map((item) => {
-            const active = selectedDuration === item.id || (!selectedDuration && item.id === "all");
-            return (
               <Link
                 key={item.id}
-                href={buildHref({ duration: item.id })}
-                className={`px-3 py-2 text-center text-[10px] font-bold uppercase tracking-[0.22em] transition-colors ${
-                  active ? "bg-[#818cf8] text-white" : "bg-[#353535] text-[#e5e2e1] hover:bg-[#393939]"
+                href={buildHref({ difficulty: item.id })}
+                className={`block border px-3 py-2 text-sm transition ${
+                  active
+                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] font-medium text-[var(--color-ink)]"
+                    : "border-transparent text-[var(--color-ink-muted)] hover:border-[var(--color-rule)] hover:bg-[var(--color-paper-2)]"
                 }`}
               >
                 {item.name}
@@ -74,8 +59,30 @@ export default function ClassFilters({
         </div>
       </div>
 
-      <Link href="/classes" className="inline-flex items-center gap-2 border-b border-[#818cf8] pb-1 text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">
-        Reset all filters
+      <div>
+        <h3 className="sf-label mb-4">Duration</h3>
+        <div className="flex flex-wrap gap-2">
+          {durations.map((item) => {
+            const active = selectedDuration === item.id || (!selectedDuration && item.id === "all");
+            return (
+              <Link
+                key={item.id}
+                href={buildHref({ duration: item.id })}
+                className={`px-3 py-2 text-xs font-medium transition ${
+                  active
+                    ? "bg-[var(--color-accent)] text-[var(--color-accent-on)]"
+                    : "border border-[var(--color-rule)] text-[var(--color-ink-muted)] hover:border-[var(--color-ink)]"
+                }`}
+              >
+                {item.name}
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
+      <Link href="/classes" className="inline-block text-sm font-medium text-[var(--color-accent)] hover:underline">
+        Reset filters
       </Link>
     </aside>
   );

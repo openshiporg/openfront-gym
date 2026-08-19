@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { gql, request } from 'graphql-request'
 import { PageContainer } from '@/features/dashboard/components/PageContainer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { MapPin, Phone, Plus, Save } from 'lucide-react'
+import { saveLocation as saveLocationRecord } from '../actions/locations'
 
 type LocationRecord = {
   id?: string
@@ -17,26 +17,6 @@ type LocationRecord = {
   phone?: string | null
   isActive?: boolean | null
 }
-
-const UPDATE_LOCATION = gql`
-  mutation UpdateLocation($id: ID!, $data: LocationUpdateInput!) {
-    updateLocation(where: { id: $id }, data: $data) {
-      id
-      name
-      isActive
-    }
-  }
-`
-
-const CREATE_LOCATION = gql`
-  mutation CreateLocation($data: LocationCreateInput!) {
-    createLocation(data: $data) {
-      id
-      name
-      isActive
-    }
-  }
-`
 
 function normalizeLocation(location?: LocationRecord | null) {
   return {
@@ -57,6 +37,11 @@ export function LocationsPage({ initialLocations }: { initialLocations: Location
   const [isSaving, setIsSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [locationQuery, setLocationQuery] = useState('')
+
+  const filteredLocations = useMemo(() => locations
+    .filter((location) => `${location.name} ${location.address || ''} ${location.phone || ''}`.toLowerCase().includes(locationQuery.trim().toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name)), [locations, locationQuery])
 
   const breadcrumbs = [
     { type: 'link' as const, label: 'Dashboard', href: '/dashboard' },
@@ -102,14 +87,14 @@ export function LocationsPage({ initialLocations }: { initialLocations: Location
       }
 
       if (selectedLocationId === 'new' || !form.id) {
-        const result = await request<any>('/api/graphql', CREATE_LOCATION, { data })
-        const created = { ...data, id: result?.createLocation?.id }
+        const result = await saveLocationRecord(data)
+        const created = { ...data, id: result.id }
         const nextLocations = [...locations, created]
         setLocations(nextLocations)
         if (created.id) setSelectedLocationId(created.id)
         setForm(normalizeLocation(created))
       } else {
-        await request('/api/graphql', UPDATE_LOCATION, { id: form.id, data })
+        await saveLocationRecord(data, form.id)
         const nextLocations = locations.map((location) =>
           location.id === form.id ? { ...location, ...data } : location
         )
@@ -160,14 +145,15 @@ export function LocationsPage({ initialLocations }: { initialLocations: Location
 
       <div className="grid w-full grid-cols-1 gap-6 px-4 md:px-6 py-4 md:py-5 xl:grid-cols-[340px_1fr] xl:items-start overflow-auto">
         <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="px-5 py-3 flex items-center justify-between border-b border-border bg-muted/20">
-            <span className="text-[11px] uppercase tracking-wider font-semibold text-foreground">Facility records</span>
-            <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={createNewLocation}>
+          <div className="space-y-3 border-b border-border bg-muted/20 px-4 py-3">
+            <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">Facility records</span>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={createNewLocation}>
               <Plus className="mr-1 h-3.5 w-3.5" /> New location
-            </Button>
+            </Button></div>
+            <label><span className="sr-only">Search locations</span><Input type="search" value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} placeholder="Search name, address, or phone" /></label>
           </div>
           <div className="divide-y divide-border">
-            {locations.map((location) => {
+            {filteredLocations.map((location) => {
               const active = selectedLocationId === location.id
               return (
                 <button
@@ -186,8 +172,8 @@ export function LocationsPage({ initialLocations }: { initialLocations: Location
                 </button>
               )
             })}
-            {locations.length === 0 && (
-              <div className="px-5 py-10 text-sm text-muted-foreground">No locations yet. Create your first gym location.</div>
+            {filteredLocations.length === 0 && (
+              <div className="px-5 py-10"><p className="text-sm font-medium">{locations.length ? 'No locations match this search.' : 'No locations yet.'}</p><p className="mt-1 text-xs text-muted-foreground">{locations.length ? 'Clear the search to restore all facilities.' : 'Create a facility before assigning front-desk activity.'}</p></div>
             )}
           </div>
         </div>

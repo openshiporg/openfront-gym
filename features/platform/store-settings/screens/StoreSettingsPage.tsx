@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState, type ReactNode } from 'react'
-import { gql, request } from 'graphql-request'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -19,11 +18,14 @@ import {
   type DayKey,
   type HoursState,
 } from '@/features/platform/store-settings/components/WeeklyHoursEditor'
+import { saveGymSettings } from '../actions/store-settings'
 
 interface GymSettingsData {
   id?: string
   name: string
   tagline?: string | null
+  logoIcon?: string | null
+  brandHue?: number | null
   description?: string | null
   address?: string | null
   phone?: string | null
@@ -36,6 +38,7 @@ interface GymSettingsData {
   heroEyebrow?: string | null
   heroHeadline?: string | null
   heroSubheadline?: string | null
+  heroImageUrl?: string | null
   heroPrimaryCtaLabel?: string | null
   heroPrimaryCtaHref?: string | null
   heroSecondaryCtaLabel?: string | null
@@ -47,31 +50,8 @@ interface GymSettingsData {
   facilityHighlights?: any[] | null
   heroStats?: any[] | null
   contactTopics?: any[] | null
-  rating?: string | null
-  reviewCount?: number | null
   hours?: any
 }
-
-const UPDATE_GYM_SETTINGS = gql`
-  mutation UpdateGymSettings($id: ID!, $data: GymSettingsUpdateInput!) {
-    updateGymSettings(where: { id: $id }, data: $data) {
-      id
-      name
-      locale
-      timezone
-      hours
-    }
-  }
-`
-
-const CREATE_GYM_SETTINGS = gql`
-  mutation CreateGymSettings($data: GymSettingsCreateInput!) {
-    createGymSettings(data: $data) {
-      id
-      name
-    }
-  }
-`
 
 const days: Array<{ key: DayKey; label: string; short: string }> = [
   { key: 'monday', label: 'Monday', short: 'Mon' },
@@ -214,53 +194,42 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
   const [error, setError] = useState<string | null>(null)
 
   const [form, setForm] = useState({
-    name: initialSettings?.name || 'Openfront Gym',
-    tagline: initialSettings?.tagline || 'Movement is art. The body of work is you.',
-    description: initialSettings?.description || '',
-    address: initialSettings?.address || '',
-    phone: initialSettings?.phone || '',
-    email: initialSettings?.email || '',
-    currencyCode: initialSettings?.currencyCode || 'USD',
-    locale: initialSettings?.locale || 'en-US',
-    timezone: initialSettings?.timezone || 'America/New_York',
-    countryCode: initialSettings?.countryCode || 'US',
-    promoBanner: initialSettings?.promoBanner || 'Movement is art. The body of work is you.',
-    heroEyebrow: initialSettings?.heroEyebrow || '',
-    heroHeadline: initialSettings?.heroHeadline || 'Movement is art.\nThe body of work\nis you.',
-    heroSubheadline: initialSettings?.heroSubheadline || '',
-    heroPrimaryCtaLabel: initialSettings?.heroPrimaryCtaLabel || 'Start membership',
-    heroPrimaryCtaHref: initialSettings?.heroPrimaryCtaHref || '/join',
-    heroSecondaryCtaLabel: initialSettings?.heroSecondaryCtaLabel || 'View schedule',
-    heroSecondaryCtaHref: initialSettings?.heroSecondaryCtaHref || '/schedule',
-    footerTagline: initialSettings?.footerTagline || '',
-    copyrightName: initialSettings?.copyrightName || '',
-    facilityHeadline: initialSettings?.facilityHeadline || '',
-    facilityDescription: initialSettings?.facilityDescription || '',
-    rating: initialSettings?.rating || '4.8',
-    reviewCount: initialSettings?.reviewCount ?? 0,
+    name: initialSettings?.name ?? '',
+    tagline: initialSettings?.tagline ?? '',
+    logoIcon: initialSettings?.logoIcon ?? '',
+    brandHue: initialSettings?.brandHue ?? 16,
+    description: initialSettings?.description ?? '',
+    address: initialSettings?.address ?? '',
+    phone: initialSettings?.phone ?? '',
+    email: initialSettings?.email ?? '',
+    currencyCode: initialSettings?.currencyCode ?? 'USD',
+    locale: initialSettings?.locale ?? 'en-US',
+    timezone: initialSettings?.timezone ?? 'America/New_York',
+    countryCode: initialSettings?.countryCode ?? 'US',
+    promoBanner: initialSettings?.promoBanner ?? '',
+    heroEyebrow: initialSettings?.heroEyebrow ?? '',
+    heroHeadline: initialSettings?.heroHeadline ?? '',
+    heroSubheadline: initialSettings?.heroSubheadline ?? '',
+    heroImageUrl: initialSettings?.heroImageUrl ?? '',
+    heroPrimaryCtaLabel: initialSettings?.heroPrimaryCtaLabel ?? '',
+    heroPrimaryCtaHref: initialSettings?.heroPrimaryCtaHref ?? '',
+    heroSecondaryCtaLabel: initialSettings?.heroSecondaryCtaLabel ?? '',
+    heroSecondaryCtaHref: initialSettings?.heroSecondaryCtaHref ?? '',
+    footerTagline: initialSettings?.footerTagline ?? '',
+    copyrightName: initialSettings?.copyrightName ?? '',
+    facilityHeadline: initialSettings?.facilityHeadline ?? '',
+    facilityDescription: initialSettings?.facilityDescription ?? '',
   })
 
   const [hours, setHours] = useState<HoursState>(parseHours(initialSettings?.hours))
   const [heroStats, setHeroStats] = useState<HeroStatBlock[]>(
-    normalizeStats(initialSettings?.heroStats, [
-      { value: '24/7', label: 'Top-tier access' },
-      { value: '15', label: 'Weekly recurring sessions' },
-    ])
+    normalizeStats(initialSettings?.heroStats, [])
   )
   const [contactTopics, setContactTopics] = useState<DetailBlock[]>(
-    normalizeDetails(initialSettings?.contactTopics, [
-      { title: 'Location', details: ['123 Main St'] },
-      { title: 'Phone', details: ['(555) 000-0000'] },
-    ])
+    normalizeDetails(initialSettings?.contactTopics, [])
   )
   const [facilityHighlights, setFacilityHighlights] = useState<HighlightBlock[]>(
-    normalizeHighlights(initialSettings?.facilityHighlights, [
-      {
-        title: 'Weight training floor',
-        description: 'Heavy iron, racks, platforms, and cable stations.',
-        features: ['Power racks', 'Olympic platforms'],
-      },
-    ])
+    normalizeHighlights(initialSettings?.facilityHighlights, [])
   )
 
   const breadcrumbs = [
@@ -388,24 +357,14 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
 
       const data: any = {
         ...form,
-        tagline: form.tagline.trim() || 'Movement is art. The body of work is you.',
-        promoBanner: form.promoBanner.trim() || 'Movement is art. The body of work is you.',
-        heroHeadline: form.heroHeadline.trim() || 'Movement is art.\nThe body of work\nis you.',
-        reviewCount: Number(form.reviewCount || 0),
         hours: serializeHours(hours),
         heroStats: cleanHeroStats,
         contactTopics: cleanContactTopics,
         facilityHighlights: cleanFacilityHighlights,
       }
 
-      if (currentSettingsId) {
-        const result = await request<any>('/api/graphql', UPDATE_GYM_SETTINGS, { id: currentSettingsId, data })
-        setCurrentSettingsId(result?.updateGymSettings?.id || currentSettingsId)
-      } else {
-        const result = await request<any>('/api/graphql', CREATE_GYM_SETTINGS, { data })
-        setCurrentSettingsId(result?.createGymSettings?.id)
-      }
-
+      const result = await saveGymSettings(data)
+      setCurrentSettingsId(result.id || currentSettingsId)
       setSavedAt(new Date().toLocaleTimeString())
     } catch (e: any) {
       setError(e?.message || 'Failed to save gym settings')
@@ -418,7 +377,8 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
     <PageContainer title="Gym Settings" header={header} breadcrumbs={breadcrumbs}>
       <div className="px-4 md:px-6 py-4 border-b border-border flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-sm text-muted-foreground mt-0.5">Control your storefront identity, public contact details, and onboarding-backed gym profile.</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Control storefront identity, public contact details, locale authority, and opening hours.</p>
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Storefront copy and hero stats are operator-authored claims, not calculated platform metrics. Publish only reviewed values.</p>
         </div>
         <div className="flex items-center gap-2">
           {savedAt ? <span className="text-xs text-muted-foreground">Saved {savedAt}</span> : null}
@@ -458,8 +418,20 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Tagline</p>
-                <Input value={form.tagline} onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))} placeholder="Movement is art. The body of work is you." className={fieldInput} />
+                <Input value={form.tagline} onChange={(e) => setForm((f) => ({ ...f, tagline: e.target.value }))} placeholder="Short public tagline" className={fieldInput} />
               </div>
+            </div>
+            <div className="px-5 py-3">
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Logo SVG</p>
+              <Textarea value={form.logoIcon} onChange={(e) => setForm((f) => ({ ...f, logoIcon: e.target.value }))} placeholder="Optional safe inline <svg>…</svg> logo" className={`${fieldTextarea} font-mono text-xs`} />
+              <p className="mt-1 text-xs text-muted-foreground">Scripts, event handlers, styles, and external resources are rejected on the server.</p>
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-4 px-5 py-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Brand hue</p>
+                <input aria-label="Brand hue" type="range" min="0" max="359" step="1" value={form.brandHue} onChange={(e) => setForm((f) => ({ ...f, brandHue: Number(e.target.value) }))} className="mt-2 w-full accent-current" style={{ color: `hsl(${form.brandHue} 62% 40%)` }} />
+              </div>
+              <Input aria-label="Brand hue value" type="number" min="0" max="359" value={form.brandHue} onChange={(e) => setForm((f) => ({ ...f, brandHue: Number(e.target.value) }))} className="h-8" />
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Description</p>
@@ -490,7 +462,7 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
           </Section>
 
           <Section title="Localization" icon={<Globe2 size={13} />}>
-            <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-border">
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-x divide-border">
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Currency</p>
                 <Select value={form.currencyCode} onValueChange={(v) => setForm((f) => ({ ...f, currencyCode: v }))}>
@@ -512,11 +484,10 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
                   <SelectContent>{timezoneOptions.map((tz) => <SelectItem key={tz} value={tz}>{tz}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="px-5 py-3">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Reviews</p>
-                <Input type="number" value={form.reviewCount} onChange={(e) => setForm((f) => ({ ...f, reviewCount: Number(e.target.value) }))} placeholder="0" className={fieldInput} />
-              </div>
             </div>
+            <p className="border-t border-amber-300/60 bg-amber-50 px-5 py-3 text-xs text-amber-900">
+              Storefront display supports ISO currencies. Provider-backed membership checkout is intentionally limited to USD in this initial launch.
+            </p>
           </Section>
 
           <Section title="Storefront Hero" icon={<Sparkles size={13} />}>
@@ -526,11 +497,16 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Headline</p>
-              <Textarea value={form.heroHeadline} onChange={(e) => setForm((f) => ({ ...f, heroHeadline: e.target.value }))} placeholder="Movement is art. The body of work is you." className={fieldTextarea} />
+              <Textarea value={form.heroHeadline} onChange={(e) => setForm((f) => ({ ...f, heroHeadline: e.target.value }))} placeholder="Homepage headline" className={fieldTextarea} />
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Subheadline</p>
               <Input value={form.heroSubheadline} onChange={(e) => setForm((f) => ({ ...f, heroSubheadline: e.target.value }))} placeholder="Short explanation of the gym offer" className={fieldInput} />
+            </div>
+            <div className="px-5 py-3">
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Hero image path</p>
+              <Input value={form.heroImageUrl} onChange={(e) => setForm((f) => ({ ...f, heroImageUrl: e.target.value }))} placeholder="/images/training-floor.jpg" className={fieldInput} />
+              <p className="mt-1 text-xs text-muted-foreground">Use an existing local public path under /images/.</p>
             </div>
             <div className="grid grid-cols-2 divide-x divide-border">
               <div className="px-5 py-3">

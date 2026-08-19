@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "keystone build --no-ui && npm run migrate && next dev",
-    "build": "keystone build --no-ui && npm run migrate && next build",
+    "dev": "keystone build --no-ui && next dev",
+    "build": "keystone build --no-ui && next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "npm run lint:gym",
+    "lint:gym": "eslint app features/keystone features/integrations features/member features/platform features/storefront",
+    "lint:nks-legacy": "eslint components/ui features/dashboard",
+    "lint:all": "eslint app features/keystone features/integrations features/member features/platform features/storefront lib proxy.ts",
     "migrate:gen": "keystone build --no-ui && tsx features/keystone/view-order/generate-view-order.ts && keystone prisma migrate dev",
-    "migrate": "prisma migrate deploy"
+    "migrate": "prisma migrate deploy",
+    "release:migrate": "prisma migrate deploy"
   },
   "dependencies": {
     "@ai-sdk/mcp": "^1.0.13",

@@ -1,18 +1,26 @@
 import Link from "next/link";
 import { getClassTypes, type ClassTypeData } from "@/features/storefront/lib/data/classes";
 
-function getDescriptionText(description: any): string {
-  if (!description?.document?.[0]?.children?.[0]?.text) {
-    return "Structured training built for real progression.";
-  }
-  return description.document[0].children[0].text;
+function getDescriptionText(description: unknown): string {
+  if (!description) return "";
+  if (typeof description === "string") return description;
+  if (typeof description !== "object") return "";
+
+  const document = (description as { document?: Array<{ children?: Array<{ text?: string }> }> }).document;
+  return (
+    document
+      ?.flatMap((node) => node.children || [])
+      .map((child) => child.text || "")
+      .join(" ")
+      .trim() || ""
+  );
 }
 
 const difficultyMap: Record<string, string> = {
-  beginner: "Balanced",
-  intermediate: "Intense",
-  advanced: "Elite",
-  "all-levels": "Mixed",
+  beginner: "Beginner",
+  intermediate: "Intermediate",
+  advanced: "Advanced",
+  "all-levels": "All levels",
 };
 
 export default async function ClassGrid({
@@ -35,57 +43,49 @@ export default async function ClassGrid({
 
   if (!filtered.length) {
     return (
-      <div className="bg-[#1c1b1b] px-6 py-14 text-sm uppercase tracking-[0.14em] text-[#c4c7c7]">
-        No classes match the current filter set.
+      <div className="border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-14 text-sm text-[var(--color-ink-muted)]">
+        No classes match the current filters.
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-      {filtered.map((classType, index) => (
-        <article
-          key={classType.id}
-          className={`group relative overflow-hidden ${index % 2 === 1 ? "md:mt-12" : ""} ${
-            index % 2 === 0 ? "bg-[#1c1b1b]" : "border border-white/10 bg-[#0e0e0e]"
-          }`}
-        >
-          <div className="absolute right-0 top-0 bg-[#818cf8] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.24em] text-white">
-            {difficultyMap[classType.difficulty] ?? "Balanced"}
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      {filtered.map((classType) => (
+        <article key={classType.id} className="group min-w-0 border border-[var(--color-rule)] bg-[var(--color-surface)] p-7 transition hover:border-[var(--color-accent)]/40">
+          <div className="flex items-start justify-between gap-4">
+            <p className="sf-label">{difficultyMap[classType.difficulty] ?? classType.difficulty}</p>
+            <span className="text-sm text-[var(--color-ink-muted)]">{classType.duration} min</span>
           </div>
-          <div className="p-8">
-            <h3 className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.05em] text-white">
-              {classType.name}
-            </h3>
-            <p className="mt-4 text-sm leading-relaxed text-[#c4c7c7]">
+
+          <h3 className="sf-display mt-4 text-3xl text-[var(--color-ink)] group-hover:text-[var(--color-accent)]">
+            {classType.name}
+          </h3>
+
+          {getDescriptionText(classType.description) ? (
+            <p className="mt-4 text-sm leading-relaxed text-[var(--color-ink-muted)]">
               {getDescriptionText(classType.description)}
             </p>
+          ) : null}
 
-            <div className="mt-8 grid grid-cols-2 gap-y-5 border-t border-white/10 pt-8">
-              <div>
-                <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Duration</span>
-                <span className="mt-1 block font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase text-white">
-                  {classType.duration} min
-                </span>
-              </div>
-              <div>
-                <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Estimated burn</span>
-                <span className="mt-1 block font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase text-[#a5b4fc]">
-                  {classType.caloriesBurn ? `~${classType.caloriesBurn}` : "—"}
-                </span>
-              </div>
-              <div className="col-span-2">
-                <span className="block text-[10px] font-bold uppercase tracking-[0.24em] text-[#c4c7c7]">Equipment</span>
-                <span className="mt-1 block text-xs uppercase tracking-[0.14em] text-[#e5e2e1]">
-                  {classType.equipmentNeeded?.length ? classType.equipmentNeeded.join(", ") : "Bodyweight / studio equipment"}
-                </span>
-              </div>
+          <dl className="mt-8 grid grid-cols-2 gap-4 border-t border-[var(--color-rule)] pt-6 text-sm">
+            <div>
+              <dt className="sf-label">Estimated burn</dt>
+              <dd className="mt-1 font-medium">{classType.caloriesBurn ? `~${classType.caloriesBurn} cal` : "—"}</dd>
             </div>
+            <div>
+              <dt className="sf-label">Equipment</dt>
+              <dd className="mt-1 font-medium">
+                {classType.equipmentNeeded?.length ? classType.equipmentNeeded.join(", ") : "Studio equipment"}
+              </dd>
+            </div>
+          </dl>
 
-            <Link
-              href="/schedule"
-              className="mt-8 inline-flex bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95"
-            >
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link href={`/classes/${classType.id}`} className="sf-btn-primary inline-flex px-5">
+              View class
+            </Link>
+            <Link href="/schedule" className="sf-btn-outline inline-flex px-5">
               See schedule
             </Link>
           </div>

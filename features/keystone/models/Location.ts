@@ -1,18 +1,30 @@
 import { list } from '@keystone-6/core';
-import { allOperations } from '@keystone-6/core/access';
+import { allOperations, denyAll } from '@keystone-6/core/access';
 import {
   text,
   checkbox,
+  relationship,
 } from '@keystone-6/core/fields';
 
-import { isSignedIn } from '../access';
+import { isSignedIn, permissions } from '../access';
+import { tenantFilter, tenantItemAccess } from '../access/tenantPolicy';
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
+
+const tenantItem = (args: any) => tenantItemAccess(args);
 import { trackingFields } from './trackingFields';
 
 export const Location = list({
+  db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
+  hooks: { validateInput: validateTenantOwnership([]) },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      create: permissions.canManageAllRecords,
+      update: permissions.canManageAllRecords,
+      delete: permissions.canManageAllRecords,
     },
+    filter: { query: tenantFilter },
+    item: { update: tenantItem, delete: tenantItem },
   },
   ui: {
     listView: {
@@ -20,6 +32,13 @@ export const Location = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: 'Organization.locations',
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb('organization') },
+      ui: { description: 'Tenant organization for this location' },
+    }),
     name: text({
       validation: { isRequired: true },
       ui: {
@@ -45,6 +64,19 @@ export const Location = list({
       ui: {
         description: 'Is this location currently active?',
       },
+    }),
+
+    resources: relationship({
+      ref: 'GymResource.location', many: true,
+      access: { create: denyAll, update: denyAll },
+    }),
+    trainerAvailability: relationship({
+      ref: 'TrainerAvailability.location', many: true,
+      access: { create: denyAll, update: denyAll },
+    }),
+    trainerAppointments: relationship({
+      ref: 'TrainerAppointment.location', many: true,
+      access: { create: denyAll, update: denyAll },
     }),
 
     ...trackingFields,

@@ -5,11 +5,13 @@ export type DashboardUser = {
   id: string;
   email: string;
   name: string;
+  organization?: { id: string } | null;
   role?: {
     canAccessDashboard?: boolean;
     canManageAllRecords?: boolean;
     canManageSettings?: boolean;
     canManageOnboarding?: boolean;
+    canViewReports?: boolean;
     isInstructor?: boolean;
   } | null;
 } | null;
@@ -22,11 +24,13 @@ export async function getDashboardUser(): Promise<DashboardUser> {
           id
           email
           name
+          organization { id }
           role {
             canAccessDashboard
             canManageAllRecords
             canManageSettings
             canManageOnboarding
+            canViewReports
             isInstructor
           }
         }
@@ -57,6 +61,16 @@ export async function requireDashboardManager() {
   const user = await requireDashboardUser();
 
   if (!user.role?.canManageAllRecords) {
+    redirect("/dashboard/no-access");
+  }
+
+  return user;
+}
+
+export async function requireReportsViewer() {
+  const user = await requireDashboardUser();
+
+  if (!user.role?.canViewReports && !user.role?.canManageAllRecords) {
     redirect("/dashboard/no-access");
   }
 

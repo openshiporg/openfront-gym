@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { request, gql } from "graphql-request"
 import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -15,18 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-
-const CREATE_SCHEDULE = gql`
-  mutation CreateSchedule($data: ClassScheduleCreateInput!) {
-    createClassSchedule(data: $data) { id }
-  }
-`
-
-const UPDATE_SCHEDULE = gql`
-  mutation UpdateSchedule($id: ID!, $data: ClassScheduleUpdateInput!) {
-    updateClassSchedule(where: { id: $id }, data: $data) { id }
-  }
-`
+import { saveClassSchedule } from "../actions/scheduling"
 
 const DAYS = [
   "monday",
@@ -111,9 +99,9 @@ export function ScheduleEditorDialog({
         if (form.instructorId === "unassigned") {
           data.instructor = { disconnect: true }
         }
-        await request('/api/graphql', UPDATE_SCHEDULE, { id: schedule.id, data })
+        await saveClassSchedule(data, schedule.id)
       } else {
-        await request('/api/graphql', CREATE_SCHEDULE, { data })
+        await saveClassSchedule(data)
       }
 
       onOpenChange(false)
@@ -177,7 +165,7 @@ export function ScheduleEditorDialog({
             </div>
             <div>
               <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Capacity</label>
-              <Input type="number" value={form.maxCapacity} onChange={(e) => setForm((f) => ({ ...f, maxCapacity: Number(e.target.value) }))} className="mt-2" />
+              <Input type="number" min={1} max={10000} required value={form.maxCapacity} onChange={(e) => setForm((f) => ({ ...f, maxCapacity: Number(e.target.value) }))} className="mt-2" />
             </div>
           </div>
 

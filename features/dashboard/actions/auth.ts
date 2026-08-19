@@ -93,29 +93,20 @@ export async function signUp(prevState: { message: string | null, formData: { em
   try {
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
-    const name = email.split('@')[0]; // Simple name derivation
-
-    // Create user
-    const createQuery = `
-      mutation($email: String!, $name: String!, $password: String!) {
-        createUser(data: { email: $email, name: $name, password: $password }) {
-          id
-          email
-          name
-        }
+    const name = (formData.get('name') as string) || email.split('@')[0];
+    const response = await keystoneClient(`
+      mutation($data: RegisterMemberInput!) {
+        registerMember(data: $data) { id email name }
       }
-    `;
-
-    const response = await keystoneClient(createQuery, { email, name, password });
+    `, { data: { email, name, password } });
 
     if (!response.success) {
       return {
-        message: `Failed to create user: ${response.error}`,
+        message: `Failed to create member: ${response.error}`,
         formData: { email, password }
       };
     }
 
-    // Sign them in after creation
     return signIn({ message: null, formData: { email, password } }, formData);
   } catch (error) {
     return {
@@ -297,10 +288,14 @@ export async function getAuthenticatedUser() {
           email
           name
           onboardingStatus
+          organization { id }
           role {
             canAccessDashboard
+            canManageAllRecords
+            canManagePeople
             canManageOnboarding
             canManageSettings
+            canViewReports
             isInstructor
           }
         }

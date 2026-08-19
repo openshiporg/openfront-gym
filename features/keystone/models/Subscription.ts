@@ -1,19 +1,30 @@
 import { list } from '@keystone-6/core';
-import { allOperations } from '@keystone-6/core/access';
+import { denyAll } from '@keystone-6/core/access';
 import {
+  integer,
   relationship,
   select,
   timestamp,
   text,
 } from '@keystone-6/core/fields';
 
-import { isSignedIn } from '../access';
+import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
+import { requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
 export const Subscription = list({
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      // Subscription state is synchronized from the payment provider.
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
+    },
+    filter: {
+      query: rules.canReadOwnMemberResource,
+      update: rules.canReadOwnMemberResource,
+      delete: rules.canReadOwnMemberResource,
     },
   },
   ui: {
@@ -22,6 +33,12 @@ export const Subscription = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.subscriptions",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     member: relationship({
       ref: 'Member.subscriptions',
       ui: {
@@ -90,6 +107,7 @@ export const Subscription = list({
     billingHistory: relationship({
       ref: 'GymPayment.subscription',
       many: true,
+      access: { create: denyAll, update: denyAll },
       ui: {
         description: 'Payment history for this subscription',
       },
@@ -97,6 +115,7 @@ export const Subscription = list({
 
     // Stripe integration - required because Subscription records are only created from Stripe webhooks
     stripeSubscriptionId: text({
+      access: { read: permissions.canManageAllRecords },
       isIndexed: 'unique',
       validation: { isRequired: true },
       ui: {
@@ -105,15 +124,32 @@ export const Subscription = list({
     }),
 
     stripeCustomerId: text({
+      access: { read: permissions.canManageAllRecords },
       ui: {
         description: 'Stripe Customer ID',
       },
     }),
 
+    // Signed Stripe subscription events are reconciled under a subscription
+    // lock. These internal fields are the durable event high-water mark.
+    providerEventCreated: integer({
+      defaultValue: 0,
+      validation: { isRequired: true },
+      access: { read: denyAll, create: denyAll, update: denyAll },
+    }),
+    providerEventId: text({
+      defaultValue: '',
+      access: { read: denyAll, create: denyAll, update: denyAll },
+    }),
+
     ...trackingFields,
   },
   hooks: {
-    // TODO: Add beforeOperation hook for automatic billing logic
-    // This will be implemented when integrating with Stripe webhooks
+    validateInput: validateTenantOwnership([
+      { field: "member", list: "member", required: true },
+      { field: "membershipTier", list: "membershipTier", required: true },
+      { field: "paymentMethod", list: "paymentMethod" },
+    ]),
+    // Automatic billing remains adapter-owned; this hook only enforces tenancy.
   },
 });

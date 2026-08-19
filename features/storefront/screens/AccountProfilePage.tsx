@@ -7,16 +7,18 @@ export default async function AccountProfilePage() {
   if (!user) notFound();
 
   return (
-    <div className="space-y-10 text-[#e5e2e1]">
-      <header>
-        <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase tracking-[-0.07em] text-white">
-          Profile
-        </h1>
-        <p className="mt-3 text-sm uppercase tracking-[0.16em] text-[#c4c7c7]">Update your identity, contact details, and account credentials.</p>
+    <div className="space-y-10">
+      <header className="max-w-3xl">
+        <p className="sf-eyebrow mb-3">Account details</p>
+        <h1 className="sf-display text-[var(--text-display-s)]">Profile</h1>
+        <p className="mt-4 sf-lead">
+          Keep your sign-in identity and member contact details aligned for bookings, billing, and front-desk support.
+        </p>
       </header>
-      <div className="max-w-xl bg-[#1c1b1b] p-8">
+
+      <section className="max-w-3xl border border-[var(--color-rule)] bg-[var(--color-surface)] p-6 sm:p-8">
         <ProfileForm user={user} />
-      </div>
+      </section>
     </div>
   );
 }

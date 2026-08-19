@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { request, gql } from "graphql-request"
 import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -13,18 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-
-const CREATE_INSTANCE = gql`
-  mutation CreateInstance($data: ClassInstanceCreateInput!) {
-    createClassInstance(data: $data) { id }
-  }
-`
-
-const UPDATE_INSTANCE = gql`
-  mutation UpdateInstance($id: ID!, $data: ClassInstanceUpdateInput!) {
-    updateClassInstance(where: { id: $id }, data: $data) { id }
-  }
-`
+import { saveClassInstance } from "../actions/scheduling"
 
 type ScheduleTemplate = {
   id: string
@@ -101,7 +89,6 @@ export function InstanceEditorDialog({
         classSchedule: { connect: { id: form.scheduleId } },
         date: dateTime.toISOString(),
         maxCapacity: Number(form.maxCapacity || 0),
-        isCancelled: false,
       }
 
       if (form.instructorId !== "default") {
@@ -111,9 +98,9 @@ export function InstanceEditorDialog({
       }
 
       if (instance?.id) {
-        await request('/api/graphql', UPDATE_INSTANCE, { id: instance.id, data })
+        await saveClassInstance(data, instance.id)
       } else {
-        await request('/api/graphql', CREATE_INSTANCE, { data })
+        await saveClassInstance(data)
       }
       onOpenChange(false)
       router.refresh()
@@ -170,7 +157,7 @@ export function InstanceEditorDialog({
             </div>
             <div>
               <label className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Capacity override</label>
-              <Input type="number" value={form.maxCapacity} onChange={(e) => setForm((f) => ({ ...f, maxCapacity: Number(e.target.value) }))} className="mt-2" />
+              <Input type="number" min={1} max={10000} required value={form.maxCapacity} onChange={(e) => setForm((f) => ({ ...f, maxCapacity: Number(e.target.value) }))} className="mt-2" />
             </div>
           </div>
 

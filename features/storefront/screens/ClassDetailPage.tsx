@@ -1,198 +1,198 @@
-import { Metadata } from "next"
-import Link from "next/link"
-import { notFound } from "next/navigation"
-import { Clock, Flame, Dumbbell, ChevronLeft, Calendar } from "lucide-react"
-import { getClassTypeById, getSchedulesByClassType } from "@/features/storefront/lib/data/classes"
+import { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { ArrowRight, CalendarDays, ChevronLeft, Clock, Flame, Dumbbell, MapPin } from "lucide-react";
+import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
+import { getClassTypeById, getUpcomingClassOccurrences } from "@/features/storefront/lib/data/classes";
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
+import { formatOccurrenceDate, formatOccurrenceTime } from "@/features/storefront/lib/class-occurrence";
+import { bookingReturnPath } from "@/features/storefront/lib/return-path";
 
-function getDescriptionText(description: any): string {
-  if (!description?.document?.[0]?.children?.[0]?.text) {
-    return "Join us for this exciting fitness class.";
-  }
-  return description.document[0].children[0].text;
+function getDescriptionText(description: unknown): string {
+  if (!description) return "";
+  if (typeof description === "string") return description;
+  if (typeof description !== "object") return "";
+
+  const document = (description as { document?: Array<{ children?: Array<{ text?: string }> }> }).document;
+  const text = document
+    ?.flatMap((node) => node.children || [])
+    .map((child) => child.text || "")
+    .join(" ")
+    .trim();
+
+  if (text) return text;
+
+  return JSON.stringify(description)
+    .replace(/document|children|text|type|paragraph|\{|\}|\[|\]|\"|:/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-const DIFFICULTY_LABEL: Record<string, { label: string; color: string }> = {
-  beginner: { label: "Balanced", color: "#a5b4fc" },
-  intermediate: { label: "Intense", color: "#818cf8" },
-  advanced: { label: "Elite", color: "#4f46e5" },
-  "all-levels": { label: "Mixed", color: "#a5b4fc" },
+const DIFFICULTY_LABEL: Record<string, string> = {
+  beginner: "Foundations",
+  intermediate: "Progressive",
+  advanced: "Performance",
+  "all-levels": "All levels",
 };
 
-const dayCodeToName: Record<string, string> = {
-  'sun': 'Sunday', 'mon': 'Monday', 'tue': 'Tuesday',
-  'wed': 'Wednesday', 'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday',
-}
-
 export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  const params = await props.params
-  const classType = await getClassTypeById(params.id)
-  if (!classType) return { title: 'Class Not Found - Openfront Gym' }
+  const params = await props.params;
+  const [classType, config] = await Promise.all([
+    getClassTypeById(params.id),
+    getStorefrontConfig(),
+  ]);
+  const brand = getStorefrontBrandName(config);
+  if (!classType) return { title: `Class not found — ${brand}` };
   return {
-    title: `${classType.name} — Openfront Gym`,
-    description: getDescriptionText(classType.description),
-  }
+    title: `${classType.name} — ${brand}`,
+    description: getDescriptionText(classType.description) || `Coached ${classType.name} sessions.`,
+  };
 }
 
 export async function ClassDetailPage(props: { params: Promise<{ id: string }> }) {
-  const params = await props.params
-  const classType = await getClassTypeById(params.id) as any
-  if (!classType) notFound()
+  const params = await props.params;
+  const [classType, config, occurrences] = await Promise.all([
+    getClassTypeById(params.id),
+    getStorefrontConfig(),
+    getUpcomingClassOccurrences({ days: 14, classTypeId: params.id, limit: 6 }),
+  ]);
+  if (!classType) notFound();
 
-  const schedules = await getSchedulesByClassType(params.id) as any[]
-  const description = getDescriptionText(classType.description)
-  const diff = DIFFICULTY_LABEL[classType.difficulty] ?? { label: "All Levels", color: "#a5b4fc" }
+  const description = getDescriptionText(classType.description);
+  const difficulty = DIFFICULTY_LABEL[classType.difficulty] ?? "All levels";
+  const equipment = Array.isArray(classType.equipmentNeeded) ? classType.equipmentNeeded : [];
+  const brand = getStorefrontBrandName(config);
+  const timeZone = config?.timezone || "UTC";
+  const location = config?.address || config?.locationName || "Main studio";
 
   return (
-    <div className="min-h-screen bg-[#131313] px-4 pb-24 pt-14 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        {/* Back link */}
+    <div className="sf-page">
+      <div className="sf-container">
         <Link
           href="/classes"
-          className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7] transition-colors hover:text-[#818cf8]"
+          className="inline-flex items-center gap-2 text-sm font-medium text-[var(--sf-ink-muted)] transition hover:text-[var(--sf-accent)]"
         >
-          <ChevronLeft className="h-3.5 w-3.5" />
+          <ChevronLeft className="h-4 w-4" />
           Training catalog
         </Link>
 
-        <div className="mt-12 grid grid-cols-1 gap-10 lg:grid-cols-[1fr_340px]">
+        <div className="mt-10 grid gap-12 lg:mt-14 lg:grid-cols-[minmax(0,1fr)_22rem]">
           {/* Main */}
-          <div className="space-y-8">
-            {/* Header */}
-            <div>
-              <div className="flex items-center gap-3 mb-5">
-                <span
-                  className="text-[10px] font-bold uppercase tracking-[0.22em]"
-                  style={{ color: diff.color }}
-                >
-                  {diff.label}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="sf-tag border-[var(--sf-accent)] text-[var(--sf-accent)]">{difficulty}</span>
+              {classType.duration ? <span className="sf-tag">{classType.duration} min</span> : null}
+              {classType.caloriesBurn ? (
+                <span className="sf-tag inline-flex items-center gap-1.5">
+                  <Flame className="h-3 w-3" /> {classType.caloriesBurn} cal
                 </span>
-                {classType.caloriesBurn && (
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#c4c7c7]">
-                    <Flame className="h-3.5 w-3.5 text-[#818cf8]" />
-                    {classType.caloriesBurn} cal
-                  </span>
-                )}
-              </div>
-              <h1 className="gym-heading">{classType.name}</h1>
-              <p className="gym-callout mt-6 max-w-xl">{description}</p>
+              ) : null}
             </div>
 
-            {/* Stats row */}
-            <div className="grid grid-cols-3 gap-px bg-white/[0.06]">
-              <div className="flex flex-col items-center justify-center gap-2 bg-[#1c1b1b] py-7">
-                <Clock className="h-5 w-5 text-[#818cf8]" />
-                <div className="gym-stat-value text-2xl">{classType.duration}</div>
-                <div className="gym-stat-label">minutes</div>
+            <h1 className="sf-display mt-6 text-5xl sm:text-6xl">{classType.name}</h1>
+
+            {description ? (
+              <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[var(--sf-ink-muted)]">{description}</p>
+            ) : (
+              <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[var(--sf-ink-muted)]">
+                Coached {classType.name.toLowerCase()} sessions on the {brand} floor.
+              </p>
+            )}
+
+            {/* Spec row */}
+            <div className="mt-12 grid grid-cols-2 gap-px border border-[var(--sf-rule)] bg-[var(--sf-rule)] sm:grid-cols-3">
+              <div className="flex flex-col items-center justify-center gap-2 bg-[var(--sf-paper)] py-8">
+                <Clock className="h-5 w-5 text-[var(--sf-accent)]" />
+                <p className="sf-display text-3xl">{classType.duration || "—"}</p>
+                <p className="text-xs uppercase tracking-[0.12em] text-[var(--sf-ink-muted)]">minutes</p>
               </div>
-              <div className="flex flex-col items-center justify-center gap-2 bg-[#1c1b1b] py-7">
-                <Flame className="h-5 w-5 text-[#818cf8]" />
-                <div className="gym-stat-value text-2xl">{classType.caloriesBurn || '—'}</div>
-                <div className="gym-stat-label">calories</div>
+              <div className="flex flex-col items-center justify-center gap-2 bg-[var(--sf-paper)] py-8">
+                <Flame className="h-5 w-5 text-[var(--sf-accent)]" />
+                <p className="sf-display text-3xl">{classType.caloriesBurn ?? "—"}</p>
+                <p className="text-xs uppercase tracking-[0.12em] text-[var(--sf-ink-muted)]">calories</p>
               </div>
-              <div className="flex flex-col items-center justify-center gap-2 bg-[#1c1b1b] py-7">
-                <Calendar className="h-5 w-5 text-[#818cf8]" />
-                <div className="gym-stat-value text-2xl">{schedules.length}</div>
-                <div className="gym-stat-label">sessions/wk</div>
+              <div className="flex flex-col items-center justify-center gap-2 bg-[var(--sf-paper)] py-8 sm:col-span-1 col-span-2">
+                <Dumbbell className="h-5 w-5 text-[var(--sf-accent)]" />
+                <p className="sf-display text-3xl">{equipment.length || "—"}</p>
+                <p className="text-xs uppercase tracking-[0.12em] text-[var(--sf-ink-muted)]">equipment</p>
               </div>
             </div>
 
             {/* Equipment */}
-            {classType.equipmentNeeded && classType.equipmentNeeded.length > 0 && (
-              <div className="bg-[#1c1b1b] p-8">
-                <div className="flex items-center gap-3 mb-5">
-                  <Dumbbell className="h-5 w-5 text-[#818cf8]" />
-                  <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-black uppercase tracking-[-0.04em] text-white">
-                    Equipment needed
-                  </h2>
-                </div>
+            {equipment.length > 0 ? (
+              <section className="mt-12">
+                <p className="sf-eyebrow mb-4">Equipment needed</p>
                 <div className="flex flex-wrap gap-2">
-                  {classType.equipmentNeeded.map((item: string) => (
-                    <span key={item} className="gym-tag">{item}</span>
+                  {equipment.map((item: string) => (
+                    <span key={item} className="sf-tag">{item}</span>
                   ))}
                 </div>
-              </div>
-            )}
+              </section>
+            ) : null}
 
-            {/* Schedule */}
-            <div className="bg-[#1c1b1b] p-8">
-              <div className="flex items-center gap-3 mb-6">
-                <Calendar className="h-5 w-5 text-[#818cf8]" />
-                <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-black uppercase tracking-[-0.04em] text-white">
-                  Weekly schedule
-                </h2>
-              </div>
-              {schedules.length === 0 ? (
-                <p className="text-sm uppercase tracking-[0.14em] text-[#c4c7c7]">
-                  No sessions scheduled at the moment. Check back soon.
-                </p>
-              ) : (
-                <div className="divide-y divide-white/10">
-                  {schedules.map((schedule: any) => (
-                    <div key={schedule.id} className="flex flex-col gap-4 py-5 md:flex-row md:items-center md:justify-between">
-                      <div className="flex items-start gap-8">
-                        <div className="min-w-[100px]">
-                          <div className="font-[family-name:var(--font-space-grotesk)] text-lg font-black uppercase tracking-[-0.03em] text-white">
-                            {schedule.dayOfWeek?.map((d: string) => dayCodeToName[d]).join(', ')}
-                          </div>
-                          <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[#c4c7c7]">
-                            {schedule.startTime}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-sm uppercase tracking-[0.1em] text-[#c4c7c7]">
-                            with {schedule.instructor?.name || 'TBD'}
-                          </div>
-                          {schedule.room && (
-                            <div className="mt-0.5 text-xs text-[#c4c7c7]/60">{schedule.room}</div>
-                          )}
-                        </div>
+            {/* Booking pointer */}
+            <section className="mt-12 border-t border-[var(--sf-rule)] pt-10">
+              <p className="sf-eyebrow mb-3">Book this format</p>
+              <h2 className="sf-display text-3xl sm:text-4xl">Choose a dated session</h2>
+              <p className="mt-4 max-w-xl sf-lead">
+                Capacity below belongs to a specific class occurrence, not the recurring template.
+              </p>
+              {occurrences.length ? (
+                <div className="mt-8 divide-y divide-[var(--sf-rule)] border-y border-[var(--sf-rule)]">
+                  {occurrences.map((occurrence) => (
+                    <div key={occurrence.id} className="grid gap-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                      <div>
+                        <p className="flex items-center gap-2 font-semibold">
+                          <CalendarDays className="h-4 w-4 text-[var(--sf-accent)]" />
+                          {formatOccurrenceDate(occurrence.startsAt, timeZone)} · {formatOccurrenceTime(occurrence.startsAt, timeZone)}
+                        </p>
+                        <p className="mt-2 flex items-center gap-2 text-sm text-[var(--sf-ink-muted)]">
+                          <MapPin className="h-3.5 w-3.5" /> {location} · {occurrence.availability.spotsRemaining} spot{occurrence.availability.spotsRemaining === 1 ? "" : "s"} left
+                        </p>
                       </div>
-                      <div className="flex items-center gap-4 md:text-right">
-                        <div>
-                          <div className="font-[family-name:var(--font-space-grotesk)] text-lg font-black tracking-[-0.04em] text-white">
-                            {schedule.spotsAvailable} / {schedule.totalCapacity}
-                          </div>
-                          <div className="text-[9px] uppercase tracking-[0.18em] text-[#c4c7c7]">spots</div>
-                        </div>
-                      </div>
+                      <Link href={bookingReturnPath(occurrence.id)} className="sf-btn-secondary w-fit">
+                        {occurrence.availability.spotsRemaining > 0 ? "Book" : "Join waitlist"}
+                      </Link>
                     </div>
                   ))}
                 </div>
+              ) : (
+                <p className="mt-8 border border-[var(--sf-rule)] bg-[var(--sf-paper-2)] px-5 py-5 text-sm text-[var(--sf-ink-muted)]">
+                  No upcoming dated occurrence is currently published for this format.
+                </p>
               )}
-            </div>
+              <Link href="/schedule" className="sf-btn-primary mt-8 inline-flex items-center gap-2">
+                Open full schedule <ArrowRight className="h-4 w-4" />
+              </Link>
+            </section>
           </div>
 
           {/* Sidebar */}
-          <div>
-            <div className="sticky top-24 space-y-4">
-              {/* Book CTA */}
-              <div className="relative overflow-hidden bg-[#1c1b1b] p-8">
-                <div className="absolute inset-x-0 top-0 h-[3px] bg-[linear-gradient(90deg,#818cf8_0%,#4f46e5_100%)]" />
-                <h3 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.04em] text-white">
-                  Ready to book?
-                </h3>
-                <p className="mt-3 text-sm leading-relaxed text-[#c4c7c7]">
-                  View the full schedule and book your spot in this class.
-                </p>
-                <Link href="/schedule" className="gym-btn-primary mt-6 block w-full text-center">
-                  View schedule
-                </Link>
-              </div>
-
-              {/* Help */}
-              <div className="bg-[#0e0e0e] border border-white/10 p-6">
-                <h4 className="text-xs font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Need help?</h4>
-                <p className="mt-2 text-sm leading-relaxed text-[#c4c7c7]">
-                  Have questions about this class? Our team is here to help.
-                </p>
-                <Link href="/contact" className="gym-btn-ghost mt-4 inline-flex">
-                  Contact us
-                </Link>
+          <aside className="lg:sticky lg:top-24 lg:self-start">
+            <div className="sf-card p-8">
+              <p className="sf-eyebrow">Ready when you are</p>
+              <h2 className="sf-display mt-3 text-3xl italic">Train with us</h2>
+              <p className="mt-4 text-sm leading-relaxed text-[var(--sf-ink-muted)]">
+                Classes are included with membership. Start a membership or jump straight into the schedule.
+              </p>
+              <div className="mt-6 flex flex-col gap-3">
+                <Link href="/schedule" className="sf-btn-primary w-full">View schedule</Link>
+                <Link href="/memberships" className="sf-btn-secondary w-full">See memberships</Link>
               </div>
             </div>
-          </div>
+
+            <div className="sf-card mt-4 p-6">
+              <h3 className="sf-label">Questions about this class?</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--sf-ink-muted)]">
+                The front desk can confirm prerequisites, room, and availability.
+              </p>
+              <Link href="/contact" className="sf-btn-ghost mt-4 inline-flex">
+                Contact the desk
+              </Link>
+            </div>
+          </aside>
         </div>
       </div>
     </div>
-  )
+  );
 }

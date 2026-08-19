@@ -1,45 +1,65 @@
 import Link from "next/link";
-import { AlertCircle, CalendarDays, GraduationCap, Users } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowUpRight,
+  CalendarDays,
+  Clock3,
+  GraduationCap,
+  ShieldAlert,
+  Users,
+} from "lucide-react";
 import { getUser } from "@/features/storefront/lib/data/user";
-import { keystoneContext } from "@/features/keystone/context";
+import { gql } from "graphql-request";
+import { gymClient } from "@/features/storefront/lib/config";
+import { getAuthHeaders } from "@/features/storefront/lib/data/cookies";
 
-async function getInstructorProfile(userId: string) {
-  const context = keystoneContext.sudo();
-  const now = new Date().toISOString();
+type BookingSummary = {
+  id: string;
+  status: string;
+  waitlistPosition?: number | null;
+};
 
-  const instructors = await context.query.Instructor.findMany({
-    where: {
-      user: { id: { equals: userId } },
-      isActive: { equals: true },
-    },
-    take: 1,
-    query: `
-      id
-      bio { document }
-      specialties
-      certifications
-      classSchedules(take: 30) {
-        id
-        name
-        dayOfWeek
-        startTime
-        endTime
-        maxCapacity
-      }
-      classInstances(
-        where: { date: { gte: "${now}" }, isCancelled: { equals: false } }
-        orderBy: [{ date: asc }]
-        take: 20
-      ) {
-        id
-        date
-        classSchedule { name maxCapacity dayOfWeek startTime endTime }
-        bookingsCount
-      }
-    `,
-  });
+type SessionSummary = {
+  id: string;
+  date: string;
+  maxCapacity?: number | null;
+  instructor?: { id: string } | null;
+  classSchedule?: ScheduleSummary | null;
+  bookings?: BookingSummary[];
+};
 
-  return instructors[0] ?? null;
+type ScheduleSummary = {
+  id: string;
+  name: string;
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+  maxCapacity?: number | null;
+  instances?: SessionSummary[];
+};
+
+type InstructorProfile = {
+  id: string;
+  specialties?: unknown;
+  certifications?: unknown;
+  classSchedules?: ScheduleSummary[];
+  classInstances?: SessionSummary[];
+};
+
+type PreparedSession = SessionSummary & {
+  classSchedule?: ScheduleSummary | null;
+  confirmedBookings: number;
+  waitlistCount: number;
+  capacity: number;
+  openSpots: number;
+  statusLabel: string;
+};
+
+async function getInstructorProfile(_userId: string, _organizationId: string): Promise<InstructorProfile | null> {
+  const result = await gymClient.request<{ instructorAccount: InstructorProfile | null }>(gql`
+    query InstructorAccount { instructorAccount }
+  `, {}, await getAuthHeaders());
+  return result.instructorAccount;
 }
 
 const WEEK_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -54,147 +74,315 @@ function formatDateTime(value: string) {
   });
 }
 
+function getSessionStatus(sessionDate: string) {
+  const diffMs = new Date(sessionDate).getTime() - Date.now();
+
+  if (diffMs <= 0) return "In progress";
+  if (diffMs <= 60 * 60 * 1000) return "Starts within 1 hour";
+  if (diffMs <= 3 * 60 * 60 * 1000) return "Starts this block";
+  return "Upcoming";
+}
+
+function prepareSessions(instructor: InstructorProfile): PreparedSession[] {
+  const sessionsById = new Map<string, SessionSummary>();
+
+  for (const session of instructor.classInstances ?? []) {
+    sessionsById.set(session.id, session);
+  }
+
+  for (const schedule of instructor.classSchedules ?? []) {
+    for (const session of schedule.instances ?? []) {
+      if (session.instructor && session.instructor.id !== instructor.id) continue;
+
+      const existing = sessionsById.get(session.id);
+      sessionsById.set(session.id, {
+        ...existing,
+        ...session,
+        classSchedule: schedule,
+      });
+    }
+  }
+
+  return [...sessionsById.values()]
+    .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())
+    .slice(0, 20)
+    .map((session) => {
+      const confirmedBookings = (session.bookings ?? []).filter((booking) => booking.status === "confirmed").length;
+      const waitlistCount = (session.bookings ?? []).filter((booking) => booking.status === "waitlist").length;
+      const capacity = session.maxCapacity ?? session.classSchedule?.maxCapacity ?? 0;
+
+      return {
+        ...session,
+        confirmedBookings,
+        waitlistCount,
+        capacity,
+        openSpots: Math.max(capacity - confirmedBookings, 0),
+        statusLabel: getSessionStatus(session.date),
+      };
+    });
+}
+
+function AccountState({ title, message }: { title: string; message: string }) {
+  return (
+    <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-14 text-center">
+      <AlertCircle aria-hidden="true" className="mx-auto h-8 w-8 text-[var(--color-ink-faint)]" />
+      <h1 className="mt-4 text-xl font-semibold text-[var(--color-ink)]">{title}</h1>
+      <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[var(--color-ink-muted)]">{message}</p>
+    </section>
+  );
+}
+
 export async function InstructorAccountPage() {
   const user = await getUser();
 
   if (!user) {
-    return (
-      <div className="bg-[#1c1b1b] p-8 text-center text-[#e5e2e1]">
-        <AlertCircle className="mx-auto mb-3 h-8 w-8 text-[#c4c7c7]/40" />
-        <p className="font-medium">Sign in to access your instructor console.</p>
-      </div>
-    );
+    return <AccountState title="Sign in required" message="Sign in to access your instructor workspace." />;
   }
 
   if (!user.role?.isInstructor) {
     return (
-      <div className="bg-[#1c1b1b] p-8 text-center text-[#e5e2e1]">
-        <AlertCircle className="mx-auto mb-3 h-8 w-8 text-[#c4c7c7]/40" />
-        <h1 className="text-lg font-semibold">Instructor access required</h1>
-        <p className="mt-2 text-sm text-[#c4c7c7]">Your account is not configured as an instructor.</p>
-      </div>
+      <AccountState
+        title="Instructor access required"
+        message="This account is not configured as an instructor. Contact the front desk if your coaching access is missing."
+      />
     );
   }
 
-  const instructor = await getInstructorProfile(user.id);
+  let instructor: InstructorProfile | null;
+  try {
+    if (!user.organization?.id) {
+      return <AccountState title="Organization required" message="Your account is not assigned to an organization." />;
+    }
+    instructor = await getInstructorProfile(user.id, user.organization.id);
+  } catch (error) {
+    console.error("Instructor account data could not be loaded:", error);
+    return (
+      <AccountState
+        title="Instructor workspace unavailable"
+        message="Teaching data could not be loaded right now. Try again shortly or contact the front desk."
+      />
+    );
+  }
+
   if (!instructor) {
     return (
-      <div className="bg-[#1c1b1b] p-8 text-center text-[#e5e2e1]">
-        <AlertCircle className="mx-auto mb-3 h-8 w-8 text-[#c4c7c7]/40" />
-        <h1 className="text-lg font-semibold">No instructor profile found</h1>
-        <p className="mt-2 text-sm text-[#c4c7c7]">Ask an admin to link your user to an instructor profile.</p>
-      </div>
+      <AccountState
+        title="No instructor profile found"
+        message="Ask an operator to link this account to an active instructor profile."
+      />
     );
   }
 
-  const specialties: string[] = Array.isArray(instructor.specialties) ? instructor.specialties : [];
+  const specialties = Array.isArray(instructor.specialties) ? instructor.specialties.map(String) : [];
+  const certifications = Array.isArray(instructor.certifications) ? instructor.certifications.map(String) : [];
   const schedules = instructor.classSchedules ?? [];
-  const upcomingInstances = instructor.classInstances ?? [];
-  const totalBooked = upcomingInstances.reduce((sum: number, session: any) => sum + (session.bookingsCount ?? 0), 0);
+  const upcomingInstances = prepareSessions(instructor);
+  const totalBooked = upcomingInstances.reduce((sum, session) => sum + session.confirmedBookings, 0);
+  const totalWaitlist = upcomingInstances.reduce((sum, session) => sum + session.waitlistCount, 0);
+  const sessionsStartingSoon = upcomingInstances.filter((session) => {
+    // This server-rendered account view intentionally evaluates the current instant.
+    const diff = new Date(session.date).getTime() - Date.now();
+    return diff >= 0 && diff <= 90 * 60 * 1000;
+  }).length;
   const weeklySchedule = WEEK_DAYS.map((day) => ({
     day,
-    items: schedules.filter((schedule: any) => schedule.dayOfWeek === day),
+    items: schedules.filter((schedule) => schedule.dayOfWeek === day),
   }));
+  const nextSession = upcomingInstances[0] ?? null;
+  const atRiskSessions = upcomingInstances
+    .filter((session) => session.waitlistCount > 0 || (session.capacity > 0 && session.confirmedBookings >= session.capacity))
+    .slice(0, 3);
+  const canOpenOperations = Boolean(user.role.canAccessDashboard);
 
   return (
-    <div className="space-y-10 text-[#e5e2e1]">
-      <header className="border-l-4 border-[#818cf8] pl-4">
-        <p className="text-xs font-bold uppercase tracking-[0.28em] text-[#818cf8]">Personnel access only</p>
-        <h1 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase tracking-[-0.08em] text-white sm:text-6xl">
-          Instructor
-          <br />
-          console
-        </h1>
-        <p className="mt-4 max-w-2xl text-sm uppercase tracking-[0.16em] text-[#c4c7c7]">
-          Offer classes, review your teaching calendar, and move directly into session rosters from one storefront-side workspace.
+    <div className="space-y-12">
+      <header className="max-w-3xl">
+        <p className="sf-eyebrow mb-3">Coach workspace</p>
+        <h1 className="sf-display text-[var(--text-display-s)]">Instructor console</h1>
+        <p className="mt-4 sf-lead">
+          Review your upcoming teaching calendar, roster occupancy, waitlist pressure, and recurring weekly schedule.
         </p>
       </header>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="bg-[#1c1b1b] p-6">
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Upcoming sessions</p>
-          <p className="mt-2 font-[family-name:var(--font-space-grotesk)] text-4xl font-black text-white">{upcomingInstances.length}</p>
-        </div>
-        <div className="bg-[#1c1b1b] p-6">
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Recurring offers</p>
-          <p className="mt-2 font-[family-name:var(--font-space-grotesk)] text-4xl font-black text-[#a5b4fc]">{schedules.length}</p>
-        </div>
-        <div className="bg-[#1c1b1b] p-6">
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Booked athletes</p>
-          <p className="mt-2 font-[family-name:var(--font-space-grotesk)] text-4xl font-black text-[#818cf8]">{totalBooked}</p>
-        </div>
-      </div>
-
-      <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-[family-name:var(--font-space-grotesk)] text-2xl font-bold uppercase tracking-[-0.04em] text-white">Upcoming calendar</h2>
-            <Link href="/dashboard/platform/scheduling" className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">Scheduling center</Link>
+      <section aria-label="Instructor summary" className="grid gap-px border border-[var(--color-rule)] bg-[var(--color-rule)] sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          ["Upcoming sessions", upcomingInstances.length],
+          ["Booked members", totalBooked],
+          ["Waitlisted members", totalWaitlist],
+          ["Starting soon", sessionsStartingSoon],
+        ].map(([label, value]) => (
+          <div key={label} className="bg-[var(--color-surface)] p-5 sm:p-6">
+            <p className="sf-label">{label}</p>
+            <p className="sf-display mt-3 text-4xl text-[var(--color-ink)]">{value}</p>
           </div>
+        ))}
+      </section>
 
-          <div className="space-y-4">
-            {upcomingInstances.length === 0 ? (
-              <div className="bg-[#1c1b1b] px-6 py-16 text-sm uppercase tracking-[0.16em] text-[#c4c7c7]">No upcoming sessions.</div>
-            ) : (
-              upcomingInstances.map((session: any, index: number) => {
-                const booked = session.bookingsCount ?? 0;
-                const cap = session.classSchedule?.maxCapacity ?? 0;
-                return (
-                  <div key={session.id} className={`flex flex-col gap-6 px-6 py-6 md:flex-row md:items-center md:justify-between ${index === 0 ? "bg-[#1c1b1b]" : "bg-[#0e0e0e] border border-white/10"}`}>
-                    <div>
-                      <p className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.04em] text-white">
-                        {session.classSchedule?.name ?? "Class"}
-                      </p>
-                      <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#c4c7c7]">{formatDateTime(session.date)}</p>
-                    </div>
-                    <div className="flex items-center gap-8">
-                      <div>
-                        <span className="block text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Occupancy</span>
-                        <span className="mt-1 block font-[family-name:var(--font-space-grotesk)] text-2xl font-black text-[#a5b4fc]">{booked}/{cap}</span>
-                      </div>
-                      <Link href={`/dashboard/platform/rosters/${session.id}`} className="border border-[#818cf8] px-6 py-3 text-xs font-bold uppercase tracking-[0.22em] text-[#818cf8] hover:bg-[#818cf8]/10">
-                        View roster
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
-
-        <aside className="space-y-8">
-          <div className="border-t-4 border-[#a5b4fc] bg-[#0e0e0e] p-8">
-            <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase tracking-[-0.03em] text-white">Teaching tools</h2>
-            <div className="mt-6 space-y-3">
-              <Link href="/dashboard/platform/instructors" className="flex items-center justify-between bg-[#1c1b1b] px-4 py-4 text-sm font-bold uppercase tracking-[0.18em] text-white hover:bg-[#2a2a2a]">
-                <span>Instructor profile</span>
-                <GraduationCap className="h-4 w-4 text-[#818cf8]" />
-              </Link>
-              <Link href="/dashboard/platform/scheduling" className="flex items-center justify-between bg-[#1c1b1b] px-4 py-4 text-sm font-bold uppercase tracking-[0.18em] text-white hover:bg-[#2a2a2a]">
-                <span>Offer and manage classes</span>
-                <CalendarDays className="h-4 w-4 text-[#a5b4fc]" />
-              </Link>
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+        <div className="space-y-10">
+          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6 sm:p-8">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="sf-eyebrow">Next roster</p>
+                <h2 className="sf-display mt-3 text-3xl sm:text-4xl">
+                  {nextSession?.classSchedule?.name ?? "No upcoming session"}
+                </h2>
+                <p className="mt-3 text-sm text-[var(--color-ink-muted)]">
+                  {nextSession
+                    ? `${formatDateTime(nextSession.date)} · ${nextSession.statusLabel}`
+                    : "Your next scheduled class will appear here."}
+                </p>
+              </div>
+              {nextSession && canOpenOperations ? (
+                <Link href={`/dashboard/platform/rosters/${nextSession.id}`} className="sf-btn-secondary inline-flex shrink-0">
+                  Open next roster
+                </Link>
+              ) : null}
             </div>
-          </div>
 
-          <div className="bg-[#1c1b1b] p-8">
-            <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase tracking-[-0.03em] text-white">Recurring teaching week</h2>
-            <div className="mt-6 space-y-3">
-              {weeklySchedule.map(({ day, items }) => (
-                <div key={day} className="bg-[#0e0e0e] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">{day}</p>
-                    <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#818cf8]">{items.length} sessions</span>
+            {nextSession ? (
+              <dl className="mt-8 grid gap-px border border-[var(--color-rule)] bg-[var(--color-rule)] sm:grid-cols-3">
+                {[
+                  ["Confirmed", nextSession.confirmedBookings],
+                  ["Open spots", nextSession.openSpots],
+                  ["Waitlist", nextSession.waitlistCount],
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-[var(--color-paper)] p-4">
+                    <dt className="sf-label">{label}</dt>
+                    <dd className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{value}</dd>
                   </div>
-                  <div className="mt-3 space-y-2">
+                ))}
+              </dl>
+            ) : null}
+          </section>
+
+          <section aria-labelledby="upcoming-calendar-heading">
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="sf-eyebrow mb-2">Teaching calendar</p>
+                <h2 id="upcoming-calendar-heading" className="text-2xl font-semibold">Upcoming sessions</h2>
+              </div>
+              {canOpenOperations ? (
+                <Link href="/dashboard/platform/scheduling" className="text-sm font-medium text-[var(--color-accent)] hover:underline">
+                  Scheduling center
+                </Link>
+              ) : null}
+            </div>
+
+            {upcomingInstances.length === 0 ? (
+              <div className="border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-14 text-center text-sm text-[var(--color-ink-muted)]">
+                No upcoming sessions are assigned to this instructor profile.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {upcomingInstances.map((session) => (
+                  <article key={session.id} className="grid gap-5 border border-[var(--color-rule)] bg-[var(--color-surface)] p-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+                    <div>
+                      <p className="sf-eyebrow">{session.statusLabel}</p>
+                      <h3 className="mt-2 text-xl font-semibold">{session.classSchedule?.name ?? "Class session"}</h3>
+                      <p className="mt-2 text-sm text-[var(--color-ink-muted)]">{formatDateTime(session.date)}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-5 md:justify-end">
+                      <div>
+                        <p className="sf-label">Occupancy</p>
+                        <p className="mt-1 text-lg font-semibold">{session.confirmedBookings}/{session.capacity}</p>
+                      </div>
+                      <div>
+                        <p className="sf-label">Waitlist</p>
+                        <p className="mt-1 text-lg font-semibold">{session.waitlistCount}</p>
+                      </div>
+                      {canOpenOperations ? (
+                        <Link href={`/dashboard/platform/rosters/${session.id}`} className="sf-btn-secondary inline-flex px-4 py-2 text-xs">
+                          View roster
+                        </Link>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        <aside className="space-y-6">
+          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
+            <div className="flex items-center gap-2">
+              <Users aria-hidden="true" className="h-4 w-4 text-[var(--color-accent)]" />
+              <h2 className="text-xl font-semibold">Teaching tools</h2>
+            </div>
+            {canOpenOperations ? (
+              <div className="mt-5 space-y-2">
+                {[
+                  ["Live rosters", "/dashboard/platform/rosters", Users],
+                  ["Operations reports", "/dashboard/platform/reports", ArrowUpRight],
+                  ["Scheduling center", "/dashboard/platform/scheduling", CalendarDays],
+                  ["Instructor profile", "/dashboard/platform/instructors", GraduationCap],
+                ].map(([label, href, Icon]) => {
+                  const ToolIcon = Icon as typeof Users;
+                  return (
+                    <Link key={String(href)} href={String(href)} className="flex items-center justify-between border-b border-[var(--color-rule)] py-3 text-sm font-medium last:border-b-0 hover:text-[var(--color-accent)]">
+                      <span>{String(label)}</span>
+                      <ToolIcon aria-hidden="true" className="h-4 w-4" />
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm leading-6 text-[var(--color-ink-muted)]">
+                Roster and scheduling tools are not enabled for this role. Contact an operator if operational access is required.
+              </p>
+            )}
+          </section>
+
+          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
+            <div className="flex items-center gap-2">
+              <ShieldAlert aria-hidden="true" className="h-4 w-4 text-[var(--color-accent)]" />
+              <h2 className="text-xl font-semibold">Session watchlist</h2>
+            </div>
+            {atRiskSessions.length === 0 ? (
+              <p className="mt-4 text-sm leading-6 text-[var(--color-ink-muted)]">No full sessions or active waitlists need attention.</p>
+            ) : (
+              <div className="mt-5 space-y-4">
+                {atRiskSessions.map((session) => (
+                  <article key={session.id} className="border-t border-[var(--color-rule)] pt-4 first:border-t-0 first:pt-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-semibold">{session.classSchedule?.name ?? "Class session"}</h3>
+                        <p className="mt-1 text-xs text-[var(--color-ink-muted)]">{formatDateTime(session.date)}</p>
+                      </div>
+                      <Clock3 aria-hidden="true" className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" />
+                    </div>
+                    <p className="mt-3 text-sm text-[var(--color-ink-muted)]">
+                      {session.confirmedBookings}/{session.capacity} confirmed · {session.waitlistCount} waitlisted
+                    </p>
+                    {canOpenOperations ? (
+                      <Link href={`/dashboard/platform/rosters/${session.id}`} className="mt-3 inline-flex text-sm font-medium text-[var(--color-accent)] hover:underline">
+                        Open roster
+                      </Link>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
+            <h2 className="text-xl font-semibold">Recurring teaching week</h2>
+            <div className="mt-5 space-y-4">
+              {weeklySchedule.map(({ day, items }) => (
+                <div key={day} className="border-t border-[var(--color-rule)] pt-4 first:border-t-0 first:pt-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="sf-label capitalize">{day}</h3>
+                    <span className="text-xs text-[var(--color-ink-muted)]">{items.length} {items.length === 1 ? "session" : "sessions"}</span>
+                  </div>
+                  <div className="mt-2 space-y-2">
                     {items.length === 0 ? (
-                      <p className="text-xs uppercase tracking-[0.16em] text-[#7f8282]">No recurring class</p>
+                      <p className="text-sm text-[var(--color-ink-faint)]">No recurring class</p>
                     ) : (
-                      items.map((item: any) => (
-                        <div key={item.id} className="flex items-center justify-between gap-4 text-xs uppercase tracking-[0.14em] text-white">
-                          <span>{item.name}</span>
-                          <span className="text-[#c4c7c7]">{item.startTime}–{item.endTime}</span>
+                      items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-4 text-sm">
+                          <span className="font-medium">{item.name}</span>
+                          <span className="shrink-0 text-[var(--color-ink-muted)]">{item.startTime}–{item.endTime}</span>
                         </div>
                       ))
                     )}
@@ -202,27 +390,21 @@ export async function InstructorAccountPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </section>
 
-          <div className="bg-[#1c1b1b] p-8">
-            <h2 className="font-[family-name:var(--font-space-grotesk)] text-xl font-bold uppercase tracking-[-0.03em] text-white">Coach profile</h2>
-            <div className="mt-6 space-y-4 text-sm text-[#e5e2e1]">
+          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
+            <h2 className="text-xl font-semibold">Coach profile</h2>
+            <dl className="mt-5 space-y-5 text-sm">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Specialties</p>
-                <p className="mt-2 uppercase tracking-[0.16em]">{specialties.join(" · ") || "Performance coaching"}</p>
+                <dt className="sf-label">Specialties</dt>
+                <dd className="mt-2 leading-6 text-[var(--color-ink)]">{specialties.join(" · ") || "Not listed"}</dd>
               </div>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Certifications</p>
-                <p className="mt-2 uppercase tracking-[0.16em]">{(instructor.certifications || []).join(" · ") || "Not listed"}</p>
+                <dt className="sf-label">Certifications</dt>
+                <dd className="mt-2 leading-6 text-[var(--color-ink)]">{certifications.join(" · ") || "Not listed"}</dd>
               </div>
-              <div className="flex items-center justify-between border-t border-white/10 pt-4">
-                <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">Next roster action</span>
-                <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#818cf8]">
-                  <Users className="h-3.5 w-3.5" /> Open next class roster
-                </span>
-              </div>
-            </div>
-          </div>
+            </dl>
+          </section>
         </aside>
       </div>
     </div>

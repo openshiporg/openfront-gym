@@ -1,14 +1,15 @@
 import { Metadata } from "next";
 import ClassGrid from "@/features/storefront/modules/classes/components/class-grid";
 import ClassFilters from "@/features/storefront/modules/classes/components/class-filters";
-
-export const metadata: Metadata = {
-  title: "Classes - Openfront Gym",
-  description: "Browse and book fitness classes. Yoga, Spin, HIIT, Strength Training and more.",
-};
+import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 
 export async function generateMetadata(): Promise<Metadata> {
-  return metadata;
+  const config = await getStorefrontConfig();
+  return {
+    title: `Classes — ${getStorefrontBrandName(config)}`,
+    description: "Browse coached class formats and move into the live schedule to reserve a spot.",
+  };
 }
 
 export async function ClassesPage({
@@ -21,23 +22,23 @@ export async function ClassesPage({
   const duration = resolved?.duration ?? "all";
 
   return (
-    <div className="min-h-screen bg-[#131313] px-4 pb-24 pt-14 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <header className="mb-14 grid gap-8 lg:grid-cols-[1fr_0.7fr] lg:items-end">
+    <div className="sf-page">
+      <div className="sf-container">
+        <header className="sf-page-header">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">Performance architecture</p>
-            <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
-              The training
+            <p className="sf-eyebrow mb-3">Training menu</p>
+            <h1 className="sf-display text-5xl sm:text-6xl">
+              Choose the class
               <br />
-              catalog
+              <span className="italic">that fits today</span>
             </h1>
           </div>
-          <p className="max-w-md border-l-2 border-[#818cf8] pl-6 text-base leading-relaxed text-[#c4c7c7]">
-            Filter by intensity or duration to find the next class in your progression stack.
+          <p className="sf-lead max-w-md">
+            Filter by intensity or duration, then move into the live schedule to reserve a spot.
           </p>
         </header>
 
-        <div className="grid gap-12 lg:grid-cols-[280px_1fr]">
+        <div className="grid gap-10 lg:grid-cols-[16rem_minmax(0,1fr)]">
           <ClassFilters selectedDifficulty={difficulty} selectedDuration={duration} />
           <ClassGrid difficulty={difficulty} duration={duration} />
         </div>

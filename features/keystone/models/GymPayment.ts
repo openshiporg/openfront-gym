@@ -1,5 +1,5 @@
 import { list, graphql } from '@keystone-6/core';
-import { allOperations } from '@keystone-6/core/access';
+import { denyAll } from '@keystone-6/core/access';
 import {
   relationship,
   select,
@@ -10,13 +10,36 @@ import {
   virtual,
 } from '@keystone-6/core/fields';
 
-import { isSignedIn } from '../access';
+import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
+import { paymentEvidenceHooks } from './paymentEvidence';
+import { requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
 export const GymPayment = list({
+  hooks: {
+    async validateInput(args: any) {
+      paymentEvidenceHooks('GymPayment').validateInput(args);
+      await validateTenantOwnership([
+        { field: "member", list: "member", required: true },
+        { field: "subscription", list: "subscription" },
+        { field: "paymentProvider", list: "paymentProvider" },
+        { field: "paymentSession", list: "paymentSession" },
+      ])(args);
+    },
+    validateDelete: paymentEvidenceHooks('GymPayment').validateDelete,
+  },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      // Payment records are provider/webhook-controlled; refunds use the guarded custom mutation.
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
+    },
+    filter: {
+      query: rules.canReadOwnMemberResource,
+      update: rules.canReadOwnMemberResource,
+      delete: rules.canReadOwnMemberResource,
     },
   },
   ui: {
@@ -25,6 +48,12 @@ export const GymPayment = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.gymPayments",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     member: relationship({
       ref: 'Member.payments',
       ui: {
@@ -41,11 +70,27 @@ export const GymPayment = list({
       },
     }),
 
+    paymentProvider: relationship({
+      ref: 'PaymentProvider.payments',
+      access: { read: permissions.canManageAllRecords },
+    }),
+
+    paymentSession: relationship({
+      ref: 'PaymentSession.payments',
+      access: { read: permissions.canManageAllRecords },
+    }),
+
     amount: integer({
       validation: { isRequired: true },
       ui: {
-        description: 'Payment amount in cents',
+        description: 'Payment amount in the currency minor unit',
       },
+    }),
+
+    currencyCode: text({
+      validation: { isRequired: true },
+      defaultValue: 'USD',
+      ui: { description: 'ISO 4217 currency code' },
     }),
 
     status: select({
@@ -72,6 +117,7 @@ export const GymPayment = list({
     }),
 
     metadata: json({
+      access: { read: permissions.canManageAllRecords },
       defaultValue: {},
       ui: {
         views: './fields/json-view',
@@ -81,18 +127,25 @@ export const GymPayment = list({
 
     // Stripe integration fields
     stripePaymentIntentId: text({
+      db: { isNullable: true },
+      access: { read: permissions.canManageAllRecords },
       ui: {
         description: 'Stripe Payment Intent ID',
       },
     }),
 
     stripeChargeId: text({
+      db: { isNullable: true },
+      access: { read: permissions.canManageAllRecords },
       ui: {
         description: 'Stripe Charge ID',
       },
     }),
 
     stripeInvoiceId: text({
+      db: { isNullable: true },
+      access: { read: permissions.canManageAllRecords },
+      isIndexed: 'unique',
       ui: {
         description: 'Stripe Invoice ID',
       },
@@ -124,8 +177,18 @@ export const GymPayment = list({
       },
     }),
 
+    refundReason: text({
+      ui: {
+        description: 'Operator-supplied reason for the refund',
+      },
+    }),
+
+    refundLockUntil: timestamp({ access: { read: permissions.canManageAllRecords } }),
+    refundLockToken: text({ access: { read: permissions.canManageAllRecords } }),
+
     // Virtual field for payment link to Stripe Dashboard
     paymentLink: virtual({
+      access: { read: permissions.canManageAllRecords },
       field: graphql.field({
         type: graphql.String,
         resolve(item) {
@@ -140,6 +203,11 @@ export const GymPayment = list({
       },
     }),
 
+    refundAttempts: relationship({
+      ref: "GymRefundAttempt.payment",
+      many: true,
+      access: { create: denyAll, update: denyAll },
+    }),
     ...trackingFields,
   },
 });

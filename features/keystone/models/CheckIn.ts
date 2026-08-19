@@ -1,5 +1,5 @@
 import { list } from '@keystone-6/core';
-import { allOperations } from '@keystone-6/core/access';
+import { allOperations, denyAll } from '@keystone-6/core/access';
 import {
   relationship,
   timestamp,
@@ -8,13 +8,23 @@ import {
   text,
 } from '@keystone-6/core/fields';
 
-import { isSignedIn } from '../access';
+import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
 export const CheckIn = list({
+  db: { extendPrismaSchema: compoundUniqueDb("organizationId, memberId, openCheckInKey") },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
+    },
+    filter: {
+      query: rules.canReadOwnMemberResource,
+      update: rules.canReadOwnMemberResource,
+      delete: rules.canReadOwnMemberResource,
     },
   },
   ui: {
@@ -23,6 +33,12 @@ export const CheckIn = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.checkIns",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     member: relationship({
       ref: 'Member.checkIns',
       ui: {
@@ -94,10 +110,20 @@ export const CheckIn = list({
         description: 'Notes from validation (e.g., membership expired, special access)',
       },
     }),
+    openCheckInKey: text({
+      db: { isNullable: true },
+      access: { read: denyAll, create: denyAll, update: denyAll },
+    }),
 
     ...trackingFields,
   },
   hooks: {
+    async validateInput(args: any) {
+      await validateTenantOwnership([
+        { field: "member", list: "member" },
+        { field: "location", list: "location" },
+      ])(args);
+    },
     async beforeOperation({ operation, resolvedData, context }) {
       if (operation === 'create' && resolvedData.member) {
         const sudoContext = context.sudo();

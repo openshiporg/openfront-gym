@@ -1,100 +1,40 @@
-import { NextRequest, NextResponse } from "next/server"
-import { getContext } from "@keystone-6/core/context"
-import config from "@/keystone"
-import * as PrismaModule from ".prisma/client"
+import { NextRequest, NextResponse } from "next/server";
+import { isKioskRequestAuthorized, readKioskJsonObject } from "@/features/platform/kiosk";
+import { executeKioskGraphQL } from "@/features/platform/kiosk/graphql";
 
 export async function POST(request: NextRequest) {
+  if (!isKioskRequestAuthorized(request)) {
+    return NextResponse.json({ success: false, error: "Kiosk authorization required" }, { status: 401 });
+  }
   try {
-    const { memberId, qrCode } = await request.json()
-
-    if (!memberId && !qrCode) {
-      return NextResponse.json(
-        { success: false, error: "Member ID or QR code required" },
-        { status: 400 }
-      )
-    }
-
-    const context = getContext(config, PrismaModule).sudo()
-
-    let resolvedMemberId = memberId
-
-    if (qrCode) {
-      const { validateQRCode } = await import("@/lib/qrcode")
-      const validation = validateQRCode(qrCode)
-
-      if (!validation.valid) {
-        return NextResponse.json({
-          success: false,
-          error: validation.error,
-        })
+    const body = await readKioskJsonObject(request);
+    if (!body) return NextResponse.json({ success: false, error: "Invalid check-in request" }, { status: 400 });
+    for (const field of ["memberId", "qrCode", "locationId"] as const) {
+      if (body[field] != null && typeof body[field] !== "string") {
+        return NextResponse.json({ success: false, error: `${field} must be a string` }, { status: 400 });
       }
-
-      resolvedMemberId = validation.memberId
     }
-
-    const member = await context.query.Member.findOne({
-      where: { id: resolvedMemberId },
-      query: `
-        id
-        status
-        user {
-          id
-          name
-          email
+    const memberId = String(body.memberId || "").trim();
+    const qrCode = String(body.qrCode || "").trim();
+    const locationId = String(body.locationId || "").trim();
+    if ((!memberId && !qrCode) || memberId.length > 200 || locationId.length > 200 || qrCode.length > 4096) {
+      return NextResponse.json({ success: false, error: "A valid member ID or QR code is required" }, { status: 400 });
+    }
+    const data = await executeKioskGraphQL<{ kioskRecordMemberCheckIn: Record<string, unknown> }>(`
+      mutation KioskCheckIn($memberId: String, $qrCode: String, $locationId: String, $organizationId: ID!, $credential: String!) {
+        kioskRecordMemberCheckIn(
+          memberId: $memberId
+          qrCode: $qrCode
+          locationId: $locationId
+          organizationId: $organizationId
+          credential: $credential
+        ) {
+          success error checkInId memberName membershipTier checkInTime reused classCreditsRemaining
         }
-        currentMembershipTier {
-          id
-          name
-        }
-        subscriptions(where: { status: { equals: "active" } }) {
-          id
-          status
-        }
-      `,
-    })
-
-    if (!member) {
-      return NextResponse.json({
-        success: false,
-        error: "Member not found",
-      })
-    }
-
-    if (member.status !== "active") {
-      return NextResponse.json({
-        success: false,
-        error: `Membership ${member.status}. Please visit the front desk.`,
-      })
-    }
-
-    if (!member.subscriptions || member.subscriptions.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: "No active subscription. Please renew your membership.",
-      })
-    }
-
-    const checkIn = await context.query.CheckIn.createOne({
-      data: {
-        member: { connect: { id: resolvedMemberId } },
-        method: qrCode ? "qr_code" : "manual",
-        membershipValidated: true,
-      },
-      query: "id checkInTime",
-    })
-
-    return NextResponse.json({
-      success: true,
-      checkInId: checkIn.id,
-      memberName: member.user?.name,
-      membershipTier: member.currentMembershipTier?.name,
-      checkInTime: checkIn.checkInTime,
-    })
+      }
+    `, { memberId: memberId || null, qrCode: qrCode || null, locationId: locationId || null });
+    return NextResponse.json(data.kioskRecordMemberCheckIn);
   } catch (error) {
-    console.error("Check-in error:", error)
-    return NextResponse.json(
-      { success: false, error: "Check-in failed. Please try again." },
-      { status: 500 }
-    )
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Check-in failed" }, { status: 400 });
   }
 }

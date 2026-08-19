@@ -1,7 +1,10 @@
-# Railway can't access internal databases during build, so we move
-# npm run migrate from build to start command
+# Builds are immutable. Committed migrations run once before the web replica
+# starts, so a failed migration blocks the release without replica races.
 [build]
 buildCommand = "keystone build --no-ui && next build"
 
 [deploy]
-startCommand = "npm run migrate && next start"
+preDeployCommand = "npm run release:migrate"
+startCommand = "next start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300

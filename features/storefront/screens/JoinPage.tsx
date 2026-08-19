@@ -1,104 +1,107 @@
 import Link from "next/link";
 import { Check, CreditCard } from "lucide-react";
+import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
 import { getMembershipTiers } from "@/features/storefront/lib/data/memberships";
 import { getUser } from "@/features/storefront/lib/data/user";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
-import { redirectToMembershipCheckout } from "@/features/integrations/payment/stripe";
+import { redirectToMembershipCheckout } from "@/features/integrations/payment/membership-checkout";
+import { formatMajorUnits } from "@/features/platform/lib/currency";
 import LoginPage from "./LoginPage";
+import { joinPath, safeStorefrontReturnPath } from "@/features/storefront/lib/return-path";
 
 interface JoinPageProps {
   tier?: string;
   checkoutError?: string;
+  returnTo?: string;
 }
 
-export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
+export default async function JoinPage({ tier, checkoutError, returnTo }: JoinPageProps) {
   const [tiers, user, config] = await Promise.all([
     getMembershipTiers().catch(() => []),
     getUser(),
     getStorefrontConfig(),
   ]);
   const selectedTier = tier ? tiers.find((t) => t.id === tier) ?? tiers[0] : tiers[0];
+  const signupAllowed = process.env.PUBLIC_SIGNUPS_ALLOWED === "true";
+  const safeReturnTo = returnTo ? safeStorefrontReturnPath(returnTo) : null;
+  const brandName = getStorefrontBrandName(config);
+  const currencyCode = String(config?.currencyCode || "USD").toUpperCase();
+  const checkoutCurrencySupported = currencyCode === "USD";
+  const hasCurrentMembership = Boolean(
+    user?.membership && ["active", "frozen", "past-due"].includes(user.membership.status),
+  );
 
   return (
-    <div className="min-h-screen bg-[#131313] text-[#e5e2e1]">
-      <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
-        <Link href="/memberships" className="inline-flex border-b border-[#818cf8] pb-1 text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">
-          ← Back to memberships
+    <div className="sf-page px-5 pb-24 pt-12 sm:px-8">
+      <div className="mx-auto max-w-7xl">
+        <Link href="/memberships" className="text-sm font-medium text-[var(--color-accent)] hover:underline">
+          ← Back to membership plans
         </Link>
 
-        <div className="mt-10 grid gap-12 lg:grid-cols-[1fr_420px]">
+        <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,1fr)_24rem]">
           <div>
-            <p className="mb-4 text-xs font-bold uppercase tracking-[0.32em] text-[#818cf8]">
-              {config?.promoBanner || `Join ${config?.name || 'the gym'}`}
-            </p>
-            <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-black uppercase leading-[0.9] tracking-[-0.08em] text-white sm:text-7xl">
-              Join
-              <br />
-              {config?.name || 'the gym'}
-            </h1>
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-[#c4c7c7]">
-              Choose your level of facility access and class access. We’ll create your account first, then move you into secure Stripe checkout for {config?.name || 'your gym membership'}.
+            <p className="sf-eyebrow">{config?.promoBanner || `Join ${brandName}`}</p>
+            <h1 className="sf-display mt-4 text-[var(--text-display-s)]">Become a member</h1>
+            <p className="mt-5 max-w-xl text-base leading-relaxed text-[var(--color-ink-muted)]">
+              Choose your membership plan. We&apos;ll create your account first, then move you into secure Stripe checkout
+              for {brandName}.
             </p>
 
             {tiers.length > 0 ? (
-              <div className="mt-10 space-y-4">
-                {tiers.map((t, index) => {
+              <div className="mt-10 divide-y divide-[var(--color-rule)] border-y border-[var(--color-rule)]">
+                {tiers.map((t) => {
                   const isSelected = t.id === selectedTier?.id;
                   const classesCopy =
                     t.classCreditsPerMonth === -1
                       ? "Unlimited classes"
                       : t.classCreditsPerMonth === 0
-                        ? "Gym access only"
+                        ? "No classes included"
                         : `${t.classCreditsPerMonth} classes / month`;
                   return (
                     <Link
                       key={t.id}
-                      href={`/join?tier=${t.id}`}
-                      className={`flex flex-col gap-5 px-6 py-6 md:flex-row md:items-center md:justify-between ${
-                        isSelected ? "bg-[#1c1b1b] border-l-4 border-[#818cf8]" : "bg-[#0e0e0e] border border-white/10 hover:bg-[#1c1b1b]"
+                      href={joinPath(t.id, safeReturnTo)}
+                      className={`grid gap-4 py-6 transition md:grid-cols-[minmax(0,1fr)_auto] md:items-center ${
+                        isSelected ? "bg-[var(--color-accent-soft)]/40" : "hover:bg-[var(--color-paper-2)]"
                       }`}
                     >
-                      <div>
-                        <p className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.04em] text-white">
-                          {t.name}
-                        </p>
-                        <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#c4c7c7]">
-                          Full gym access · {classesCopy}
+                      <div className="px-1">
+                        <p className="text-xl font-semibold">{t.name}</p>
+                        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
+                          {classesCopy} · Online class booking
                         </p>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 px-1">
                         <div className="text-right">
-                          <p className="font-[family-name:var(--font-space-grotesk)] text-3xl font-black tracking-[-0.04em] text-white">${Math.round(t.monthlyPrice)}</p>
-                          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#c4c7c7]">USD / month</p>
+                          <p className="sf-display text-3xl">{formatMajorUnits(t.monthlyPrice, currencyCode)}</p>
+                          <p className="text-xs text-[var(--color-ink-muted)]">{currencyCode} / month</p>
                         </div>
-                        {isSelected && <Check className="h-5 w-5 text-[#818cf8]" strokeWidth={2.5} />}
+                        {isSelected ? <Check className="h-5 w-5 text-[var(--color-accent)]" strokeWidth={2.5} /> : null}
                       </div>
                     </Link>
                   );
                 })}
               </div>
             ) : (
-              <div className="mt-10 bg-[#1c1b1b] px-6 py-10 text-sm uppercase tracking-[0.16em] text-[#c4c7c7]">
+              <div className="mt-10 border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-10 text-sm text-[var(--color-ink-muted)]">
                 Membership plans will appear here after setup.
               </div>
             )}
           </div>
 
-          <div className="self-start bg-[#1c1b1b] p-8">
+          <aside className="self-start border border-[var(--color-rule)] bg-[var(--color-surface)] p-8">
             {user && selectedTier ? (
               <div className="space-y-6">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">Signed in as</p>
-                  <p className="mt-2 text-sm uppercase tracking-[0.16em] text-white">{user.email}</p>
+                  <p className="sf-label">Signed in as</p>
+                  <p className="mt-2 text-sm font-medium">{user.email}</p>
                 </div>
 
-                <div className="border-t border-white/10 pt-6">
+                <div className="border-t border-[var(--color-rule)] pt-6">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="font-[family-name:var(--font-space-grotesk)] text-2xl font-black uppercase tracking-[-0.04em] text-white">
-                        {selectedTier.name}
-                      </p>
-                      <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#c4c7c7]">
+                      <p className="text-xl font-semibold">{selectedTier.name}</p>
+                      <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
                         {selectedTier.classCreditsPerMonth === -1
                           ? "Unlimited classes"
                           : selectedTier.classCreditsPerMonth === 0
@@ -106,51 +109,77 @@ export default async function JoinPage({ tier, checkoutError }: JoinPageProps) {
                             : `${selectedTier.classCreditsPerMonth} classes / month`}
                       </p>
                     </div>
-                    <CreditCard className="h-4 w-4 text-[#c4c7c7]" />
+                    <CreditCard className="h-4 w-4 text-[var(--color-ink-faint)]" />
                   </div>
                 </div>
 
-                {checkoutError && (
-                  <div className="border border-[#ffb4ab]/30 bg-[#93000a]/20 px-3 py-3 text-sm text-[#ffdad6]">
-                    {checkoutError}
+                {checkoutError ? (
+                  <div className="border border-red-300 bg-red-50 px-3 py-3 text-sm text-red-800">{checkoutError}</div>
+                ) : null}
+
+                {hasCurrentMembership ? (
+                  <div className="border border-[var(--color-rule)] bg-[var(--color-paper-2)] p-4 text-sm text-[var(--color-ink-muted)]">
+                    This account already has a current membership. Contact the front desk for plan changes, or manage the existing membership from your account.
+                    <Link href="/account/membership" className="mt-3 block font-medium text-[var(--color-accent)] hover:underline">Manage current membership</Link>
+                  </div>
+                ) : !checkoutCurrencySupported ? (
+                  <div className="border border-[var(--color-rule)] bg-[var(--color-paper-2)] p-4 text-sm text-[var(--color-ink-muted)]">
+                    Online membership checkout is available in USD only for this launch. Contact the front desk to join in {currencyCode}.
+                  </div>
+                ) : !selectedTier.monthlyCheckoutAvailable && !selectedTier.annualCheckoutAvailable ? (
+                  <div className="border border-[var(--color-rule)] bg-[var(--color-paper-2)] p-4 text-sm leading-6 text-[var(--color-ink-muted)]">
+                    <p>Online checkout is not configured for this plan, so no payment can be accepted here yet.</p>
+                    <Link href="/contact" className="mt-3 inline-flex font-medium text-[var(--color-accent)] hover:underline">
+                      Contact the front desk
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {selectedTier.monthlyCheckoutAvailable ? (
+                      <form action={redirectToMembershipCheckout}>
+                        <input type="hidden" name="tierId" value={selectedTier.id} />
+                        <input type="hidden" name="billingCycle" value="monthly" />
+                        {safeReturnTo ? <input type="hidden" name="returnTo" value={safeReturnTo} /> : null}
+                        <button type="submit" className="sf-btn-primary w-full">
+                          Checkout monthly · {formatMajorUnits(selectedTier.monthlyPrice, currencyCode)}
+                        </button>
+                      </form>
+                    ) : null}
+                    {selectedTier.annualCheckoutAvailable ? (
+                      <form action={redirectToMembershipCheckout}>
+                        <input type="hidden" name="tierId" value={selectedTier.id} />
+                        <input type="hidden" name="billingCycle" value="annual" />
+                        {safeReturnTo ? <input type="hidden" name="returnTo" value={safeReturnTo} /> : null}
+                        <button type="submit" className="sf-btn-outline w-full">
+                          Checkout annual · {formatMajorUnits(selectedTier.annualPrice, currencyCode)}
+                        </button>
+                      </form>
+                    ) : null}
                   </div>
                 )}
 
-                <div className="grid gap-3">
-                  <form action={redirectToMembershipCheckout}>
-                    <input type="hidden" name="tierId" value={selectedTier.id} />
-                    <input type="hidden" name="billingCycle" value="monthly" />
-                    <button type="submit" className="w-full bg-[linear-gradient(45deg,#818cf8_0%,#4f46e5_100%)] px-5 py-4 text-xs font-bold uppercase tracking-[0.22em] text-white transition-transform active:scale-95">
-                      Checkout monthly · ${Math.round(selectedTier.monthlyPrice)}
-                    </button>
-                  </form>
-                  <form action={redirectToMembershipCheckout}>
-                    <input type="hidden" name="tierId" value={selectedTier.id} />
-                    <input type="hidden" name="billingCycle" value="annual" />
-                    <button type="submit" className="w-full border border-[#a5b4fc] px-5 py-4 text-xs font-bold uppercase tracking-[0.22em] text-[#a5b4fc] transition-colors hover:bg-[#a5b4fc]/10">
-                      Checkout annual · ${Math.round(selectedTier.annualPrice)}
-                    </button>
-                  </form>
-                </div>
-
-                <p className="text-xs leading-relaxed text-[#c4c7c7]">
-                  Checkout is handled securely by Stripe. After payment, your membership will be provisioned automatically and synced back into your account.
+                <p className="text-xs leading-relaxed text-[var(--color-ink-muted)]">
+                  Checkout is handled securely by Stripe. After payment, your membership is provisioned automatically. This launch scope does not capture waivers; your studio may require a separate waiver before facility access.
                 </p>
               </div>
             ) : (
               <div className="space-y-5">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-[#818cf8]">Create your account</p>
-                  <h2 className="mt-3 font-[family-name:var(--font-space-grotesk)] text-3xl font-black uppercase tracking-[-0.05em] text-white">
-                    Identity first.
-                    <br />
-                    Checkout second.
+                  <p className="sf-eyebrow">Account first</p>
+                  <h2 className="mt-3 text-2xl font-semibold">
+                    {signupAllowed ? "Create your profile, then checkout" : "Sign in to continue"}
                   </h2>
+                  {!signupAllowed ? (
+                    <p className="mt-3 text-sm leading-6 text-[var(--color-ink-muted)]">Public account creation is disabled. Ask the front desk to create your member account, then sign in here.</p>
+                  ) : null}
                 </div>
-                <LoginPage redirectTo={selectedTier ? `/join?tier=${selectedTier.id}` : "/join"} />
+                <LoginPage
+                  redirectTo={joinPath(selectedTier?.id, safeReturnTo)}
+                  allowSignup={signupAllowed}
+                />
               </div>
             )}
-          </div>
+          </aside>
         </div>
       </div>
     </div>

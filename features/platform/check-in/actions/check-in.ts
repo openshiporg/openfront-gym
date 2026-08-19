@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
+import { resolveGymTimeZone } from "@/lib/timezone";
+import { FRONT_DESK_DATA_DOCUMENT } from "../graphql";
 
 export type FrontDeskMember = {
   id: string;
@@ -25,6 +27,7 @@ export type FrontDeskMember = {
 export type FrontDeskCheckIn = {
   id: string;
   checkInTime: string;
+  checkOutTime?: string | null;
   method: string;
   membershipValidated: boolean;
   member?: {
@@ -51,46 +54,12 @@ export async function getFrontDeskData(query?: string) {
       }
     : undefined;
 
-  const document = `
-    query FrontDeskData($where: MemberWhereInput) {
-      members(where: $where, take: 10, orderBy: [{ joinDate: desc }]) {
-        id
-        name
-        email
-        phone
-        status
-        lastCheckIn
-        membershipTier { id name }
-        user {
-          id
-          membership {
-            id
-            status
-            classCreditsRemaining
-            tier { id name }
-          }
-        }
-      }
-      checkIns(take: 12, orderBy: [{ checkInTime: desc }]) {
-        id
-        checkInTime
-        method
-        membershipValidated
-        member { id name email }
-        location { id name }
-      }
-      locations(where: { isActive: { equals: true } }, orderBy: [{ name: asc }]) {
-        id
-        name
-      }
-    }
-  `;
-
   const response = await keystoneClient<{
     members: FrontDeskMember[];
     checkIns: FrontDeskCheckIn[];
     locations: { id: string; name?: string | null }[];
-  }>(document, { where });
+    gymSettings: { timezone?: string | null; organization?: { timezone?: string | null } | null }[];
+  }>(FRONT_DESK_DATA_DOCUMENT, { where });
 
   if (!response.success) {
     return {
@@ -99,6 +68,7 @@ export async function getFrontDeskData(query?: string) {
       members: [],
       checkIns: [],
       locations: [],
+      timeZone: "UTC",
     };
   }
 
@@ -107,7 +77,27 @@ export async function getFrontDeskData(query?: string) {
     members: response.data.members,
     checkIns: response.data.checkIns,
     locations: response.data.locations,
+    timeZone: resolveGymTimeZone(
+      response.data.gymSettings[0]?.timezone,
+      response.data.gymSettings[0]?.organization?.timezone,
+    ),
   };
+}
+
+export async function manualCheckOut(formData: FormData): Promise<void> {
+  const checkInId = formData.get("checkInId")?.toString();
+  if (!checkInId) throw new Error("Missing check-in id.");
+
+  const response = await keystoneClient(`
+    mutation ManualCheckOut($checkInId: ID!) {
+      checkOutMember(checkInId: $checkInId) {
+        checkIn { id checkOutTime }
+        reused
+      }
+    }
+  `, { checkInId });
+  if (!response.success) throw new Error(response.error);
+  revalidatePath("/dashboard/platform/check-in");
 }
 
 export async function manualCheckIn(formData: FormData): Promise<void> {
@@ -120,20 +110,18 @@ export async function manualCheckIn(formData: FormData): Promise<void> {
   }
 
   const mutation = `
-    mutation ManualCheckIn($data: CheckInCreateInput!) {
-      createCheckIn(data: $data) {
-        id
+    mutation ManualCheckIn($memberId: ID!, $locationId: ID, $method: String!) {
+      recordMemberCheckIn(memberId: $memberId, locationId: $locationId, method: $method) {
+        checkIn { id }
+        reused
       }
     }
   `;
 
   const response = await keystoneClient(mutation, {
-    data: {
-      member: { connect: { id: memberId } },
-      ...(locationId ? { location: { connect: { id: locationId } } } : {}),
-      method,
-      checkInTime: new Date().toISOString(),
-    },
+    memberId,
+    locationId: locationId || null,
+    method,
   });
 
   if (!response.success) {

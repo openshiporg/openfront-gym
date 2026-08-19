@@ -1,331 +1,300 @@
 import type { Context } from ".keystone/types";
+import { getAdapterForProvider } from "../utils/paymentProviderAdapter";
 import {
-  createCustomer,
-  createSubscription,
-  createSetupIntent,
-  cancelSubscription,
-  pauseSubscription,
-  resumeSubscription,
-  updateSubscription,
-  createBillingPortalSession,
-} from "../utils/stripe";
+  claimMembershipBillingAttempt,
+  failMembershipBillingAttempt,
+  finishMembershipBillingAttempt,
+  isCompletedMembershipBillingAttempt,
+  membershipBillingRequestHash,
+  type MembershipBillingOperation,
+} from "./membershipBillingAttempts";
 
-// Create a new membership with Stripe subscription
-export async function createMembershipWithStripe(
-  root: any,
-  {
-    email,
-    name,
-    password,
-    tierId,
-    billingCycle,
-    paymentMethodId,
-  }: {
-    email: string;
-    name: string;
-    password: string;
-    tierId: string;
-    billingCycle: "monthly" | "annual";
-    paymentMethodId?: string;
-  },
-  context: Context
+const PROVIDER_CODE = "pp_stripe";
+
+function actorOrganizationId(context: Context) {
+  const organizationId = (context.session as any)?.data?.organization?.id;
+  if (typeof organizationId !== "string" || !organizationId) throw new Error("Organization context required");
+  return organizationId;
+}
+
+function assertUserSessionAccess(context: Context, userId: string) {
+  const session = context.session as any;
+  if (!session?.itemId) throw new Error("Authentication required");
+  if (session.itemId === userId || session.data?.role?.canManageAllRecords) return;
+  throw new Error("You cannot manage another member's billing");
+}
+
+async function getAuthorizedMembership(context: Context, membershipId: string) {
+  const organizationId = actorOrganizationId(context);
+  const memberships = await context.sudo().query.Membership.findMany({
+    where: { AND: [{ id: { equals: membershipId } }, { organization: { id: { equals: organizationId } } }] },
+    take: 1,
+    query: "id organization { id defaultCurrency } stripeSubscriptionId billingCycle status autoRenew nextBillingDate member { id stripeCustomerId organization { id } } tier { id freezeAllowed organization { id } }",
+  });
+  const membership = memberships[0] as any;
+  if (!membership || membership.organization?.id !== organizationId || membership.member?.organization?.id !== organizationId) {
+    throw new Error("Membership not found");
+  }
+  assertUserSessionAccess(context, membership.member?.id);
+  return membership;
+}
+
+async function getAdapter(context: Context, organizationId: string) {
+  return getAdapterForProvider(context, PROVIDER_CODE, organizationId);
+}
+
+function billingAttemptScope(
+  organizationId: string,
+  membershipId: string,
+  operation: MembershipBillingOperation,
+  idempotencyKey: string,
+  evidence: Record<string, unknown>,
 ) {
-  const { db } = context.sudo();
-
-  // Get the membership tier
-  const tier = await db.MembershipTier.findOne({
-    where: { id: tierId },
-  });
-
-  if (!tier) {
-    throw new Error("Membership tier not found");
-  }
-
-  // Get the appropriate Stripe price ID based on billing cycle
-  const stripePriceId = billingCycle === "monthly"
-    ? tier.stripeMonthlyPriceId
-    : tier.stripeAnnualPriceId;
-
-  if (!stripePriceId) {
-    throw new Error(`Stripe price not configured for ${billingCycle} billing`);
-  }
-
-  // Create Stripe customer
-  const stripeCustomer = await createCustomer({ email, name });
-
-  // Create the user
-  const user = await db.User.createOne({
-    data: {
-      name,
-      email,
-      password,
-      stripeCustomerId: stripeCustomer.id,
-    },
-  });
-
-  // Create Stripe subscription
-  const subscription = await createSubscription({
-    customerId: stripeCustomer.id,
-    priceId: stripePriceId,
-    paymentMethodId,
-  });
-
-  // Calculate next billing date
-  const nextBillingDate = new Date();
-  if (billingCycle === "monthly") {
-    nextBillingDate.setMonth(nextBillingDate.getMonth() + 1);
-  } else {
-    nextBillingDate.setFullYear(nextBillingDate.getFullYear() + 1);
-  }
-
-  // Create the membership
-  const membership = await db.Membership.createOne({
-    data: {
-      member: { connect: { id: user.id } },
-      tier: { connect: { id: tierId } },
-      status: subscription.status === "active" ? "active" : "past-due",
-      startDate: new Date().toISOString(),
-      billingCycle,
-      nextBillingDate: nextBillingDate.toISOString(),
-      autoRenew: true,
-      classCreditsRemaining: tier.classCreditsPerMonth,
-      stripeSubscriptionId: subscription.id,
-    },
-  });
-
-  // Get the client secret for completing payment
-  const latestInvoice = subscription.latest_invoice as any;
-  const paymentIntent = latestInvoice?.payment_intent;
-  const clientSecret = paymentIntent?.client_secret;
-
   return {
-    membership,
-    user,
-    subscriptionId: subscription.id,
-    clientSecret,
-    subscriptionStatus: subscription.status,
+    organizationId,
+    membershipId,
+    operation,
+    idempotencyKey,
+    requestHash: membershipBillingRequestHash(operation, evidence),
   };
 }
 
-// Create a setup intent for adding a payment method
+async function currentMembership(context: Context, membershipId: string) {
+  return context.db.Membership.findOne({ where: { id: membershipId } });
+}
+
 export async function createStripeSetupIntent(
-  root: any,
+  root: unknown,
   { userId }: { userId: string },
   context: Context
 ) {
-  const { db } = context.sudo();
-
-  const user = await db.User.findOne({
-    where: { id: userId },
+  const organizationId = actorOrganizationId(context);
+  assertUserSessionAccess(context, userId);
+  const users = await context.sudo().query.User.findMany({
+    where: { AND: [{ id: { equals: userId } }, { organization: { id: { equals: organizationId } } }] },
+    take: 1,
+    query: "id stripeCustomerId organization { id }",
   });
+  const user = users[0] as any;
+  if (!user?.stripeCustomerId || user.organization?.id !== organizationId) throw new Error("User not found or not a Stripe customer");
 
-  if (!user || !user.stripeCustomerId) {
-    throw new Error("User not found or not a Stripe customer");
-  }
-
-  const setupIntent = await createSetupIntent(user.stripeCustomerId);
-
-  return {
-    clientSecret: setupIntent.client_secret,
-    setupIntentId: setupIntent.id,
-  };
+  const { adapter } = await getAdapter(context, organizationId);
+  const intent = await adapter.createSetupIntent(user.stripeCustomerId);
+  if (!intent.clientSecret) throw new Error("Payment provider did not return a setup client secret");
+  return { clientSecret: intent.clientSecret, setupIntentId: intent.id };
 }
 
-// Cancel a membership subscription
 export async function cancelMembership(
-  root: any,
-  { membershipId, reason }: { membershipId: string; reason?: string },
+  root: unknown,
+  { membershipId, reason, idempotencyKey }: { membershipId: string; reason?: string; idempotencyKey: string },
   context: Context
 ) {
-  const { db } = context.sudo();
-
-  const membership = await db.Membership.findOne({
-    where: { id: membershipId },
-  });
-
-  if (!membership || !membership.stripeSubscriptionId) {
-    throw new Error("Membership not found or has no active subscription");
+  const membership = await getAuthorizedMembership(context, membershipId);
+  const organizationId = actorOrganizationId(context);
+  const normalizedReason = reason?.trim() || "";
+  if (normalizedReason.length > 500) throw new Error("Cancellation reason must be 500 characters or fewer");
+  const scope = billingAttemptScope(organizationId, membershipId, "cancel", idempotencyKey, { reason: normalizedReason });
+  if (await isCompletedMembershipBillingAttempt(context, scope)) {
+    return { membership: await currentMembership(context, membershipId), message: "Membership renewal cancellation already completed" };
   }
-
-  // Cancel in Stripe
-  const cancelledSubscription = await cancelSubscription(membership.stripeSubscriptionId);
-
-  // Update membership status
-  const updatedMembership = await db.Membership.updateOne({
-    where: { id: membershipId },
-    data: {
-      status: "cancelled",
+  if (["cancelled", "expired"].includes(membership.status)) throw new Error(`Membership is already ${membership.status}`);
+  if (!membership.autoRenew) throw new Error("Membership renewal is already cancelled");
+  if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
+  const attempt = await claimMembershipBillingAttempt(context, scope, {
+    status: membership.status,
+    autoRenew: membership.autoRenew,
+    stripeSubscriptionId: membership.stripeSubscriptionId,
+  });
+  if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership cancellation already completed" };
+  try {
+    const { adapter } = await getAdapter(context, organizationId);
+    const providerSubscription = await adapter.cancelSubscriptionAtPeriodEnd(
+      membership.stripeSubscriptionId,
+      attempt.providerIdempotencyKey,
+    );
+    const providerPeriodEnd = providerSubscription.current_period_end
+      ? new Date(providerSubscription.current_period_end * 1000)
+      : membership.nextBillingDate ? new Date(membership.nextBillingDate) : null;
+    await finishMembershipBillingAttempt(context, attempt, {
       autoRenew: false,
-      cancelReason: reason,
-    },
-  });
-
-  return {
-    membership: updatedMembership,
-    message: "Membership cancelled successfully",
-  };
+      nextBillingDate: providerPeriodEnd,
+      cancelReason: normalizedReason,
+      cancelledAt: null,
+    });
+    return { membership: await currentMembership(context, membershipId), message: "Membership renewal cancelled at the end of the paid period" };
+  } catch (error) { await failMembershipBillingAttempt(context, attempt, error); throw error; }
 }
 
-// Freeze/pause a membership
 export async function freezeMembership(
-  root: any,
-  {
-    membershipId,
-    startDate,
-    endDate,
-  }: {
-    membershipId: string;
-    startDate: string;
-    endDate: string;
-  },
+  root: unknown,
+  { membershipId, endDate, idempotencyKey }: { membershipId: string; endDate: string; idempotencyKey: string },
   context: Context
 ) {
-  const { db } = context.sudo();
-
-  const membership = await db.Membership.findOne({
-    where: { id: membershipId },
-  });
-
-  if (!membership || !membership.stripeSubscriptionId) {
-    throw new Error("Membership not found or has no active subscription");
+  const membership = await getAuthorizedMembership(context, membershipId);
+  const organizationId = actorOrganizationId(context);
+  const endsAt = new Date(endDate);
+  if (Number.isNaN(endsAt.getTime())) throw new Error("Freeze end date must be in the future");
+  const scope = billingAttemptScope(organizationId, membershipId, "freeze", idempotencyKey, { endDate: endsAt.toISOString() });
+  if (await isCompletedMembershipBillingAttempt(context, scope)) {
+    return { membership: await currentMembership(context, membershipId), message: "Membership freeze already completed" };
   }
-
-  // Pause in Stripe
-  await pauseSubscription(
-    membership.stripeSubscriptionId,
-    new Date(endDate)
-  );
-
-  // Update membership
-  const updatedMembership = await db.Membership.updateOne({
-    where: { id: membershipId },
-    data: {
-      status: "frozen",
-      freezeStartDate: startDate,
-      freezeEndDate: endDate,
-    },
+  if (membership.status !== "active") throw new Error("Only active memberships can be frozen");
+  if (!membership.autoRenew) throw new Error("A membership ending after this paid period cannot be frozen");
+  if (!membership.tier?.freezeAllowed) throw new Error("This membership tier does not allow freezes");
+  if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
+  const startsAt = new Date();
+  const maximumEnd = new Date(startsAt.getTime() + 365 * 24 * 60 * 60 * 1000);
+  if (endsAt <= startsAt) throw new Error("Freeze end date must be in the future");
+  if (endsAt > maximumEnd) throw new Error("Freeze duration cannot exceed one year");
+  const attempt = await claimMembershipBillingAttempt(context, scope, {
+    status: membership.status,
+    autoRenew: membership.autoRenew,
+    stripeSubscriptionId: membership.stripeSubscriptionId,
+    tierId: membership.tier.id,
   });
-
-  return {
-    membership: updatedMembership,
-    message: "Membership frozen successfully",
-  };
+  if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership freeze already completed" };
+  try {
+    const { adapter } = await getAdapter(context, organizationId);
+    await adapter.pauseSubscription(membership.stripeSubscriptionId, endsAt, attempt.providerIdempotencyKey);
+    await finishMembershipBillingAttempt(context, attempt, { status: "frozen", freezeStartDate: startsAt, freezeEndDate: endsAt });
+    return { membership: await currentMembership(context, membershipId), message: "Membership frozen immediately" };
+  } catch (error) { await failMembershipBillingAttempt(context, attempt, error); throw error; }
 }
 
-// Unfreeze/resume a membership
 export async function unfreezeMembership(
-  root: any,
+  root: unknown,
+  { membershipId, idempotencyKey }: { membershipId: string; idempotencyKey: string },
+  context: Context
+) {
+  const membership = await getAuthorizedMembership(context, membershipId);
+  const organizationId = actorOrganizationId(context);
+  const scope = billingAttemptScope(organizationId, membershipId, "unfreeze", idempotencyKey, {});
+  if (await isCompletedMembershipBillingAttempt(context, scope)) {
+    return { membership: await currentMembership(context, membershipId), message: "Membership resume already completed" };
+  }
+  if (membership.status !== "frozen") throw new Error("Only frozen memberships can be resumed");
+  if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
+  const attempt = await claimMembershipBillingAttempt(context, scope, {
+    status: membership.status,
+    stripeSubscriptionId: membership.stripeSubscriptionId,
+  });
+  if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership resume already completed" };
+  try {
+    const { adapter } = await getAdapter(context, organizationId);
+    await adapter.resumeSubscription(membership.stripeSubscriptionId, attempt.providerIdempotencyKey);
+    await finishMembershipBillingAttempt(context, attempt, { status: "active", freezeStartDate: null, freezeEndDate: null });
+    return { membership: await currentMembership(context, membershipId), message: "Membership resumed successfully" };
+  } catch (error) { await failMembershipBillingAttempt(context, attempt, error); throw error; }
+}
+
+export async function changeMembershipTier(
+  root: unknown,
+  { membershipId, newTierId, idempotencyKey }: { membershipId: string; newTierId: string; idempotencyKey: string },
+  context: Context
+) {
+  if (!(context.session as any)?.data?.role?.canManageAllRecords) {
+    throw new Error("Contact the front desk to change membership tiers");
+  }
+  const membership = await getAuthorizedMembership(context, membershipId);
+  const organizationId = actorOrganizationId(context);
+  const scope = billingAttemptScope(organizationId, membershipId, "tier-change", idempotencyKey, { newTierId });
+  if (await isCompletedMembershipBillingAttempt(context, scope)) {
+    return { membership: await currentMembership(context, membershipId), message: "Membership tier change already completed" };
+  }
+  if (["cancelled", "expired"].includes(membership.status)) throw new Error(`Cannot change a ${membership.status} membership`);
+  if (membership.tier?.id === newTierId) throw new Error("Membership is already on this tier");
+  if (!membership.autoRenew) throw new Error("A membership ending after this paid period cannot change tiers");
+  if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
+  const newTiers = await context.sudo().query.MembershipTier.findMany({ where: { AND: [{ id: { equals: newTierId } }, { organization: { id: { equals: organizationId } } }] }, take: 1, query: "id classCreditsPerMonth monthlyPrice annualPrice stripeMonthlyPriceId stripeAnnualPriceId stripeProductId organization { id }" });
+  const newTier = newTiers[0] as any;
+  if (!newTier) throw new Error("New membership tier not found");
+  const newPriceId = membership.billingCycle === "monthly" ? newTier.stripeMonthlyPriceId : newTier.stripeAnnualPriceId;
+  if (!newPriceId) throw new Error("Stripe price not configured for this tier");
+  const attempt = await claimMembershipBillingAttempt(context, scope, {
+    status: membership.status,
+    autoRenew: membership.autoRenew,
+    stripeSubscriptionId: membership.stripeSubscriptionId,
+    tierId: membership.tier.id,
+  });
+  if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership tier change already completed" };
+  try {
+    const { adapter } = await getAdapter(context, organizationId);
+    const planAmount = membership.billingCycle === "monthly" ? newTier.monthlyPrice : newTier.annualPrice;
+    if (!Number.isFinite(planAmount) || planAmount < 0) throw new Error("Membership tier has an invalid price");
+    await adapter.validateMembershipPrice({
+      priceId: newPriceId,
+      productId: newTier.stripeProductId,
+      amount: Math.round(planAmount * 100),
+      currencyCode: membership.organization.defaultCurrency || "USD",
+      billingCycle: membership.billingCycle === "annual" ? "annual" : "monthly",
+    });
+    await adapter.changeSubscriptionPrice(
+      membership.stripeSubscriptionId,
+      newPriceId,
+      { tierId: newTierId, billingCycle: membership.billingCycle },
+      attempt.providerIdempotencyKey,
+    );
+    await finishMembershipBillingAttempt(context, attempt, { tierId: newTierId, classCreditsRemaining: newTier.classCreditsPerMonth });
+    await context.prisma.member.updateMany({
+      where: { organizationId, userId: membership.member.id },
+      data: { membershipTierId: newTierId },
+    });
+    return { membership: await currentMembership(context, membershipId), message: "Membership tier updated successfully" };
+  } catch (error) { await failMembershipBillingAttempt(context, attempt, error); throw error; }
+}
+
+function validateReturnUrl(returnUrl: string) {
+  const configuredBaseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+  if (!configuredBaseUrl) throw new Error("Application base URL is not configured");
+
+  const requested = new URL(returnUrl, configuredBaseUrl);
+  const allowed = new URL(configuredBaseUrl);
+  if (requested.origin !== allowed.origin) throw new Error("Billing portal return URL must use the Gym origin");
+  return requested.toString();
+}
+
+export async function markPaymentRecoveryContacted(
+  root: unknown,
   { membershipId }: { membershipId: string },
   context: Context
 ) {
-  const { db } = context.sudo();
-
-  const membership = await db.Membership.findOne({
-    where: { id: membershipId },
-  });
-
-  if (!membership || !membership.stripeSubscriptionId) {
-    throw new Error("Membership not found or has no active subscription");
+  const session = context.session as any;
+  if (!session?.itemId || !session.data?.role?.canManageAllRecords) {
+    throw new Error("Payment recovery management permission required");
   }
-
-  // Resume in Stripe
-  await resumeSubscription(membership.stripeSubscriptionId);
-
-  // Update membership
-  const updatedMembership = await db.Membership.updateOne({
-    where: { id: membershipId },
-    data: {
-      status: "active",
-      freezeStartDate: null,
-      freezeEndDate: null,
-    },
+  const organizationId = actorOrganizationId(context);
+  const memberships = await context.sudo().query.Membership.findMany({
+    where: { AND: [{ id: { equals: membershipId } }, { organization: { id: { equals: organizationId } } }] },
+    take: 1,
+    query: "id cancelReason organization { id }",
   });
-
-  return {
-    membership: updatedMembership,
-    message: "Membership resumed successfully",
-  };
-}
-
-// Upgrade or downgrade membership tier
-export async function changeMembershipTier(
-  root: any,
-  {
-    membershipId,
-    newTierId,
-  }: {
-    membershipId: string;
-    newTierId: string;
-  },
-  context: Context
-) {
-  const { db } = context.sudo();
-
-  const membership = await db.Membership.findOne({
-    where: { id: membershipId },
-  });
-
-  if (!membership || !membership.stripeSubscriptionId) {
-    throw new Error("Membership not found or has no active subscription");
-  }
-
-  const newTier = await db.MembershipTier.findOne({
-    where: { id: newTierId },
-  });
-
-  if (!newTier) {
-    throw new Error("New membership tier not found");
-  }
-
-  // Get the appropriate price ID
-  const newPriceId = membership.billingCycle === "monthly"
-    ? newTier.stripeMonthlyPriceId
-    : newTier.stripeAnnualPriceId;
-
-  if (!newPriceId) {
-    throw new Error("Stripe price not configured for this tier");
-  }
-
-  // Update in Stripe
-  await updateSubscription({
-    subscriptionId: membership.stripeSubscriptionId,
-    newPriceId,
-  });
-
-  // Update membership
-  const updatedMembership = await db.Membership.updateOne({
+  const membership = memberships[0] as any;
+  if (!membership) throw new Error("Membership not found");
+  const note = `[Recovery contacted ${new Date().toISOString()}]`;
+  return context.sudo().db.Membership.updateOne({
     where: { id: membershipId },
     data: {
-      tier: { connect: { id: newTierId } },
-      classCreditsRemaining: newTier.classCreditsPerMonth,
+      cancelReason: membership.cancelReason ? `${membership.cancelReason}\n${note}` : note,
     },
   });
-
-  return {
-    membership: updatedMembership,
-    message: "Membership tier updated successfully",
-  };
 }
 
-// Get Stripe billing portal URL
 export async function getStripeBillingPortal(
-  root: any,
+  root: unknown,
   { userId, returnUrl }: { userId: string; returnUrl: string },
   context: Context
 ) {
-  const { db } = context.sudo();
-
-  const user = await db.User.findOne({
-    where: { id: userId },
+  const organizationId = actorOrganizationId(context);
+  assertUserSessionAccess(context, userId);
+  const users = await context.sudo().query.User.findMany({
+    where: { AND: [{ id: { equals: userId } }, { organization: { id: { equals: organizationId } } }] },
+    take: 1,
+    query: "id stripeCustomerId organization { id }",
   });
+  const user = users[0] as any;
+  if (!user?.stripeCustomerId || user.organization?.id !== organizationId) throw new Error("User not found or not a Stripe customer");
 
-  if (!user || !user.stripeCustomerId) {
-    throw new Error("User not found or not a Stripe customer");
-  }
-
-  const session = await createBillingPortalSession(user.stripeCustomerId, returnUrl);
-
-  return {
-    url: session.url,
-  };
+  const safeReturnUrl = validateReturnUrl(returnUrl);
+  const { adapter } = await getAdapter(context, organizationId);
+  return adapter.createBillingPortalSession(user.stripeCustomerId, safeReturnUrl);
 }

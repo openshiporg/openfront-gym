@@ -1,13 +1,14 @@
 import { Metadata } from "next"
 import { redirect } from "next/navigation"
-
-export const metadata: Metadata = {
-  title: "Member Portal - Openfront Gym",
-  description: "View your bookings, membership status, and workout progress",
-}
+import { getStorefrontBrandName } from "@/features/storefront/lib/brand"
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings"
 
 export async function generateMetadata(): Promise<Metadata> {
-  return metadata
+  const config = await getStorefrontConfig()
+  return {
+    title: `Member portal — ${getStorefrontBrandName(config)}`,
+    description: "View your bookings, membership status, and workout progress",
+  }
 }
 
 export async function MemberPortalPage() {

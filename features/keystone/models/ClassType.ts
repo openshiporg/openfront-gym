@@ -1,5 +1,5 @@
 import { list } from "@keystone-6/core";
-import { allOperations } from "@keystone-6/core/access";
+import { allOperations, denyAll } from "@keystone-6/core/access";
 import {
   text,
   integer,
@@ -8,13 +8,26 @@ import {
 } from "@keystone-6/core/fields";
 import { document } from "@keystone-6/fields-document";
 
-import { isSignedIn } from "../access";
+import { isSignedIn, permissions } from "../access";
+import { tenantFilter } from "../access/tenantPolicy";
 import { trackingFields } from "./trackingFields";
+import { relationship } from "@keystone-6/core/fields";
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 
 export const ClassType = list({
+  db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
+  hooks: { validateInput: validateTenantOwnership([]) },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      create: permissions.canManageAllRecords,
+      update: permissions.canManageAllRecords,
+      delete: permissions.canManageAllRecords,
+    },
+    filter: {
+      query: tenantFilter,
+      update: tenantFilter,
+      delete: tenantFilter,
     },
   },
   ui: {
@@ -23,6 +36,12 @@ export const ClassType = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.classTypes",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     name: text({
       validation: { isRequired: true },
       ui: {
@@ -75,6 +94,12 @@ export const ClassType = list({
       ui: {
         description: "Estimated calories burned per session",
       },
+    }),
+
+    schedules: relationship({
+      ref: "ClassSchedule.classType",
+      many: true,
+      access: { create: denyAll, update: denyAll },
     }),
 
     ...trackingFields,

@@ -1,10 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { Calendar, Clock, User, X, CheckCircle, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { cancelBookingAction } from "@/features/storefront/lib/actions/bookings"
 
 type BookingData = {
   id: string
@@ -45,63 +44,12 @@ type BookingsListProps = {
 }
 
 export default function BookingsList({ upcomingBookings, bookingHistory }: BookingsListProps) {
-  const router = useRouter()
   const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
 
   const handleCancelClick = (bookingId: string) => {
     setCancellingBookingId(bookingId)
     setShowCancelDialog(true)
-  }
-
-  const handleCancelBooking = async () => {
-    if (!cancellingBookingId) return
-
-    try {
-      const response = await fetch("/api/graphql", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          query: `
-            mutation UpdateClassBooking($id: ID!, $data: ClassBookingUpdateInput!) {
-              updateClassBooking(where: { id: $id }, data: $data) {
-                id
-                status
-              }
-            }
-          `,
-          variables: {
-            id: cancellingBookingId,
-            data: {
-              status: "cancelled",
-              cancelledAt: new Date().toISOString(),
-            },
-          },
-        }),
-      })
-
-      const result = await response.json()
-
-      if (result.errors) {
-        throw new Error(result.errors[0].message)
-      }
-
-      toast.success("Booking cancelled successfully", {
-        description: "Your class credit has been refunded.",
-      })
-
-      router.refresh()
-    } catch (error: any) {
-      console.error("Error cancelling booking:", error)
-      toast.error("Failed to cancel booking", {
-        description: error.message || "Please try again later.",
-      })
-    } finally {
-      setShowCancelDialog(false)
-      setCancellingBookingId(null)
-    }
   }
 
   const formatDate = (dateString: string) => {
@@ -257,23 +205,24 @@ export default function BookingsList({ upcomingBookings, bookingHistory }: Booki
         </TabsContent>
       </Tabs>
 
-      {/* Cancel confirmation dialog */}
       <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel Booking?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to cancel this booking? Your class credit will be refunded.
+              Are you sure you want to cancel this booking? Your class credit will be refunded and the roster waitlist will update automatically.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep Booking</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleCancelBooking}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Cancel Booking
-            </AlertDialogAction>
+            <form action={cancelBookingAction}>
+              <input type="hidden" name="bookingId" value={cancellingBookingId ?? ""} />
+              <AlertDialogAction asChild>
+                <button type="submit" className="bg-red-600 hover:bg-red-700 text-white inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-medium">
+                  Cancel Booking
+                </button>
+              </AlertDialogAction>
+            </form>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

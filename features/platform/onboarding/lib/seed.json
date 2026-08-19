@@ -2,10 +2,10 @@
   "gymSettings": {
     "name": "Kinetic Performance Club",
     "tagline": "Movement is art. The body of work is you.",
-    "description": "A modern training club with memberships, coached classes, recovery support, and a storefront configured from real operational data.",
+    "description": "A training club for strength, conditioning, coached classes, recovery, and consistent member routines.",
     "address": "123 Fitness Ave, San Francisco, CA 94102",
     "phone": "(415) 555-0100",
-    "email": "hello@kineticperformance.club",
+    "email": "hello@example.invalid",
     "currencyCode": "USD",
     "locale": "en-US",
     "timezone": "America/Los_Angeles",
@@ -21,7 +21,7 @@
     },
     "heroEyebrow": "Performance without compromise",
     "heroHeadline": "Movement is art.\nThe body of work\nis you.",
-    "heroSubheadline": "Membership access, class booking, instructor programming, and member operations all running from one coordinated platform.",
+    "heroSubheadline": "Membership access, coached classes, and a training floor built for consistent work.",
     "heroPrimaryCtaLabel": "Start membership",
     "heroPrimaryCtaHref": "/join",
     "heroSecondaryCtaLabel": "View schedule",
@@ -35,60 +35,98 @@
       {
         "title": "Weight training floor",
         "description": "Heavy iron, racks, platforms, and enough load to support real strength work.",
-        "features": ["Power racks", "Olympic platforms", "Free weights", "Cable stations"]
+        "features": [
+          "Power racks",
+          "Olympic platforms",
+          "Free weights",
+          "Cable stations"
+        ]
       },
       {
         "title": "Coached studios",
         "description": "Dedicated spaces for yoga, spin, HIIT, mobility, and coached group programming.",
-        "features": ["Yoga room", "Spin studio", "HIIT arena", "Mobility space"]
+        "features": [
+          "Yoga room",
+          "Spin studio",
+          "HIIT arena",
+          "Mobility space"
+        ]
       },
       {
         "title": "Conditioning zone",
         "description": "A cardio and conditioning section for intervals, engine work, and pacing.",
-        "features": ["Treadmills", "Rowers", "Bikes", "Ski ergs"]
+        "features": [
+          "Treadmills",
+          "Rowers",
+          "Bikes",
+          "Ski ergs"
+        ]
       },
       {
         "title": "Recovery spaces",
         "description": "Locker rooms, showers, and recovery support for members who train hard and stay consistent.",
-        "features": ["Showers", "Sauna", "Steam", "Day lockers"]
+        "features": [
+          "Showers",
+          "Sauna",
+          "Steam",
+          "Day lockers"
+        ]
       },
       {
         "title": "Member lounge",
         "description": "A quieter zone for transitions between training, meetings, and coaching touchpoints.",
-        "features": ["WiFi", "Smoothie bar", "Seating", "Screens"]
+        "features": [
+          "WiFi",
+          "Smoothie bar",
+          "Seating",
+          "Screens"
+        ]
       },
       {
         "title": "Personal coaching area",
         "description": "Floor space for assessments, one-on-one coaching, and progress reviews.",
-        "features": ["Private sessions", "Assessment tools", "Specialty equipment", "Progress tracking"]
+        "features": [
+          "Private sessions",
+          "Assessment tools",
+          "Specialty equipment",
+          "Progress tracking"
+        ]
       }
     ],
-    "heroStats": [
-      { "value": "24/7", "label": "Top-tier access" },
-      { "value": "0-∞", "label": "Classes by plan" },
-      { "value": "15", "label": "Weekly recurring sessions" },
-      { "value": "3", "label": "Coaches seeded at setup" }
-    ],
+    "heroStats": [],
     "contactTopics": [
       {
         "title": "Location",
-        "details": ["123 Fitness Ave", "San Francisco, CA 94102"]
+        "details": [
+          "123 Fitness Ave",
+          "San Francisco, CA 94102"
+        ]
       },
       {
         "title": "Phone",
-        "details": ["(415) 555-0100", "Front desk support during staffed hours"]
+        "details": [
+          "(415) 555-0100",
+          "Front desk support during staffed hours"
+        ]
       },
       {
         "title": "Email",
-        "details": ["hello@kineticperformance.club", "support@kineticperformance.club"]
+        "details": [
+          "hello@kineticperformance.club",
+          "support@kineticperformance.club"
+        ]
       },
       {
         "title": "Hours",
-        "details": ["Mon–Fri 5:00 AM – 10:00 PM", "Sat–Sun reduced staffed hours"]
+        "details": [
+          "Mon–Fri 5:00 AM – 10:00 PM",
+          "Sat–Sun reduced staffed hours"
+        ]
       }
     ],
-    "rating": 4.9,
-    "reviewCount": 482
+    "rating": null,
+    "reviewCount": 0,
+    "heroImageUrl": "/images/training-floor.jpg"
   },
   "location": {
     "name": "Kinetic Performance Club – Main Studio",
@@ -103,7 +141,7 @@
       "monthlyPrice": 29,
       "annualPrice": 299,
       "classCreditsPerMonth": 4,
-      "accessHours": "6am-10pm",
+      "accessHours": "staffed hours",
       "guestPasses": 0,
       "personalTrainingSessions": 0,
       "freezeAllowed": false,
@@ -112,97 +150,319 @@
     },
     {
       "handle": "premium-monthly",
-      "name": "Premium Monthly",
-      "monthlyPrice": 49,
-      "annualPrice": 499,
-      "classCreditsPerMonth": -1,
-      "accessHours": "24/7",
-      "guestPasses": 2,
-      "personalTrainingSessions": 1,
-      "freezeAllowed": true,
-      "contractLength": 0,
-      "description": "The all-around plan for members who want unlimited class access, stronger recovery flexibility, and occasional coaching support."
-    },
-    {
-      "handle": "elite-monthly",
-      "name": "Elite Monthly",
+      "name": "Unlimited Monthly",
       "monthlyPrice": 79,
       "annualPrice": 799,
       "classCreditsPerMonth": -1,
-      "accessHours": "24/7",
-      "guestPasses": 5,
-      "personalTrainingSessions": 4,
+      "accessHours": "staffed hours",
+      "guestPasses": 0,
+      "personalTrainingSessions": 0,
       "freezeAllowed": true,
       "contractLength": 0,
-      "description": "High-touch access for members who want unlimited classes, guest privileges, and a deeper coaching relationship."
+      "description": "Unlimited coached class booking during staffed facility hours, with the option to freeze provider-backed billing."
     }
   ],
   "classTypes": [
-    { "handle": "yoga", "name": "Yoga", "difficulty": "beginner", "duration": 60, "caloriesBurn": 200, "equipmentNeeded": ["mat"], "description": "Mobility-forward sessions for strength balance, recovery, and consistency." },
-    { "handle": "spin", "name": "Spin Class", "difficulty": "intermediate", "duration": 45, "caloriesBurn": 500, "equipmentNeeded": ["cycling_shoes"], "description": "High-energy interval rides with coach-led pacing and strong member energy." },
-    { "handle": "hiit", "name": "HIIT", "difficulty": "advanced", "duration": 30, "caloriesBurn": 400, "equipmentNeeded": ["weights", "kettlebells"], "description": "Short, intense conditioning blocks for members who want efficient work." },
-    { "handle": "pilates", "name": "Pilates", "difficulty": "beginner", "duration": 60, "caloriesBurn": 250, "equipmentNeeded": ["mat"], "description": "Core control, posture, breath, and lower-impact strength development." },
-    { "handle": "zumba", "name": "Zumba", "difficulty": "beginner", "duration": 60, "caloriesBurn": 400, "equipmentNeeded": [], "description": "A music-driven group format built for fun, movement, and consistency." },
-    { "handle": "boxing", "name": "Boxing", "difficulty": "intermediate", "duration": 45, "caloriesBurn": 600, "equipmentNeeded": ["boxing_gloves"], "description": "Technique, conditioning, and sharp coached combinations in a high-focus format." }
+    {
+      "handle": "yoga",
+      "name": "Yoga",
+      "difficulty": "beginner",
+      "duration": 60,
+      "caloriesBurn": 200,
+      "equipmentNeeded": [
+        "mat"
+      ],
+      "description": "Mobility-forward sessions for strength balance, recovery, and consistency."
+    },
+    {
+      "handle": "spin",
+      "name": "Spin Class",
+      "difficulty": "intermediate",
+      "duration": 45,
+      "caloriesBurn": 500,
+      "equipmentNeeded": [
+        "cycling_shoes"
+      ],
+      "description": "High-energy interval rides with coach-led pacing and strong member energy."
+    },
+    {
+      "handle": "hiit",
+      "name": "HIIT",
+      "difficulty": "advanced",
+      "duration": 30,
+      "caloriesBurn": 400,
+      "equipmentNeeded": [
+        "weights",
+        "kettlebells"
+      ],
+      "description": "Short, intense conditioning blocks for members who want efficient work."
+    },
+    {
+      "handle": "pilates",
+      "name": "Pilates",
+      "difficulty": "beginner",
+      "duration": 60,
+      "caloriesBurn": 250,
+      "equipmentNeeded": [
+        "mat"
+      ],
+      "description": "Core control, posture, breath, and lower-impact strength development."
+    },
+    {
+      "handle": "zumba",
+      "name": "Zumba",
+      "difficulty": "beginner",
+      "duration": 60,
+      "caloriesBurn": 400,
+      "equipmentNeeded": [],
+      "description": "A music-driven group format built for fun, movement, and consistency."
+    },
+    {
+      "handle": "boxing",
+      "name": "Boxing",
+      "difficulty": "intermediate",
+      "duration": 45,
+      "caloriesBurn": 600,
+      "equipmentNeeded": [
+        "boxing_gloves"
+      ],
+      "description": "Technique, conditioning, and sharp coached combinations in a high-focus format."
+    }
   ],
   "instructors": [
     {
       "handle": "sarah-johnson",
       "firstName": "Sarah",
       "lastName": "Johnson",
-      "email": "sarah@demo-gym.com",
-      "specialties": ["Yoga", "Pilates"],
-      "certifications": ["RYT-500"],
+      "email": "sarah.johnson@example.invalid",
+      "specialties": [
+        "Yoga",
+        "Pilates"
+      ],
+      "certifications": [],
       "bio": "Sarah leads mobility-forward classes that improve strength balance, breathing, and recovery discipline.",
       "isActive": true,
-      "teachesClassTypes": ["yoga", "pilates"]
+      "teachesClassTypes": [
+        "yoga",
+        "pilates"
+      ],
+      "photo": ""
     },
     {
       "handle": "mike-rodriguez",
       "firstName": "Mike",
       "lastName": "Rodriguez",
-      "email": "mike@demo-gym.com",
-      "specialties": ["HIIT", "Boxing"],
-      "certifications": ["NASM-CPT"],
+      "email": "mike.rodriguez@example.invalid",
+      "specialties": [
+        "HIIT",
+        "Boxing"
+      ],
+      "certifications": [],
       "bio": "Mike coaches high-output formats with a focus on intensity, structure, and measurable progression.",
       "isActive": true,
-      "teachesClassTypes": ["hiit", "boxing"]
+      "teachesClassTypes": [
+        "hiit",
+        "boxing"
+      ],
+      "photo": ""
     },
     {
       "handle": "emily-chen",
       "firstName": "Emily",
       "lastName": "Chen",
-      "email": "emily@demo-gym.com",
-      "specialties": ["Spin", "Zumba"],
-      "certifications": ["ACE Certified"],
+      "email": "emily.chen@example.invalid",
+      "specialties": [
+        "Spin",
+        "Zumba"
+      ],
+      "certifications": [],
       "bio": "Emily brings high-energy coaching, clear pacing, and an inclusive rhythm to every session.",
       "isActive": true,
-      "teachesClassTypes": ["spin", "zumba"]
+      "teachesClassTypes": [
+        "spin",
+        "zumba"
+      ],
+      "photo": ""
     }
   ],
   "schedules": [
-    { "name": "Morning Yoga", "classTypeHandle": "yoga", "instructorHandle": "sarah-johnson", "dayOfWeek": "monday", "startTime": "07:00", "endTime": "08:00", "maxCapacity": 15, "isActive": true, "description": "Start the week with guided breath, strength balance, and mobility work." },
-    { "name": "Morning Yoga", "classTypeHandle": "yoga", "instructorHandle": "sarah-johnson", "dayOfWeek": "wednesday", "startTime": "07:00", "endTime": "08:00", "maxCapacity": 15, "isActive": true, "description": "A midweek reset built around control, posture, and recovery." },
-    { "name": "Morning Yoga", "classTypeHandle": "yoga", "instructorHandle": "sarah-johnson", "dayOfWeek": "friday", "startTime": "07:00", "endTime": "08:00", "maxCapacity": 15, "isActive": true, "description": "Mobility and calm intensity to finish the week well." },
-    { "name": "Spin Class", "classTypeHandle": "spin", "instructorHandle": "emily-chen", "dayOfWeek": "tuesday", "startTime": "06:30", "endTime": "07:15", "maxCapacity": 20, "isActive": true, "description": "A sharp interval ride for members who want a fast morning engine session." },
-    { "name": "Spin Class", "classTypeHandle": "spin", "instructorHandle": "emily-chen", "dayOfWeek": "thursday", "startTime": "06:30", "endTime": "07:15", "maxCapacity": 20, "isActive": true, "description": "Coach-led endurance and tempo work before the day begins." },
-    { "name": "Spin Class", "classTypeHandle": "spin", "instructorHandle": "emily-chen", "dayOfWeek": "saturday", "startTime": "09:00", "endTime": "09:45", "maxCapacity": 20, "isActive": true, "description": "Weekend energy with high tempo and stronger studio atmosphere." },
-    { "name": "HIIT Training", "classTypeHandle": "hiit", "instructorHandle": "mike-rodriguez", "dayOfWeek": "monday", "startTime": "18:00", "endTime": "18:30", "maxCapacity": 12, "isActive": true, "description": "Fast conditioning work with clear rounds and no wasted motion." },
-    { "name": "HIIT Training", "classTypeHandle": "hiit", "instructorHandle": "mike-rodriguez", "dayOfWeek": "wednesday", "startTime": "18:00", "endTime": "18:30", "maxCapacity": 12, "isActive": true, "description": "Midweek power and output for members chasing measurable progress." },
-    { "name": "HIIT Training", "classTypeHandle": "hiit", "instructorHandle": "mike-rodriguez", "dayOfWeek": "friday", "startTime": "18:00", "endTime": "18:30", "maxCapacity": 12, "isActive": true, "description": "Finish strong with a dense, coached conditioning block." },
-    { "name": "Pilates", "classTypeHandle": "pilates", "instructorHandle": "sarah-johnson", "dayOfWeek": "tuesday", "startTime": "09:00", "endTime": "10:00", "maxCapacity": 10, "isActive": true, "description": "Core-focused movement for posture, control, and lower-impact strength." },
-    { "name": "Pilates", "classTypeHandle": "pilates", "instructorHandle": "sarah-johnson", "dayOfWeek": "saturday", "startTime": "10:00", "endTime": "11:00", "maxCapacity": 10, "isActive": true, "description": "Weekend movement quality with guided pace and technique." },
-    { "name": "Zumba", "classTypeHandle": "zumba", "instructorHandle": "emily-chen", "dayOfWeek": "wednesday", "startTime": "19:00", "endTime": "20:00", "maxCapacity": 25, "isActive": true, "description": "A music-driven format for cardio, coordination, and community energy." },
-    { "name": "Zumba", "classTypeHandle": "zumba", "instructorHandle": "emily-chen", "dayOfWeek": "friday", "startTime": "19:00", "endTime": "20:00", "maxCapacity": 25, "isActive": true, "description": "High-energy end-of-week movement with strong member momentum." },
-    { "name": "Boxing", "classTypeHandle": "boxing", "instructorHandle": "mike-rodriguez", "dayOfWeek": "tuesday", "startTime": "18:00", "endTime": "18:45", "maxCapacity": 10, "isActive": true, "description": "Technique, footwork, and conditioning with strong coach attention." },
-    { "name": "Boxing", "classTypeHandle": "boxing", "instructorHandle": "mike-rodriguez", "dayOfWeek": "thursday", "startTime": "18:00", "endTime": "18:45", "maxCapacity": 10, "isActive": true, "description": "Sharp combinations, aerobic work, and repeatable skill building." }
+    {
+      "name": "Morning Yoga",
+      "classTypeHandle": "yoga",
+      "instructorHandle": "sarah-johnson",
+      "dayOfWeek": "monday",
+      "startTime": "07:00",
+      "endTime": "08:00",
+      "maxCapacity": 15,
+      "isActive": true,
+      "description": "Start the week with guided breath, strength balance, and mobility work."
+    },
+    {
+      "name": "Morning Yoga",
+      "classTypeHandle": "yoga",
+      "instructorHandle": "sarah-johnson",
+      "dayOfWeek": "wednesday",
+      "startTime": "07:00",
+      "endTime": "08:00",
+      "maxCapacity": 15,
+      "isActive": true,
+      "description": "A midweek reset built around control, posture, and recovery."
+    },
+    {
+      "name": "Morning Yoga",
+      "classTypeHandle": "yoga",
+      "instructorHandle": "sarah-johnson",
+      "dayOfWeek": "friday",
+      "startTime": "07:00",
+      "endTime": "08:00",
+      "maxCapacity": 15,
+      "isActive": true,
+      "description": "Mobility and calm intensity to finish the week well."
+    },
+    {
+      "name": "Spin Class",
+      "classTypeHandle": "spin",
+      "instructorHandle": "emily-chen",
+      "dayOfWeek": "tuesday",
+      "startTime": "06:30",
+      "endTime": "07:15",
+      "maxCapacity": 20,
+      "isActive": true,
+      "description": "A sharp interval ride for members who want a fast morning engine session."
+    },
+    {
+      "name": "Spin Class",
+      "classTypeHandle": "spin",
+      "instructorHandle": "emily-chen",
+      "dayOfWeek": "thursday",
+      "startTime": "06:30",
+      "endTime": "07:15",
+      "maxCapacity": 20,
+      "isActive": true,
+      "description": "Coach-led endurance and tempo work before the day begins."
+    },
+    {
+      "name": "Spin Class",
+      "classTypeHandle": "spin",
+      "instructorHandle": "emily-chen",
+      "dayOfWeek": "saturday",
+      "startTime": "09:00",
+      "endTime": "09:45",
+      "maxCapacity": 20,
+      "isActive": true,
+      "description": "Weekend energy with high tempo and stronger studio atmosphere."
+    },
+    {
+      "name": "HIIT Training",
+      "classTypeHandle": "hiit",
+      "instructorHandle": "mike-rodriguez",
+      "dayOfWeek": "monday",
+      "startTime": "18:00",
+      "endTime": "18:30",
+      "maxCapacity": 12,
+      "isActive": true,
+      "description": "Fast conditioning work with clear rounds and no wasted motion."
+    },
+    {
+      "name": "HIIT Training",
+      "classTypeHandle": "hiit",
+      "instructorHandle": "mike-rodriguez",
+      "dayOfWeek": "wednesday",
+      "startTime": "18:00",
+      "endTime": "18:30",
+      "maxCapacity": 12,
+      "isActive": true,
+      "description": "Midweek power and output for members chasing measurable progress."
+    },
+    {
+      "name": "HIIT Training",
+      "classTypeHandle": "hiit",
+      "instructorHandle": "mike-rodriguez",
+      "dayOfWeek": "friday",
+      "startTime": "18:00",
+      "endTime": "18:30",
+      "maxCapacity": 12,
+      "isActive": true,
+      "description": "Finish strong with a dense, coached conditioning block."
+    },
+    {
+      "name": "Pilates",
+      "classTypeHandle": "pilates",
+      "instructorHandle": "sarah-johnson",
+      "dayOfWeek": "tuesday",
+      "startTime": "09:00",
+      "endTime": "10:00",
+      "maxCapacity": 10,
+      "isActive": true,
+      "description": "Core-focused movement for posture, control, and lower-impact strength."
+    },
+    {
+      "name": "Pilates",
+      "classTypeHandle": "pilates",
+      "instructorHandle": "sarah-johnson",
+      "dayOfWeek": "saturday",
+      "startTime": "10:00",
+      "endTime": "11:00",
+      "maxCapacity": 10,
+      "isActive": true,
+      "description": "Weekend movement quality with guided pace and technique."
+    },
+    {
+      "name": "Zumba",
+      "classTypeHandle": "zumba",
+      "instructorHandle": "emily-chen",
+      "dayOfWeek": "wednesday",
+      "startTime": "19:00",
+      "endTime": "20:00",
+      "maxCapacity": 25,
+      "isActive": true,
+      "description": "A music-driven format for cardio, coordination, and community energy."
+    },
+    {
+      "name": "Zumba",
+      "classTypeHandle": "zumba",
+      "instructorHandle": "emily-chen",
+      "dayOfWeek": "friday",
+      "startTime": "19:00",
+      "endTime": "20:00",
+      "maxCapacity": 25,
+      "isActive": true,
+      "description": "High-energy end-of-week movement with strong member momentum."
+    },
+    {
+      "name": "Boxing",
+      "classTypeHandle": "boxing",
+      "instructorHandle": "mike-rodriguez",
+      "dayOfWeek": "tuesday",
+      "startTime": "18:00",
+      "endTime": "18:45",
+      "maxCapacity": 10,
+      "isActive": true,
+      "description": "Technique, footwork, and conditioning with strong coach attention."
+    },
+    {
+      "name": "Boxing",
+      "classTypeHandle": "boxing",
+      "instructorHandle": "mike-rodriguez",
+      "dayOfWeek": "thursday",
+      "startTime": "18:00",
+      "endTime": "18:45",
+      "maxCapacity": 10,
+      "isActive": true,
+      "description": "Sharp combinations, aerobic work, and repeatable skill building."
+    }
   ],
-  "demoMember": {
-    "name": "Alex Demo",
-    "email": "demo@openfront.gym",
-    "password": "Demo1234!",
-    "phone": "(415) 555-0199",
-    "membershipTierHandle": "premium-monthly",
-    "note": "Demo account for testing storefront and member flows"
-  }
+  "paymentProviders": [
+    {
+      "name": "Stripe",
+      "code": "pp_stripe",
+      "adapterKey": "stripe",
+      "isInstalled": false,
+      "metadata": {
+        "credentialSource": "environment",
+        "purpose": "membership-billing",
+        "setupRequired": true
+      }
+    }
+  ]
 }

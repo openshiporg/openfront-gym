@@ -36,7 +36,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Billing',
     href: '/platform/billing',
     color: 'emerald',
-    description: 'Manage subscriptions, payment history, and revenue.',
+    description: 'Work recovery queues, provider-backed plan changes, payment evidence, and refunds.',
     icon: CreditCard,
     group: 'standalone'
   },
@@ -44,7 +44,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Scheduling',
     href: '/platform/scheduling',
     color: 'violet',
-    description: 'Visual calendar for classes and instructors.',
+    description: 'Operate recurring templates, dated sessions, capacity, and instructor assignments.',
     icon: Calendar,
     group: 'standalone'
   },
@@ -52,7 +52,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Check-in',
     href: '/platform/check-in',
     color: 'amber',
-    description: 'Front desk search and manual member check-ins.',
+    description: 'Validate current membership and record staffed facility entry or exit.',
     icon: UserCheck,
     group: 'standalone'
   },
@@ -60,15 +60,23 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Gym Settings',
     href: '/platform/store-settings',
     color: 'slate',
-    description: 'Update public gym identity, contact details, and storefront hours.',
+    description: 'Maintain public identity, locale, timezone, facility copy, and opening hours.',
     icon: Settings,
+    group: 'standalone'
+  },
+  {
+    title: 'Reports',
+    href: '/platform/reports',
+    color: 'rose',
+    description: 'Review bounded operational revenue, attendance, utilization, and membership health.',
+    icon: BarChart3,
     group: 'standalone'
   },
   {
     title: 'Locations',
     href: '/platform/locations',
     color: 'cyan',
-    description: 'Manage physical gym locations and facility contact records.',
+    description: 'Maintain facility identity, contact details, and active operating state.',
     icon: MapPin,
     group: 'standalone'
   },
@@ -78,7 +86,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Members',
     href: '/platform/members',
     color: 'blue',
-    description: 'Manage member profiles, statuses, and history.',
+    description: 'Search profiles, inspect activity, and manage account status.',
     icon: Users,
     group: 'management'
   },
@@ -86,7 +94,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Membership Plans',
     href: '/platform/membership-plans',
     color: 'emerald',
-    description: 'Configure plan pricing, credits, guest passes, and Stripe IDs.',
+    description: 'Configure pricing, enforced class credits and freezes, plus provider mappings.',
     icon: CreditCard,
     group: 'management'
   },
@@ -94,7 +102,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Instructors',
     href: '/platform/instructors',
     color: 'violet',
-    description: 'Manage public coach profiles and linked instructor accounts.',
+    description: 'Manage coach identity, assignments, descriptive specialties, and account claims.',
     icon: Dumbbell,
     group: 'management'
   },
@@ -102,7 +110,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Class Catalog',
     href: '/platform/class-catalog',
     color: 'amber',
-    description: 'Define class types, descriptions, duration, and required equipment.',
+    description: 'Define reusable class formats, difficulty, duration, and equipment context.',
     icon: Calendar,
     group: 'management'
   },
@@ -110,7 +118,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Rosters',
     href: '/platform/rosters',
     color: 'orange',
-    description: 'Open class rosters and mark attendance.',
+    description: 'Triage session capacity, promote waitlists, and record attendance outcomes.',
     icon: Users,
     group: 'management'
   },
@@ -130,6 +138,7 @@ export const platformNavGroups: PlatformNavGroup[] = [
 export function getPlatformNavItemsWithBasePath(basePath: string, user?: any) {
   const isInstructor = user?.role?.isInstructor;
   const canManageAll = user?.role?.canManageAllRecords;
+  const canViewReports = user?.role?.canViewReports;
 
   return platformNavItems
     .filter(item => {
@@ -137,6 +146,9 @@ export function getPlatformNavItemsWithBasePath(basePath: string, user?: any) {
       if (isInstructor && !canManageAll) {
         // Instructors ONLY see scheduling
         return item.title === 'Scheduling';
+      }
+      if (item.title === 'Reports' && !canViewReports && !canManageAll) {
+        return false;
       }
       return true;
     })

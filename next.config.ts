@@ -2,6 +2,7 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  devIndicators: false,
   serverExternalPackages: ['graphql'],
   // Workaround since we diverged from Keystone reltionship and document views
   // typescript: {

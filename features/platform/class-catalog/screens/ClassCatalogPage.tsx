@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { gql, request } from 'graphql-request'
 import { PageContainer } from '@/features/dashboard/components/PageContainer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Dumbbell, Flame, Plus, Save } from 'lucide-react'
+import { saveClassType as saveClassTypeRecord } from '../actions/class-catalog'
 
 type ClassTypeRecord = {
   id?: string
@@ -26,24 +26,6 @@ type ClassTypeRecord = {
   caloriesBurn?: number | null
   equipmentNeeded?: string[] | null
 }
-
-const UPDATE_CLASS_TYPE = gql`
-  mutation UpdateClassType($id: ID!, $data: ClassTypeUpdateInput!) {
-    updateClassType(where: { id: $id }, data: $data) {
-      id
-      name
-    }
-  }
-`
-
-const CREATE_CLASS_TYPE = gql`
-  mutation CreateClassType($data: ClassTypeCreateInput!) {
-    createClassType(data: $data) {
-      id
-      name
-    }
-  }
-`
 
 const EQUIPMENT_OPTIONS = [
   { value: 'mat', label: 'Mat' },
@@ -58,8 +40,9 @@ const EQUIPMENT_OPTIONS = [
 ]
 
 function documentToText(value: any): string {
-  if (!Array.isArray(value)) return ''
-  return value
+  const document = Array.isArray(value) ? value : value?.document
+  if (!Array.isArray(document)) return ''
+  return document
     .flatMap((node: any) => node?.children || [])
     .map((child: any) => child?.text || '')
     .join(' ')
@@ -91,6 +74,11 @@ export function ClassCatalogPage({ initialClassTypes }: { initialClassTypes: Cla
   const [isSaving, setIsSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [catalogQuery, setCatalogQuery] = useState('')
+
+  const filteredClassTypes = useMemo(() => classTypes
+    .filter((item) => `${item.name} ${item.difficulty || ''}`.toLowerCase().includes(catalogQuery.trim().toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name)), [classTypes, catalogQuery])
 
   const breadcrumbs = [
     { type: 'link' as const, label: 'Dashboard', href: '/dashboard' },
@@ -150,14 +138,14 @@ export function ClassCatalogPage({ initialClassTypes }: { initialClassTypes: Cla
       }
 
       if (selectedClassTypeId === 'new' || !form.id) {
-        const result = await request<any>('/api/graphql', CREATE_CLASS_TYPE, { data })
-        const created = { ...data, id: result?.createClassType?.id, description: toDocument(form.description) }
+        const result = await saveClassTypeRecord(data)
+        const created = { ...data, id: result.id, description: toDocument(form.description) }
         const next = [...classTypes, created]
         setClassTypes(next)
         if (created.id) setSelectedClassTypeId(created.id)
         setForm(normalizeClassType(created))
       } else {
-        await request('/api/graphql', UPDATE_CLASS_TYPE, { id: form.id, data })
+        await saveClassTypeRecord(data, form.id)
         const next = classTypes.map((item) =>
           item.id === form.id ? { ...item, ...data, description: toDocument(form.description) } : item
         )
@@ -208,14 +196,15 @@ export function ClassCatalogPage({ initialClassTypes }: { initialClassTypes: Cla
 
       <div className="grid w-full grid-cols-1 gap-6 px-4 md:px-6 py-4 md:py-5 xl:grid-cols-[340px_1fr] xl:items-start overflow-auto">
         <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="px-5 py-3 flex items-center justify-between border-b border-border bg-muted/20">
-            <span className="text-[11px] uppercase tracking-wider font-semibold text-foreground">Catalog</span>
-            <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={createNewClassType}>
+          <div className="px-4 py-3 space-y-3 border-b border-border bg-muted/20">
+            <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-foreground">Catalog</span>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={createNewClassType}>
               <Plus className="mr-1 h-3.5 w-3.5" /> New class
-            </Button>
+            </Button></div>
+            <label><span className="sr-only">Search class catalog</span><Input type="search" value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} placeholder="Search name or difficulty" /></label>
           </div>
           <div className="divide-y divide-border">
-            {classTypes.map((item) => {
+            {filteredClassTypes.map((item) => {
               const active = selectedClassTypeId === item.id
               return (
                 <button
@@ -234,8 +223,8 @@ export function ClassCatalogPage({ initialClassTypes }: { initialClassTypes: Cla
                 </button>
               )
             })}
-            {classTypes.length === 0 && (
-              <div className="px-5 py-10 text-sm text-muted-foreground">No class types yet. Create your first class format.</div>
+            {filteredClassTypes.length === 0 && (
+              <div className="px-5 py-10"><p className="text-sm font-medium">{classTypes.length ? 'No class types match this search.' : 'No class types yet.'}</p><p className="mt-1 text-xs text-muted-foreground">{classTypes.length ? 'Clear the search to restore the full catalog.' : 'Create a reusable class format to begin scheduling.'}</p></div>
             )}
           </div>
         </div>

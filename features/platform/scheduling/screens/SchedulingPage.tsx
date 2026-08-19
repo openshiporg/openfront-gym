@@ -1,6 +1,7 @@
 import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from 'date-fns';
 import { PageContainer } from '@/features/dashboard/components/PageContainer';
 import { requireDashboardUser } from '@/features/dashboard/lib/current-user';
+import { toPlainData } from '@/features/platform/lib/serialization';
 import { getSchedulingWorkspaceData } from '../actions/scheduling';
 import { SchedulingClient } from './SchedulingClient';
 
@@ -36,10 +37,11 @@ export async function SchedulingPage() {
   return (
     <PageContainer title="Scheduling" header={header} breadcrumbs={breadcrumbs}>
       <SchedulingClient
-        initialEvents={workspace.events as any}
-        schedules={workspace.schedules as any}
-        instructors={workspace.instructors as any}
-        upcomingInstances={workspace.upcomingInstances as any}
+        initialEvents={toPlainData(workspace.events) as any}
+        schedules={toPlainData(workspace.schedules) as any}
+        instructors={toPlainData(workspace.instructors) as any}
+        upcomingInstances={toPlainData(workspace.upcomingInstances) as any}
+        timeZone={workspace.timeZone}
         isInstructor={isInstructorOnly}
         canManageWorkspace={canManageWorkspace}
       />

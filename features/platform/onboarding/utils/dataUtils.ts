@@ -1,4 +1,4 @@
-import { GYM_TEMPLATES } from '../config/templates';
+import { GYM_TEMPLATES, type SetupTemplate } from '../config/templates';
 
 const DAY_LABELS: Record<string, string> = {
   sunday: 'Sunday',
@@ -21,52 +21,45 @@ export function formatScheduleDisplayName(schedule: {
   return `${name} · ${day} ${time}`;
 }
 
-// Helper function to extract display items from JSON data
 export function getItemsFromJsonData(jsonData: any, sectionType: string): string[] {
   if (!jsonData) return [];
-
   switch (sectionType) {
     case 'gymSettings':
       return jsonData.gymSettings?.name ? [jsonData.gymSettings.name] : [];
     case 'location':
       return jsonData.location?.name ? [jsonData.location.name] : [];
     case 'membershipTiers':
-      return (jsonData.membershipTiers || []).map((p: any) => p.name || 'Unknown Plan');
+      return (jsonData.membershipTiers || []).map((item: any) => item.name || 'Unknown Plan');
     case 'classTypes':
-      return (jsonData.classTypes || []).map((c: any) => c.name || 'Unknown Class');
+      return (jsonData.classTypes || []).map((item: any) => item.name || 'Unknown Class');
     case 'instructors':
-      return (jsonData.instructors || []).map((t: any) =>
-        `${t.firstName || ''} ${t.lastName || ''}`.trim() || 'Unknown Instructor'
+      return (jsonData.instructors || []).map((item: any) =>
+        `${item.firstName || ''} ${item.lastName || ''}`.trim() || 'Unknown Instructor'
       );
     case 'schedules':
-      return (jsonData.schedules || []).map((schedule: any) => formatScheduleDisplayName(schedule));
-    case 'demoMember':
-      return jsonData.demoMember?.name ? [jsonData.demoMember.name] : [];
+      return (jsonData.schedules || []).map((item: any) => formatScheduleDisplayName(item));
+    case 'paymentProviders':
+      return (jsonData.paymentProviders || []).map(
+        (item: any) => `${item.name || item.code || 'Payment provider'} integration status (enabled only with server credentials)`,
+      );
     default:
       return [];
   }
 }
 
-// Helper to get the right slice of seed data for a template
-export function getSeedForTemplate(
-  template: 'full' | 'minimal' | 'custom',
-  seedData: any,
-  customData?: Record<string, string[]>
-) {
-  const templateToUse = template === 'custom' ? 'minimal' : template;
-  const tpl = GYM_TEMPLATES[templateToUse];
-
-  const membershipTiers = (seedData.membershipTiers as any[]).filter((p: any) =>
-    tpl.membershipTiers.includes(p.handle)
+export function getSeedForTemplate(template: SetupTemplate, seedData: any) {
+  const selected = GYM_TEMPLATES[template];
+  const membershipTiers = (seedData.membershipTiers as any[]).filter((item) =>
+    selected.membershipTiers.includes(item.handle),
   );
-  const classTypes = (seedData.classTypes as any[]).filter((c: any) =>
-    tpl.classTypes.includes(c.handle)
+  const classTypes = (seedData.classTypes as any[]).filter((item) =>
+    selected.classTypes.includes(item.handle),
   );
-  const instructors = (seedData.instructors as any[]).filter((t: any) =>
-    tpl.instructors.includes(t.handle)
+  const instructors = (seedData.instructors as any[]).filter((item) =>
+    selected.instructors.includes(item.handle),
   );
-  const classTypeHandles = new Set(classTypes.map((item: any) => item.handle));
-  const instructorHandles = new Set(instructors.map((item: any) => item.handle));
+  const classTypeHandles = new Set(classTypes.map((item) => item.handle));
+  const instructorHandles = new Set(instructors.map((item) => item.handle));
 
   return {
     gymSettings: seedData.gymSettings,
@@ -75,18 +68,8 @@ export function getSeedForTemplate(
     classTypes,
     instructors,
     schedules: (seedData.schedules as any[]).filter(
-      (schedule: any) =>
-        classTypeHandles.has(schedule.classTypeHandle) &&
-        instructorHandles.has(schedule.instructorHandle)
+      (item) => classTypeHandles.has(item.classTypeHandle) && instructorHandles.has(item.instructorHandle),
     ),
-    demoMember: seedData.demoMember
-      ? {
-          ...seedData.demoMember,
-          membershipTierHandle:
-            membershipTiers.find((tier: any) => tier.handle === seedData.demoMember.membershipTierHandle)?.handle ||
-            membershipTiers[0]?.handle ||
-            seedData.demoMember.membershipTierHandle,
-        }
-      : null,
+    paymentProviders: seedData.paymentProviders || [],
   };
 }

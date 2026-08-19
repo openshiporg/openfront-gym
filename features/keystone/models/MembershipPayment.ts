@@ -1,21 +1,43 @@
 import { list } from "@keystone-6/core";
-import { allOperations } from "@keystone-6/core/access";
+import { denyAll } from "@keystone-6/core/access";
 import {
   relationship,
   select,
   timestamp,
-  float,
+  integer,
   text,
   checkbox,
 } from "@keystone-6/core/fields";
 
-import { isSignedIn } from "../access";
+import { isSignedIn, permissions, rules } from "../access";
 import { trackingFields } from "./trackingFields";
+import { paymentEvidenceHooks } from "./paymentEvidence";
+import { requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 
 export const MembershipPayment = list({
+  hooks: {
+    async validateInput(args: any) {
+      paymentEvidenceHooks("MembershipPayment").validateInput(args);
+      await validateTenantOwnership([
+        { field: "member", list: "user", required: true },
+        { field: "membership", list: "membership" },
+        { field: "processedBy", list: "user" },
+      ])(args);
+    },
+    validateDelete: paymentEvidenceHooks("MembershipPayment").validateDelete,
+  },
   access: {
     operation: {
-      query: () => true, create: isSignedIn, update: isSignedIn, delete: isSignedIn,
+      query: isSignedIn,
+      // Payment evidence is written by payment workflows, not generated CRUD.
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
+    },
+    filter: {
+      query: rules.canReadOwnMembership,
+      update: rules.canReadOwnMembership,
+      delete: rules.canReadOwnMembership,
     },
   },
   ui: {
@@ -24,6 +46,12 @@ export const MembershipPayment = list({
     },
   },
   fields: {
+    organization: relationship({
+      ref: "Organization.membershipPayments",
+      access: { update: () => false },
+      graphql: { isNonNull: { read: true } },
+      db: { extendPrismaSchema: requiredRelationshipDb("organization") },
+    }),
     member: relationship({
       ref: "User.payments",
       ui: {
@@ -39,11 +67,17 @@ export const MembershipPayment = list({
       },
     }),
 
-    amount: float({
+    amount: integer({
       validation: { isRequired: true },
       ui: {
-        description: "Payment amount in dollars",
+        description: "Payment amount in the currency minor unit",
       },
+    }),
+
+    currencyCode: text({
+      validation: { isRequired: true },
+      defaultValue: "USD",
+      ui: { description: "ISO 4217 currency code" },
     }),
 
     paymentType: select({
@@ -94,18 +128,25 @@ export const MembershipPayment = list({
 
     // Stripe-specific fields
     stripePaymentIntentId: text({
+      db: { isNullable: true },
+      access: { read: permissions.canManageAllRecords },
       ui: {
         description: "Stripe Payment Intent ID",
       },
     }),
 
     stripeChargeId: text({
+      db: { isNullable: true },
+      access: { read: permissions.canManageAllRecords },
       ui: {
         description: "Stripe Charge ID",
       },
     }),
 
     stripeInvoiceId: text({
+      db: { isNullable: true },
+      access: { read: permissions.canManageAllRecords },
+      isIndexed: "unique",
       ui: {
         description: "Stripe Invoice ID (for subscriptions)",
       },
@@ -133,6 +174,7 @@ export const MembershipPayment = list({
     }),
 
     notes: text({
+      access: { read: permissions.canManageAllRecords },
       ui: {
         displayMode: "textarea",
         description: "Internal notes about this payment",
@@ -152,7 +194,7 @@ export const MembershipPayment = list({
       },
     }),
 
-    refundAmount: float({
+    refundAmount: integer({
       ui: {
         description: "Amount refunded (partial or full)",
       },
@@ -166,6 +208,7 @@ export const MembershipPayment = list({
 
     processedBy: relationship({
       ref: "User",
+      access: { read: permissions.canManageAllRecords },
       ui: {
         displayMode: "select",
         description: "Staff member who processed this payment (for manual payments)",

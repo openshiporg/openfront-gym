@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { CalendarDays, Clock, MapPin, Users, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { bookClass } from "@/features/storefront/lib/actions/classes";
 
 type ClassBookingModalProps = {
@@ -20,6 +21,8 @@ type ClassBookingModalProps = {
     capacity: number;
     difficulty?: string;
     date?: string;
+    location?: string;
+    isBookable?: boolean;
   };
   onBookingSuccess?: () => void;
 };
@@ -30,7 +33,12 @@ export default function ClassBookingModal({
   classData,
   onBookingSuccess,
 }: ClassBookingModalProps) {
-  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [result, setResult] = useState<{
+    success: boolean;
+    message: string;
+    actionHref?: string;
+    actionLabel?: string;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -38,11 +46,20 @@ export default function ClassBookingModal({
     startTransition(async () => {
       const res = await bookClass(classData.id);
       if (res.success) {
-        setResult({ success: true, message: `Booked! You have ${res.creditsRemaining === -1 ? "unlimited" : res.creditsRemaining} credit(s) remaining.` });
+        const message =
+          res.status === "waitlist"
+            ? `Joined the waitlist${res.waitlistPosition ? ` at position #${res.waitlistPosition}` : ""}. No class credit was used.`
+            : `Booked. You have ${res.creditsRemaining === -1 ? "unlimited" : res.creditsRemaining} class credit(s) remaining.`;
+        setResult({ success: true, message });
         router.refresh();
         onBookingSuccess?.();
       } else {
-        setResult({ success: false, message: res.error });
+        setResult({
+          success: false,
+          message: res.error,
+          actionHref: res.actionHref,
+          actionLabel: res.actionLabel,
+        });
       }
     });
   };
@@ -54,18 +71,28 @@ export default function ClassBookingModal({
 
   const spotsLeft = classData.spots;
   const isFull = spotsLeft === 0;
+  const isBookable = classData.isBookable !== false;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Book class</DialogTitle>
+          <DialogDescription>
+            Review the dated class occurrence, capacity, coach, and location before confirming.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Class info */}
           <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
             <p className="font-semibold">{classData.name}</p>
+            {classData.date ? (
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <CalendarDays className="h-3.5 w-3.5" />
+                {classData.date}
+              </p>
+            ) : null}
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Clock className="h-3.5 w-3.5" />
@@ -82,9 +109,15 @@ export default function ClassBookingModal({
                 )}
               </span>
             </div>
-            {classData.instructor && (
+            {classData.instructor ? (
               <p className="text-xs text-muted-foreground">with {classData.instructor}</p>
-            )}
+            ) : null}
+            {classData.location ? (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <MapPin className="h-3.5 w-3.5" />
+                {classData.location}
+              </p>
+            ) : null}
           </div>
 
           {/* Result feedback */}
@@ -101,27 +134,39 @@ export default function ClassBookingModal({
             </div>
           )}
 
+          {result && !result.success && result.actionHref && result.actionLabel ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="outline" onClick={handleClose}>Cancel</Button>
+              <Button asChild>
+                <Link href={result.actionHref}>{result.actionLabel}</Link>
+              </Button>
+            </div>
+          ) : null}
+
           {/* Actions */}
-          {!result?.success && (
+          {!result?.success && !result?.actionHref && (
             <div className="flex gap-3">
               <Button variant="outline" onClick={handleClose} className="flex-1">
                 Cancel
               </Button>
               <Button
                 onClick={handleBook}
-                disabled={isPending || isFull}
+                disabled={isPending || !isBookable}
                 className="flex-1"
               >
                 {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {isFull ? "Join waitlist" : "Confirm booking"}
+                {!isBookable ? "No upcoming session" : isFull ? "Join waitlist" : "Confirm booking"}
               </Button>
             </div>
           )}
-          {result?.success && (
-            <Button onClick={handleClose} className="w-full">
-              Done
-            </Button>
-          )}
+          {result?.success ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="outline" onClick={handleClose}>Done</Button>
+              <Button asChild>
+                <Link href="/account/bookings">View bookings</Link>
+              </Button>
+            </div>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

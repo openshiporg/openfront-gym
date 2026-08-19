@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache";
 import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PageContainer } from "@/features/dashboard/components/PageContainer";
+import { MemberInviteForm } from "../components/MemberInviteForm";
 import MemberListPageClient, {
   type MemberSummary,
 } from "./MemberListPageClient";
@@ -14,6 +16,8 @@ type SearchParams = {
   joinedFrom?: string | string[];
   joinedTo?: string | string[];
   page?: string | string[];
+  notice?: string | string[];
+  error?: string | string[];
 };
 
 const PAGE_SIZE = 18;
@@ -51,18 +55,17 @@ async function suspendMember(formData: FormData) {
   "use server";
 
   const memberId = formData.get("memberId")?.toString();
-  if (!memberId) return;
+  const status = formData.get("status")?.toString();
+  if (!memberId || !["active", "suspended", "cancelled"].includes(status || "")) return;
 
   const mutation = `
-    mutation SuspendMember($id: ID!) {
-      updateMember(where: { id: $id }, data: { status: "suspended" }) {
-        id
-        status
-      }
+    mutation SetMemberAccountStatus($id: ID!, $status: String!) {
+      setMemberAccountStatus(memberId: $id, status: $status) { id status }
     }
   `;
 
-  await keystoneClient(mutation, { id: memberId });
+  const response = await keystoneClient(mutation, { id: memberId, status });
+  if (!response.success) throw new Error(response.error);
   revalidatePath("/dashboard/platform/members");
 }
 
@@ -78,6 +81,8 @@ export default async function MemberListPage({
   const joinedFrom = getParam(resolvedSearchParams.joinedFrom);
   const joinedTo = getParam(resolvedSearchParams.joinedTo);
   const page = Math.max(1, parseInt(getParam(resolvedSearchParams.page) || "1", 10));
+  const notice = getParam(resolvedSearchParams.notice);
+  const error = getParam(resolvedSearchParams.error);
 
   const where: Record<string, unknown> = {};
 
@@ -152,25 +157,43 @@ export default async function MemberListPage({
   if (joinedTo) params.set("joinedTo", joinedTo);
   params.set("page", currentPage.toString());
 
+  const activeCount = members.filter((member) => (member.status ?? "active") === "active").length;
+  const needsPlanCount = members.filter((member) => !member.membershipTier).length;
+  const header = <div className="flex flex-col gap-1"><h1 className="text-lg font-semibold md:text-2xl">Member directory</h1><p className="text-muted-foreground">Find a member, verify account context, and move into the next operator task.</p></div>;
+  const breadcrumbs = [{ type: "link" as const, label: "Dashboard", href: "/dashboard" }, { type: "page" as const, label: "Members" }];
+
   return (
-    <div className="min-h-screen bg-muted/40">
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-semibold">Member Directory</h1>
-          <p className="text-sm text-muted-foreground">
-            Search members, manage statuses, and review activity at a glance.
-          </p>
+    <PageContainer title="Members" header={header} breadcrumbs={breadcrumbs}>
+      <div className="w-full min-w-0 space-y-5 p-4 md:p-6">
+        {!response.success ? <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">The member directory could not be loaded. {response.error}</div> : null}
+        <div className="grid grid-cols-3 divide-x rounded-lg border bg-card">
+          <div className="p-3"><p className="text-xs text-muted-foreground">Matching members</p><p className="mt-1 text-2xl font-semibold tabular-nums">{totalCount}</p></div>
+          <div className="p-3"><p className="text-xs text-muted-foreground">Active on this page</p><p className="mt-1 text-2xl font-semibold tabular-nums">{activeCount}</p></div>
+          <div className="p-3"><p className="text-xs text-muted-foreground">No plan on this page</p><p className="mt-1 text-2xl font-semibold tabular-nums">{needsPlanCount}</p></div>
         </div>
 
-        <div className="mt-8 rounded-xl border bg-card p-6 shadow-sm">
+        {notice ? (
+          <div className="mt-6 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+            {notice === "invite-sent"
+              ? "Member account created. A secure password-setup email was sent. They can then sign in and choose a membership."
+              : "Member account created, but the password-setup email could not be sent. Ask them to use Forgot password before sign-in."}
+          </div>
+        ) : null}
+        {error ? (
+          <div className="mt-6 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div>
+        ) : null}
+
+        <MemberInviteForm />
+
+        <div className="rounded-lg border bg-card p-4">
           <form method="get" className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <Input
+            <label><span className="sr-only">Search members</span><Input
               name="q"
               type="search"
               placeholder="Search name, email, or phone"
               defaultValue={query}
-            />
-            <select
+            /></label>
+            <label><span className="sr-only">Filter by member status</span><select
               name="status"
               defaultValue={status || "all"}
               className="h-11 rounded-md border border-input bg-background px-3 text-sm"
@@ -179,8 +202,8 @@ export default async function MemberListPage({
               <option value="active">Active</option>
               <option value="suspended">Suspended</option>
               <option value="cancelled">Cancelled</option>
-            </select>
-            <select
+            </select></label>
+            <label><span className="sr-only">Filter by membership tier</span><select
               name="tier"
               defaultValue={tier || "all"}
               className="h-11 rounded-md border border-input bg-background px-3 text-sm"
@@ -191,17 +214,17 @@ export default async function MemberListPage({
                   {tierOption.name || "Unnamed"}
                 </option>
               ))}
-            </select>
-            <Input
+            </select></label>
+            <label><span className="sr-only">Joined on or after</span><Input
               name="joinedFrom"
               type="date"
               defaultValue={joinedFrom}
-            />
-            <Input
+            /></label>
+            <label><span className="sr-only">Joined on or before</span><Input
               name="joinedTo"
               type="date"
               defaultValue={joinedTo}
-            />
+            /></label>
             <div className="flex flex-wrap gap-2 md:col-span-2 xl:col-span-5">
               <Button type="submit">Apply filters</Button>
               <Button asChild type="button" variant="secondary">
@@ -211,45 +234,28 @@ export default async function MemberListPage({
           </form>
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm text-muted-foreground">
             Showing {members.length} of {totalCount} members
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <Button asChild variant="outline" size="sm" disabled={currentPage <= 1}>
-              <Link
-                href={
-                  `/dashboard/platform/members?${buildSearchString(params, {
-                    page: (currentPage - 1).toString(),
-                  })}`
-                }
-              >
-                Previous
-              </Link>
-            </Button>
+            {currentPage <= 1 ? <Button variant="outline" size="sm" disabled>Previous</Button> : (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/dashboard/platform/members?${buildSearchString(params, { page: (currentPage - 1).toString() })}`}>Previous</Link>
+              </Button>
+            )}
             <span className="text-muted-foreground">
               Page {currentPage} of {totalPages}
             </span>
-            <Button
-              asChild
-              variant="outline"
-              size="sm"
-              disabled={currentPage >= totalPages}
-            >
-              <Link
-                href={
-                  `/dashboard/platform/members?${buildSearchString(params, {
-                    page: (currentPage + 1).toString(),
-                  })}`
-                }
-              >
-                Next
-              </Link>
-            </Button>
+            {currentPage >= totalPages ? <Button variant="outline" size="sm" disabled>Next</Button> : (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/dashboard/platform/members?${buildSearchString(params, { page: (currentPage + 1).toString() })}`}>Next</Link>
+              </Button>
+            )}
           </div>
         </div>
 
-        <div className="mt-6">
+        <div>
           <MemberListPageClient
             members={members}
             viewProfileBasePath="/dashboard/Member"
@@ -257,6 +263,6 @@ export default async function MemberListPage({
           />
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }
