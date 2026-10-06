@@ -12,6 +12,8 @@ import { getUser } from "@/features/storefront/lib/data/user";
 import { gql } from "graphql-request";
 import { gymClient } from "@/features/storefront/lib/config";
 import { getAuthHeaders } from "@/features/storefront/lib/data/cookies";
+import { instructorTools } from "@/features/storefront/lib/instructor-tools";
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 
 type BookingSummary = {
   id: string;
@@ -64,8 +66,9 @@ async function getInstructorProfile(_userId: string, _organizationId: string): P
 
 const WEEK_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string, timeZone: string) {
   return new Date(value).toLocaleString("en-US", {
+    timeZone,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -77,7 +80,7 @@ function formatDateTime(value: string) {
 function getSessionStatus(sessionDate: string) {
   const diffMs = new Date(sessionDate).getTime() - Date.now();
 
-  if (diffMs <= 0) return "In progress";
+  if (diffMs <= 0) return "Started";
   if (diffMs <= 60 * 60 * 1000) return "Starts within 1 hour";
   if (diffMs <= 3 * 60 * 60 * 1000) return "Starts this block";
   return "Upcoming";
@@ -133,7 +136,8 @@ function AccountState({ title, message }: { title: string; message: string }) {
 }
 
 export async function InstructorAccountPage() {
-  const user = await getUser();
+  const [user, config] = await Promise.all([getUser(), getStorefrontConfig()]);
+  const timeZone = config?.timezone || "UTC";
 
   if (!user) {
     return <AccountState title="Sign in required" message="Sign in to access your instructor workspace." />;
@@ -193,17 +197,25 @@ export async function InstructorAccountPage() {
     .filter((session) => session.waitlistCount > 0 || (session.capacity > 0 && session.confirmedBookings >= session.capacity))
     .slice(0, 3);
   const canOpenOperations = Boolean(user.role.canAccessDashboard);
+  const teachingTools = instructorTools(user.role);
+  const teachingToolIcons = {
+    users: Users,
+    external: ArrowUpRight,
+    calendar: CalendarDays,
+    graduation: GraduationCap,
+  };
 
   return (
     <div className="space-y-12">
       <header className="max-w-3xl">
         <p className="sf-eyebrow mb-3">Coach workspace</p>
-        <h1 className="sf-display text-[var(--text-display-s)]">Instructor console</h1>
+        <h1 className="sf-display text-[var(--text-display-s)]">Your teaching day</h1>
         <p className="mt-4 sf-lead">
-          Review your upcoming teaching calendar, roster occupancy, waitlist pressure, and recurring weekly schedule.
+          Start with your next session, review the roster and prepare for the members joining you.
         </p>
       </header>
 
+      <nav className="sf-segmented" aria-label="Teaching sections"><a href="#next-teaching-session">Next session</a><a href="#upcoming-calendar-heading">Teaching calendar</a><a href="#teaching-tools">Your tools</a><a href="#coach-profile">Coach profile</a></nav>
       <section aria-label="Instructor summary" className="grid gap-px border border-[var(--color-rule)] bg-[var(--color-rule)] sm:grid-cols-2 xl:grid-cols-4">
         {[
           ["Upcoming sessions", upcomingInstances.length],
@@ -220,7 +232,7 @@ export async function InstructorAccountPage() {
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
         <div className="space-y-10">
-          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6 sm:p-8">
+          <section id="next-teaching-session" className="sf-next-session">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="sf-eyebrow">Next roster</p>
@@ -229,7 +241,7 @@ export async function InstructorAccountPage() {
                 </h2>
                 <p className="mt-3 text-sm text-[var(--color-ink-muted)]">
                   {nextSession
-                    ? `${formatDateTime(nextSession.date)} · ${nextSession.statusLabel}`
+                    ? `${formatDateTime(nextSession.date, timeZone)} · ${nextSession.statusLabel}`
                     : "Your next scheduled class will appear here."}
                 </p>
               </div>
@@ -280,7 +292,7 @@ export async function InstructorAccountPage() {
                     <div>
                       <p className="sf-eyebrow">{session.statusLabel}</p>
                       <h3 className="mt-2 text-xl font-semibold">{session.classSchedule?.name ?? "Class session"}</h3>
-                      <p className="mt-2 text-sm text-[var(--color-ink-muted)]">{formatDateTime(session.date)}</p>
+                      <p className="mt-2 text-sm text-[var(--color-ink-muted)]">{formatDateTime(session.date, timeZone)}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-5 md:justify-end">
                       <div>
@@ -308,20 +320,15 @@ export async function InstructorAccountPage() {
           <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
             <div className="flex items-center gap-2">
               <Users aria-hidden="true" className="h-4 w-4 text-[var(--color-accent)]" />
-              <h2 className="text-xl font-semibold">Teaching tools</h2>
+              <h2 id="teaching-tools" className="text-xl font-semibold">Teaching tools</h2>
             </div>
-            {canOpenOperations ? (
+            {teachingTools.length ? (
               <div className="mt-5 space-y-2">
-                {[
-                  ["Live rosters", "/dashboard/platform/rosters", Users],
-                  ["Operations reports", "/dashboard/platform/reports", ArrowUpRight],
-                  ["Scheduling center", "/dashboard/platform/scheduling", CalendarDays],
-                  ["Instructor profile", "/dashboard/platform/instructors", GraduationCap],
-                ].map(([label, href, Icon]) => {
-                  const ToolIcon = Icon as typeof Users;
+                {teachingTools.map((tool) => {
+                  const ToolIcon = teachingToolIcons[tool.icon];
                   return (
-                    <Link key={String(href)} href={String(href)} className="flex items-center justify-between border-b border-[var(--color-rule)] py-3 text-sm font-medium last:border-b-0 hover:text-[var(--color-accent)]">
-                      <span>{String(label)}</span>
+                    <Link key={tool.href} href={tool.href} className="flex items-center justify-between border-b border-[var(--color-rule)] py-3 text-sm font-medium last:border-b-0 hover:text-[var(--color-accent)]">
+                      <span>{tool.label}</span>
                       <ToolIcon aria-hidden="true" className="h-4 w-4" />
                     </Link>
                   );
@@ -348,7 +355,7 @@ export async function InstructorAccountPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h3 className="font-semibold">{session.classSchedule?.name ?? "Class session"}</h3>
-                        <p className="mt-1 text-xs text-[var(--color-ink-muted)]">{formatDateTime(session.date)}</p>
+                        <p className="mt-1 text-xs text-[var(--color-ink-muted)]">{formatDateTime(session.date, timeZone)}</p>
                       </div>
                       <Clock3 aria-hidden="true" className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" />
                     </div>
@@ -393,7 +400,7 @@ export async function InstructorAccountPage() {
           </section>
 
           <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
-            <h2 className="text-xl font-semibold">Coach profile</h2>
+            <h2 id="coach-profile" className="text-xl font-semibold">Coach profile</h2>
             <dl className="mt-5 space-y-5 text-sm">
               <div>
                 <dt className="sf-label">Specialties</dt>

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { createInitialUser, signIn } from "@/features/dashboard/actions";
+import { createInitialUser } from "@/features/dashboard/actions";
 import { Logo } from "@/features/dashboard/components/Logo";
 
 type ActionState = {
@@ -51,44 +51,7 @@ const initialState: ActionState = {
 
 export function InitPage() {
   const [showPassword, setShowPassword] = useState(false);
-  const [state, formAction] = useActionState(
-    async (prevState: ActionState, formData: FormData) => {
-      const result = await createInitialUser(prevState, formData);
-
-      if ("message" in result && result.message) {
-        return {
-          message: result.message,
-          formData: {
-            name: formData.get("name") as string,
-            email: formData.get("email") as string,
-            password: formData.get("password") as string,
-          },
-        };
-      }
-
-      // If successful, sign in the user
-      await signIn(
-        {
-          message: null,
-          formData: {
-            email: formData.get("email") as string,
-            password: formData.get("password") as string,
-          },
-        },
-        formData
-      );
-
-      return {
-        message: null,
-        formData: {
-          name: formData.get("name") as string,
-          email: formData.get("email") as string,
-          password: formData.get("password") as string,
-        },
-      };
-    },
-    initialState
-  );
+  const [state, formAction] = useActionState(createInitialUser, initialState);
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
@@ -96,9 +59,9 @@ export function InitPage() {
         <div className="flex items-center space-x-1.5">
           <Logo aria-hidden="true" />
         </div>
-        <h3 className="mt-6 text-lg font-semibold text-foreground dark:text-foreground">
+        <h1 className="mt-6 text-lg font-semibold text-foreground dark:text-foreground">
           Create admin account
-        </h3>
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground dark:text-muted-foreground">
           Set up your admin account to get started.
         </p>
@@ -161,6 +124,8 @@ export function InitPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-controls="password"
                 className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-500"
               >
                 {showPassword ? (

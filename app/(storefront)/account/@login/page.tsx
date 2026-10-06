@@ -16,7 +16,8 @@ export default async function Page(props: {
   return (
     <LoginPage
       redirectTo={safeStorefrontReturnPath(returnTo)}
-      allowSignup={process.env.PUBLIC_SIGNUPS_ALLOWED === "true"}
+      allowSignup={process.env.PUBLIC_MEMBER_SIGNUPS_ALLOWED === "true"}
+      showHeading
     />
   );
 }

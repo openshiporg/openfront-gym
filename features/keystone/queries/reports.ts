@@ -1,4 +1,5 @@
 import { resolveGymTimeZone, zonedStartOfDay, zonedStartOfMonth, zonedStartOfNextDay } from "../../../lib/timezone";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
 function reportManager(context: any) {
   const session = context.session as any;
@@ -18,18 +19,26 @@ export async function getReportsDashboard(_root: unknown, _args: unknown, contex
   const organizationWhere = { organization: { id: { equals: organizationId } } };
   const sudo = context.sudo();
   const now = new Date();
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
   const [settings, organization] = await Promise.all([
-    context.prisma.gymSettings.findUnique({
+    prisma.gymSettings.findUnique({
       where: { organizationId },
       select: { currencyCode: true, timezone: true },
     }),
-    context.prisma.organization.findUnique({
+    prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { timezone: true },
+      select: { timezone: true, defaultCurrency: true },
     }),
   ]);
   const timeZone = resolveGymTimeZone(settings?.timezone, organization?.timezone);
   const reportCurrency = String(settings?.currencyCode || "USD").toUpperCase();
+  if (reportCurrency !== "USD" || String(organization?.defaultCurrency || "USD").toUpperCase() !== reportCurrency) {
+    throw new Error("Report currency settings do not match the supported USD contract; reconcile Organization and Gym Settings before reporting.");
+  }
+  const receiptCurrencies = await prisma.membershipPayment.groupBy({ by: ["currencyCode"], where: { organizationId, status: { in: ["completed", "refunded"] } }, _count: { _all: true } });
+  if (receiptCurrencies.some((row: any) => String(row.currencyCode || "").toUpperCase() !== reportCurrency)) {
+    throw new Error("Settled receipt currencies are outside the supported USD report scope; reconcile receipt history before reporting.");
+  }
   const todayStart = zonedStartOfDay(now, timeZone);
   const todayEnd = zonedStartOfNextDay(now, timeZone);
   const monthStart = zonedStartOfMonth(now, timeZone);
@@ -51,12 +60,17 @@ export async function getReportsDashboard(_root: unknown, _args: unknown, contex
     upcomingInstances,
     activeMembershipMembers,
   ] = await Promise.all([
-    sudo.query.Member.count({ where: { ...organizationWhere, status: { equals: "active" } } }),
+    prisma.member.count({ where: { organizationId, status: 'active', user: { membership: {
+      status: 'active', OR: [
+        { creditPeriodStart: { lte: now }, creditPeriodEnd: { gt: now } },
+        { creditPeriodEnd: null, startDate: { lte: now }, nextBillingDate: { gt: now } },
+      ],
+    } } } }),
     sudo.query.CheckIn.count({ where: { ...organizationWhere, checkInTime: { gte: todayStart.toISOString(), lt: todayEnd.toISOString() } } }),
     sudo.query.ClassInstance.count({ where: { ...organizationWhere, date: { gte: todayStart.toISOString(), lt: todayEnd.toISOString() }, isCancelled: { equals: false } } }),
     sudo.query.ClassInstance.count({ where: { ...organizationWhere, date: { gte: now.toISOString(), lte: soonThreshold.toISOString() }, isCancelled: { equals: false } } }),
     sudo.query.Membership.count({ where: { ...organizationWhere, status: { equals: "past-due" } } }),
-    context.prisma.membershipPayment.aggregate({
+    prisma.membershipPayment.aggregate({
       where: {
         organizationId,
         currencyCode: reportCurrency,
@@ -66,7 +80,7 @@ export async function getReportsDashboard(_root: unknown, _args: unknown, contex
       _sum: { amount: true, refundAmount: true },
       _count: { _all: true },
     }),
-    context.prisma.membershipPayment.aggregate({
+    prisma.membershipPayment.aggregate({
       where: {
         organizationId,
         currencyCode: reportCurrency,
@@ -76,10 +90,10 @@ export async function getReportsDashboard(_root: unknown, _args: unknown, contex
       _sum: { amount: true, refundAmount: true },
       _count: { _all: true },
     }),
-    context.prisma.attendanceRecord.count({ where: { organizationId, markedAt: { gte: attendanceWindowStart, lt: now } } }),
-    context.prisma.attendanceRecord.count({ where: { organizationId, markedAt: { gte: attendanceWindowStart, lt: now }, attended: true } }),
-    context.prisma.attendanceRecord.count({ where: { organizationId, markedAt: { gte: attendanceWindowStart, lt: now }, lateArrival: true } }),
-    context.prisma.attendanceRecord.count({ where: { organizationId, markedAt: { gte: attendanceWindowStart, lt: now }, attended: false } }),
+    prisma.attendanceRecord.count({ where: { organizationId, markedAt: { gte: attendanceWindowStart, lt: now } } }),
+    prisma.attendanceRecord.count({ where: { organizationId, markedAt: { gte: attendanceWindowStart, lt: now }, attended: true } }),
+    prisma.attendanceRecord.count({ where: { organizationId, markedAt: { gte: attendanceWindowStart, lt: now }, lateArrival: true } }),
+    prisma.attendanceRecord.count({ where: { organizationId, markedAt: { gte: attendanceWindowStart, lt: now }, attended: false } }),
     sudo.query.ClassInstance.findMany({
       where: { ...organizationWhere, date: { gte: now.toISOString() }, isCancelled: { equals: false } },
       take: 12,

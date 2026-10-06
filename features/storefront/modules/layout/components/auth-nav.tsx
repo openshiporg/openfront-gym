@@ -65,7 +65,7 @@ export default function AuthNav({ user, joinCta }: AuthNavProps) {
           </button>
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="end" className="w-64 border-[var(--sf-rule)] bg-[var(--sf-paper)]">
+        <DropdownMenuContent align="end" className="sf-floating-surface w-64 rounded-[2px] border-[var(--sf-border)] bg-[var(--sf-surface)] text-[var(--sf-foreground)] shadow-none">
           <DropdownMenuLabel className="font-normal">
             <p className="font-semibold">{user.name}</p>
             <p className="mt-1 text-xs text-[var(--sf-ink-muted)]">{user.email}</p>

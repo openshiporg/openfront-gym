@@ -67,7 +67,10 @@ export function useOnboardingApi({
       }
 
       setProgress('Creating the selected plans, class catalog, instructors, schedules, and future class instances…');
-      await runDeterministicOnboardingAction(selectedTemplate);
+      await runDeterministicOnboardingAction(
+        selectedTemplate,
+        selectedTemplate === 'custom' ? currentJsonData : undefined,
+      );
 
       const completionResult = await completeOnboarding();
       if (!completionResult?.success) {

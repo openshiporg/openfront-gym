@@ -18,8 +18,8 @@ export default async function StorefrontServer({
   return (
     <ThemeProvider
       attribute="class"
-      defaultTheme="light"
-      enableSystem={false}
+      defaultTheme="system"
+      enableSystem
       disableTransitionOnChange
     >
       <MainLayout user={user}>{children}</MainLayout>

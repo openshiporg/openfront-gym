@@ -1,6 +1,6 @@
-import { Building2, Package } from 'lucide-react';
+import { Building2, CircleCheck, Package } from 'lucide-react';
 
-export type SetupTemplate = 'full' | 'minimal';
+export type SetupTemplate = 'full' | 'minimal' | 'custom';
 
 export interface GymTemplate {
   name: string;
@@ -52,6 +52,24 @@ export const GYM_TEMPLATES: Record<SetupTemplate, GymTemplate> = {
         'Boxing · Tuesday 18:00',
         'Boxing · Thursday 18:00',
       ],
+      paymentProviders: ['Stripe integration status (enabled only with server credentials)'],
+    },
+  },
+  custom: {
+    name: 'Custom Setup',
+    description:
+      'Start from the complete Gym configuration, customize supported plans, classes, instructors, and schedules, then validate it before setup.',
+    icon: <CircleCheck className="h-5 w-5" />,
+    membershipTiers: ['basic-monthly', 'premium-monthly'],
+    classTypes: ['yoga', 'spin', 'hiit', 'pilates', 'zumba', 'boxing'],
+    instructors: ['sarah-johnson', 'mike-rodriguez', 'emily-chen'],
+    displayNames: {
+      gymSettings: ['Custom gym profile'],
+      location: ['Custom location'],
+      membershipTiers: [],
+      classTypes: [],
+      instructors: [],
+      schedules: [],
       paymentProviders: ['Stripe integration status (enabled only with server credentials)'],
     },
   },

@@ -89,6 +89,8 @@ export const ClassBooking = list({
       },
     }),
 
+    eligibilityReviewReason: text({ access: { create: denyAll, update: denyAll } }),
+
     notes: text({
       ui: {
         displayMode: "textarea",

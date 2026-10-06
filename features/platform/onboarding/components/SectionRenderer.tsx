@@ -6,7 +6,7 @@ import { getItemsFromJsonData } from '../utils/dataUtils';
 
 interface SectionRendererProps {
   sections: SectionDefinition[];
-  selectedTemplate: 'full' | 'minimal';
+  selectedTemplate: 'full' | 'minimal' | 'custom';
   isLoading: boolean;
   loadingItems: Record<string, string[]>;
   completedItems: Record<string, string[]>;

@@ -6,12 +6,14 @@ import {
   integer,
   checkbox,
   text,
+  json,
 } from "@keystone-6/core/fields";
 
 import { isSignedIn, permissions, rules } from "../access";
 import { trackingFields } from "./trackingFields";
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 import { tenantFilter } from "../access/tenantPolicy";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
 const validateClassInstanceTenant = validateTenantOwnership([
   { field: "classSchedule", list: "classSchedule", required: true },
@@ -25,7 +27,8 @@ export const ClassInstance = list({
       await validateClassInstanceTenant(args);
       const nextCapacity = args.resolvedData.maxCapacity;
       if (args.operation === "update" && typeof nextCapacity === "number" && args.item?.id) {
-        const confirmed = await args.context.prisma.classBooking.count({
+        const prisma = guardKeystonePrismaResults(args.context.prisma as any);
+        const confirmed = await prisma.classBooking.count({
           where: { classInstanceId: args.item.id, status: "confirmed" },
         });
         if (nextCapacity < confirmed) {
@@ -37,9 +40,9 @@ export const ClassInstance = list({
   access: {
     operation: {
       query: isSignedIn,
-      create: permissions.canManageAllRecords,
-      update: permissions.canManageAllRecords,
-      delete: permissions.canManageAllRecords,
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
     },
     filter: {
       query: rules.canReadClassInstance,
@@ -59,6 +62,11 @@ export const ClassInstance = list({
       graphql: { isNonNull: { read: true } },
       db: { extendPrismaSchema: requiredRelationshipDb("organization") },
     }),
+    location: relationship({ ref: "Location" }),
+    resource: relationship({ ref: "GymResource" }),
+    endsAt: timestamp(),
+    changeHistory: json({ defaultValue: [] }),
+    occurrenceKey: text({ isIndexed: "unique", db: { isNullable: true } }),
     // Reference to the recurring schedule
     classSchedule: relationship({
       ref: "ClassSchedule.instances",

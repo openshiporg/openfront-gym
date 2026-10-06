@@ -12,8 +12,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Page(props: {
-  searchParams: Promise<{ tier?: string; checkoutError?: string; returnTo?: string }>;
+  searchParams: Promise<{ tier?: string; cycle?: string; checkoutError?: string; returnTo?: string }>;
 }) {
-  const { tier, checkoutError, returnTo } = await props.searchParams;
-  return <JoinPage tier={tier} checkoutError={checkoutError} returnTo={returnTo} />;
+  const { tier, cycle, checkoutError, returnTo } = await props.searchParams;
+  return <JoinPage tier={tier} cycle={cycle} checkoutError={checkoutError} returnTo={returnTo} />;
 }

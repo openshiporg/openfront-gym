@@ -55,10 +55,15 @@ export function getSeedForTemplate(template: SetupTemplate, seedData: any) {
   const classTypes = (seedData.classTypes as any[]).filter((item) =>
     selected.classTypes.includes(item.handle),
   );
-  const instructors = (seedData.instructors as any[]).filter((item) =>
-    selected.instructors.includes(item.handle),
-  );
   const classTypeHandles = new Set(classTypes.map((item) => item.handle));
+  const instructors = (seedData.instructors as any[])
+    .filter((item) => selected.instructors.includes(item.handle))
+    .map((item) => ({
+      ...item,
+      teachesClassTypes: (item.teachesClassTypes || []).filter((classTypeHandle: string) =>
+        classTypeHandles.has(classTypeHandle),
+      ),
+    }));
   const instructorHandles = new Set(instructors.map((item) => item.handle));
 
   return {

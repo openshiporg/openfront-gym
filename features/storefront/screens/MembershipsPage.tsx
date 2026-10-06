@@ -24,7 +24,7 @@ export async function MembershipsPage() {
             <h1 className="sf-display text-5xl sm:text-6xl">
               Facility access
               <br />
-              <span className="italic text-[var(--sf-accent)]">with a class plan</span>
+              <span>with a class plan</span>
             </h1>
           </div>
           <p className="sf-lead max-w-md">

@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
+import { publicSupportEmail, publishedHours } from "@/features/storefront/lib/contact-config";
 
 const links = [
   { label: "Classes", href: "/classes" },
   { label: "Schedule", href: "/schedule" },
-  { label: "Membership", href: "/memberships" },
+  { label: "Memberships", href: "/memberships" },
   { label: "Coaches", href: "/instructors" },
   { label: "Facility", href: "/facilities" },
   { label: "Contact", href: "/contact" },
+  { label: "Policies", href: "/policies" },
 ];
 
 export default function Footer({
@@ -23,71 +25,61 @@ export default function Footer({
     address?: string | null;
     phone?: string | null;
     email?: string | null;
+    hours?: Record<string, string> | null;
   } | null;
 }) {
   const brandName = getStorefrontBrandName(config);
-  const footerTagline = config?.footerTagline?.trim() || null;
+  const footerTagline = config?.footerTagline?.trim() || config?.tagline?.trim() || null;
   const copyrightName = config?.copyrightName?.trim() || brandName;
+  const supportEmail = publicSupportEmail(config?.email);
+  const hours = publishedHours(config?.hours);
 
   return (
-    <footer className="border-t border-[var(--sf-rule)] bg-[var(--sf-ink)] text-[oklch(94%_0.01_85)]">
-      <div className="sf-container py-16 lg:py-20">
-        <div className="grid gap-12 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-end">
-          <div>
-            <div className="flex items-center gap-4">
-              {config?.logoIcon ? (
-                <span
-                  className="h-11 w-11 shrink-0 [&>svg]:h-full [&>svg]:w-full"
-                  aria-hidden="true"
-                  dangerouslySetInnerHTML={{ __html: config.logoIcon }}
-                />
-              ) : null}
-              <p className="sf-eyebrow text-[oklch(72%_0.08_55)]">{brandName}</p>
-            </div>
-            <p className="sf-display mt-6 text-4xl italic sm:text-5xl lg:text-6xl">
-              {footerTagline || config?.tagline || brandName}
-            </p>
-            {config?.description ? (
-              <p className="mt-8 max-w-lg text-sm leading-7 text-[oklch(78%_0.01_85)]">
-                {config.description}
-              </p>
-            ) : null}
-          </div>
+    <footer className="border-t border-[var(--sf-border)] bg-[var(--sf-surface)]">
+      <div className="sf-container grid gap-12 py-14 md:grid-cols-2 lg:grid-cols-[1.25fr_0.8fr_0.9fr] lg:py-18">
+        <div>
+          <Link href="/" className="text-xl font-bold tracking-[-0.04em]">{brandName}</Link>
+          {footerTagline ? (
+            <p className="mt-4 max-w-md text-sm leading-6 text-[var(--sf-muted)]">{footerTagline}</p>
+          ) : null}
+          <nav className="mt-8 flex flex-wrap gap-x-5 gap-y-3 text-sm" aria-label="Footer navigation">
+            {links.map((link) => (
+              <Link key={link.href} href={link.href} className="underline decoration-[var(--sf-border-strong)] underline-offset-4 hover:decoration-[var(--sf-foreground)]">
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
 
-          <div className="grid gap-8 sm:grid-cols-2">
-            <div>
-              <p className="sf-eyebrow text-[oklch(72%_0.08_55)]">Visit</p>
-              <div className="mt-4 space-y-2 text-sm leading-6 text-[oklch(82%_0.01_85)]">
-                {config?.address ? <p>{config.address}</p> : null}
-                {config?.phone ? <p>{config.phone}</p> : null}
-                {config?.email ? <p>{config.email}</p> : null}
-              </div>
-            </div>
-            <div>
-              <p className="sf-eyebrow text-[oklch(72%_0.08_55)]">Explore</p>
-              <ul className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
-                {links.map((link) => (
-                  <li key={link.href}>
-                    <Link
-                      href={link.href}
-                      className="text-sm text-[oklch(82%_0.01_85)] transition hover:text-white"
-                    >
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
+        <div>
+          <h2 className="text-sm font-semibold">Visit</h2>
+          <div className="mt-4 space-y-3 text-sm leading-6">
+            {config?.address ? <p>{config.address}</p> : <p className="text-[var(--sf-muted)]">Address not published</p>}
+            {config?.phone ? <a href={`tel:${config.phone}`} className="block hover:underline">{config.phone}</a> : null}
+            {supportEmail ? <a href={`mailto:${supportEmail}`} className="block break-all hover:underline">{supportEmail}</a> : null}
           </div>
         </div>
 
-        <div className="mt-14 flex flex-col justify-between gap-3 border-t border-[oklch(35%_0.02_55)] pt-6 text-xs text-[oklch(62%_0.01_85)] sm:flex-row">
-          <p>
-            © {new Date().getFullYear()} {copyrightName}
-          </p>
-          <Link href="/account" className="transition hover:text-white">
-            Member sign in
-          </Link>
+        <div>
+          <h2 className="text-sm font-semibold">Hours</h2>
+          {hours.length ? (
+            <dl className="mt-4 grid gap-2 text-sm">
+              {hours.map(([day, value]) => (
+                <div key={day} className="grid grid-cols-[5.25rem_1fr] gap-3">
+                  <dt className="capitalize text-[var(--sf-muted)]">{day.slice(0, 3)}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="mt-4 text-sm text-[var(--sf-muted)]">Hours not published</p>
+          )}
+        </div>
+      </div>
+      <div className="border-t border-[var(--sf-border)]">
+        <div className="sf-container flex flex-col gap-2 py-5 text-xs text-[var(--sf-muted)] sm:flex-row sm:items-center sm:justify-between">
+          <p>© {new Date().getFullYear()} {copyrightName}</p>
+          <Link href="/account" className="hover:text-[var(--sf-foreground)]">Member account</Link>
         </div>
       </div>
     </footer>

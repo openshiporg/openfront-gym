@@ -5,6 +5,7 @@ import { getBillingStats, getBillingWorkspace } from "../queries/billing";
 import { getMemberCheckInCode, getMemberProfile, updateMemberProfile } from "../queries/memberExperience";
 import { getSchedulingWorkspace } from "../queries/scheduling";
 import { getInstructorAccount, getRosterDetail, getRosterSessions } from "../queries/rosters";
+import { getFrontDeskWorkspace } from "../queries/checkIn";
 import { getReportsDashboard } from "../queries/reports";
 import {
   getPublicGymClassInstance,
@@ -56,6 +57,10 @@ import {
   generateUpcomingClassInstances,
   updateClassInstanceCapacity,
   updateClassScheduleCapacity,
+  saveGymClassSchedule,
+  saveGymClassInstance,
+  reconcileGymEntitlements,
+  updateGymResource,
 } from "./scheduling";
 import {
   authorizeKioskSession,
@@ -65,14 +70,24 @@ import {
 } from "./kiosk";
 import { bookDiscoveryClass, getDiscoveryClasses } from "./discovery";
 import { submitContactForm } from "./contact";
+import { replayPaymentEvent } from './paymentWebhook';
+import { operationsWorkspace, participationWorkspace, runOperationsCommand, exportOperatingData } from './operations';
+import { refreshMyEntitlement } from './memberEntitlement';
+import { trainingWorkspaceTypeDefs, getTrainingWorkspace, recordTrainingPackage, refundTrainingPackage, saveTrainerAvailability, assignCoaching, transitionCoaching, saveTrainingLead } from './trainingWorkspace';
+import { bookTrainerAppointment, transitionTrainerAppointment, rescheduleTrainerAppointment } from './trainerAppointment';
+import { importMemberContacts } from './portableData';
+import { retailTypeDefs, retailWorkspace, saveRetailItem, sellRetail, returnRetail, closeRetail } from './retailLifecycle';
 
 const graphql = String.raw;
 
 export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
   return mergeSchemas({
     schemas: [baseSchema],
-    typeDefs: graphql`
+    typeDefs: [graphql`
       type Query {
+        operationsWorkspace(caseAfterId: ID): JSON!
+        participationWorkspace: JSON!
+        exportOperatingData(kind: String!, from: String!, to: String!): JSON!
         redirectToInit: Boolean
         checkClassAvailability(classInstanceId: ID!): ClassAvailabilityResult!
         getBillingStats: BillingStats!
@@ -83,6 +98,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         instructorAccount: JSON
         rosterSessions: JSON!
         rosterDetail(classInstanceId: ID!): JSON
+        frontDeskWorkspace(query: String): JSON!
         reportsDashboard: JSON!
         kioskSearchMembers(query: String!, organizationId: ID!, credential: String!): [KioskSearchMember!]!
         discoveryClasses(
@@ -212,6 +228,14 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
       }
 
       type Mutation {
+        updateGymResourceAllocation(id: ID!, data: JSON!): JSON!
+        importMemberContacts(source: String!, rows: JSON!, dryRun: Boolean): JSON!
+        reconcileGymEntitlements(afterId: ID, limit: Int): JSON!
+        refreshMyEntitlement: JSON!
+        saveGymClassSchedule(id: ID, data: JSON!): ClassSchedule
+        saveGymClassInstance(id: ID, data: JSON!): ClassInstance
+        replayPaymentEvent(eventId: ID!): JSON!
+        runOperationsCommand(command: String!, data: JSON!): JSON!
         bookClass(classInstanceId: ID!, memberId: ID!): BookClassResult!
         promoteFromWaitlist(classInstanceId: ID!): PromoteResult!
         cancelClassBooking(bookingId: ID!): BookingCancellationResult!
@@ -225,7 +249,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         recordMemberCheckIn(memberId: ID!, locationId: ID, method: String!): CheckInTransitionResult!
         checkOutMember(checkInId: ID!): CheckInTransitionResult!
         upsertGymSettings(data: GymSettingsUpdateInput!): GymSettings!
-        runDeterministicOnboarding(template: String!): OnboardingRunResult!
+        runDeterministicOnboarding(template: String!, data: JSON): OnboardingRunResult!
         registerMember(data: RegisterMemberInput!): User
         inviteMember(data: InviteMemberInput!): InviteMemberResult!
         setMemberAccountStatus(memberId: ID!, status: String!): Member!
@@ -359,8 +383,9 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
       }
 
       type MemberCheckInCode {
-        qrDataUrl: String!
+        qrDataUrl: String
         expiresIn: Int!
+        error: String
       }
 
       input InviteMemberInput {
@@ -476,9 +501,14 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         activeMemberships: Int!
         pastDueCount: Int!
       }
-    `,
+    `, trainingWorkspaceTypeDefs, retailTypeDefs],
     resolvers: {
       Query: {
+        retailWorkspace,
+        trainingWorkspace: getTrainingWorkspace,
+        operationsWorkspace,
+        participationWorkspace,
+        exportOperatingData,
         redirectToInit,
         checkClassAvailability,
         getBillingStats,
@@ -489,6 +519,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         instructorAccount: getInstructorAccount,
         rosterSessions: getRosterSessions,
         rosterDetail: getRosterDetail,
+        frontDeskWorkspace: getFrontDeskWorkspace,
         reportsDashboard: getReportsDashboard,
         kioskSearchMembers,
         discoveryClasses: getDiscoveryClasses,
@@ -505,6 +536,16 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         publicGymMembershipTier: getPublicGymMembershipTier,
       },
       Mutation: {
+        updateGymResourceAllocation: updateGymResource,
+        saveRetailItem, sellRetail, returnRetail, closeRetail,
+        importMemberContacts,
+        bookTrainerAppointment, transitionTrainerAppointment, rescheduleTrainerAppointment,
+        recordTrainingPackage, refundTrainingPackage, saveTrainerAvailability, assignCoaching, transitionCoaching, saveTrainingLead,
+        reconcileGymEntitlements, refreshMyEntitlement,
+        saveGymClassSchedule,
+        saveGymClassInstance,
+        replayPaymentEvent,
+        runOperationsCommand,
         bookClass,
         promoteFromWaitlist,
         cancelClassBooking,

@@ -48,6 +48,12 @@ export interface PaymentProviderAdapter {
     idempotencyKey?: string,
   ): Promise<Stripe.Subscription>;
   createBillingPortalSession(customerId: string, returnUrl: string): Promise<{ url: string }>;
-  refundPayment(paymentIntentId: string, amount?: number, idempotencyKey?: string): Promise<Stripe.Refund>;
+  refundPayment(
+    paymentIntentId: string,
+    amount?: number,
+    idempotencyKey?: string,
+    evidence?: { operationKey: string; currencyCode: string; reason: string },
+  ): Promise<Stripe.Refund>;
+  findRefundPayment?(paymentIntentId: string, operationKey: string): Promise<Stripe.Refund | null>;
   constructWebhookEvent(payload: string, signature: string): Stripe.Event;
 }

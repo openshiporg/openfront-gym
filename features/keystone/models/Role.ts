@@ -77,6 +77,7 @@ export const Role = list({
     canManageOnboarding: checkbox({ defaultValue: false }),
     canManageSettings: checkbox({ defaultValue: false }),
     canManageAppointments: checkbox({ defaultValue: false }),
+    canManageCheckIns: checkbox({ defaultValue: false }),
     canManageFacilities: checkbox({ defaultValue: false }),
     canManagePrograms: checkbox({ defaultValue: false }),
     canManageCommunications: checkbox({ defaultValue: false }),
@@ -89,6 +90,7 @@ export const Role = list({
       many: true,
       access: { create: denyAll, update: denyAll },
       ui: {
+        displayMode: 'count',
         itemView: { fieldMode: 'read' },
       },
     }),

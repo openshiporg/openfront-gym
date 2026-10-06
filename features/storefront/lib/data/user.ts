@@ -34,6 +34,9 @@ export type StorefrontUser = {
     autoRenew: boolean;
     billingCycle: string;
     classCreditsRemaining: number | null;
+    creditPeriodStart?: string | null;
+    creditPeriodEnd?: string | null;
+    agreementSnapshot?: { tierName?: string; amount?: number; currencyCode?: string; classCreditsPerMonth?: number; accessHours?: string; freezeAllowed?: boolean } | null;
     stripeSubscriptionId?: string | null;
     freezeStartDate?: string | null;
     freezeEndDate?: string | null;
@@ -81,6 +84,9 @@ export async function getUser(): Promise<StorefrontUser | null> {
                 autoRenew
                 billingCycle
                 classCreditsRemaining
+                creditPeriodStart
+                creditPeriodEnd
+                agreementSnapshot
                 stripeSubscriptionId
                 freezeStartDate
                 freezeEndDate

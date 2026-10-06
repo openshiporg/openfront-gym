@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
 import AuthNav from "../components/auth-nav";
+import KineticMark from "../components/kinetic-mark";
 import NavClient from "../components/NavClient";
 
 export default function Nav({
@@ -20,10 +21,16 @@ export default function Nav({
   } | null;
 }) {
   const brandName = getStorefrontBrandName(config);
+  const usesKineticLockup = brandName.trim().toLowerCase() === "kinetic performance club";
   return (
     <header className="sf-site-header">
       <div className="sf-container sf-site-header-inner">
-        <Link href="/" className="sf-wordmark" aria-label={`${brandName} home`}>
+        <Link
+          href="/"
+          className="sf-wordmark"
+          data-kinetic-lockup={usesKineticLockup || undefined}
+          aria-label={`${brandName} home`}
+        >
           {config?.logoIcon ? (
             <span
               className="sf-wordmark-logo [&>svg]:h-full [&>svg]:w-full"
@@ -31,16 +38,17 @@ export default function Nav({
               dangerouslySetInnerHTML={{ __html: config.logoIcon }}
             />
           ) : (
-            <span className="sf-wordmark-mark" aria-hidden="true">{brandName.charAt(0).toUpperCase()}</span>
+            <span className="sf-wordmark-mark" aria-hidden="true"><KineticMark /></span>
           )}
           <span className="sf-wordmark-copy">
-            <strong>{brandName}</strong>
-            {config?.tagline ? <span>{config.tagline}</span> : null}
+            <strong>{usesKineticLockup ? "Kinetic" : brandName}</strong>
+            {usesKineticLockup ? <span>Performance Club</span> : config?.tagline ? <span>{config.tagline}</span> : null}
           </span>
         </Link>
 
         <div className="sf-site-navigation">
           <NavClient
+            user={user}
             primaryCta={config?.heroPrimaryCtaLabel && config?.heroPrimaryCtaHref ? {
               label: config.heroPrimaryCtaLabel,
               href: config.heroPrimaryCtaHref,

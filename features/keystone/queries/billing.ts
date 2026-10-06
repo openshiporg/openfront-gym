@@ -1,6 +1,7 @@
 import { KeystoneContext } from "@keystone-6/core/types";
 import { getTenantId } from "../access/tenantPolicy";
 import { resolveGymTimeZone, zonedStartOfMonth } from "../../../lib/timezone";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
 export async function getBillingStats(
   _root: unknown,
@@ -14,17 +15,25 @@ export async function getBillingStats(
   if (!organizationId) throw new Error("Organization context required");
 
   const now = new Date();
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
   const [settings, organization] = await Promise.all([
-    context.prisma.gymSettings.findUnique({
+    prisma.gymSettings.findUnique({
       where: { organizationId },
       select: { currencyCode: true, timezone: true },
     }),
-    context.prisma.organization.findUnique({
+    prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { timezone: true },
+      select: { timezone: true, defaultCurrency: true },
     }),
   ]);
   const currencyCode = String(settings?.currencyCode || "USD").toUpperCase();
+  if (currencyCode !== "USD" || String(organization?.defaultCurrency || "USD").toUpperCase() !== currencyCode) {
+    throw new Error("Billing currency settings do not match the supported USD contract; reconcile Organization and Gym Settings before reporting.");
+  }
+  const receiptCurrencies = await prisma.membershipPayment.groupBy({ by: ["currencyCode"], where: { organizationId, status: { in: ["completed", "refunded"] } }, _count: { _all: true } });
+  if (receiptCurrencies.some((row: any) => String(row.currencyCode || "").toUpperCase() !== currencyCode)) {
+    throw new Error("Settled receipt currencies are outside the supported USD report scope; reconcile receipt history before reporting.");
+  }
   const timeZone = resolveGymTimeZone(settings?.timezone, organization?.timezone);
   const startOfMonth = zonedStartOfMonth(now, timeZone);
   const [
@@ -34,14 +43,14 @@ export async function getBillingStats(
     completedPayments,
     monthlyPayments,
   ] = await Promise.all([
-    context.prisma.subscription.count({ where: { organizationId, status: "active" } }),
-    context.prisma.membership.count({ where: { organizationId, status: "active" } }),
-    context.prisma.membership.count({ where: { organizationId, status: "past-due" } }),
-    context.prisma.membershipPayment.aggregate({
+    prisma.subscription.count({ where: { organizationId, status: "active" } }),
+    prisma.membership.count({ where: { organizationId, status: "active" } }),
+    prisma.membership.count({ where: { organizationId, status: "past-due" } }),
+    prisma.membershipPayment.aggregate({
       where: { organizationId, currencyCode, status: { in: ["completed", "refunded"] } },
       _sum: { amount: true, refundAmount: true },
     }),
-    context.prisma.membershipPayment.aggregate({
+    prisma.membershipPayment.aggregate({
       where: {
         organizationId,
         currencyCode,

@@ -18,15 +18,23 @@ export async function proxy(request: NextRequest) {
     // on every GraphQL request lets ordinary traffic or one attacker deny the
     // entire application when the runtime does not expose a trusted client IP.
     if (request.method === 'POST') {
+      let payload: unknown;
       try {
-        const inspection = inspectGraphQLAuthPayload(await readGraphQLRequestPayload(request));
-        if (inspection.authRootCount > 1) {
-          return NextResponse.json(
-            { errors: [{ message: 'Only one authentication operation is allowed per request' }] },
-            { status: 400 },
-          );
-        }
-        if (inspection.isAuth) {
+        payload = await readGraphQLRequestPayload(request);
+      } catch {
+        // Let GraphQL return its normal bounded parse/validation response.
+        return NextResponse.next();
+      }
+
+      const inspection = inspectGraphQLAuthPayload(payload);
+      if (inspection.authRootCount > 1) {
+        return NextResponse.json(
+          { errors: [{ message: 'Only one authentication operation is allowed per request' }] },
+          { status: 400 },
+        );
+      }
+      if (inspection.isAuth) {
+        try {
           const globallyAllowed = await consumeAuthAttempt(
             keystoneContext.prisma,
             'graphql-auth:global',
@@ -45,9 +53,12 @@ export async function proxy(request: NextRequest) {
           if (!globallyAllowed || !identitiesAllowed) {
             return NextResponse.json({ errors: [{ message: 'Too many requests' }] }, { status: 429 });
           }
+        } catch {
+          return NextResponse.json(
+            { errors: [{ message: 'Authentication rate limiting is temporarily unavailable' }] },
+            { status: 503 },
+          );
         }
-      } catch {
-        // Let GraphQL return its normal bounded parse/validation response.
       }
     }
     return NextResponse.next();

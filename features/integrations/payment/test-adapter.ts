@@ -16,6 +16,7 @@ function decodeSession(providerSessionId: string) {
 }
 
 const testSubscriptions = new Map<string, Stripe.Subscription>();
+const testRefunds = new Map<string, Stripe.Refund>();
 
 export function setTestSubscriptionStateForTesting(subscription: Stripe.Subscription) {
   testSubscriptions.set(subscription.id, structuredClone(subscription));
@@ -23,6 +24,10 @@ export function setTestSubscriptionStateForTesting(subscription: Stripe.Subscrip
 
 export function resetTestSubscriptionStatesForTesting() {
   testSubscriptions.clear();
+}
+
+export function resetTestRefundsForTesting() {
+  testRefunds.clear();
 }
 
 function updateTestSubscription(subscriptionId: string, data: Partial<Stripe.Subscription>) {
@@ -91,12 +96,17 @@ export const testPaymentProviderAdapter: PaymentProviderAdapter = {
   async retrieveMembershipCheckout(providerSessionId) {
     const data = decodeSession(providerSessionId);
     const now = Math.floor(Date.now() / 1000);
-    const subscription = updateTestSubscription(`test_sub_${digest(data.idempotencyKey)}`, {
+    const subscriptionId = `test_sub_${digest(data.idempotencyKey)}`;
+    const periodEnd = new Date(now * 1000);
+    if (data.billingCycle === "annual") periodEnd.setUTCFullYear(periodEnd.getUTCFullYear() + 1);
+    else periodEnd.setUTCMonth(periodEnd.getUTCMonth() + 1);
+    const subscription = testSubscriptions.get(subscriptionId) || updateTestSubscription(subscriptionId, {
       customer: data.providerCustomerId,
       status: "active",
       current_period_start: now,
-      current_period_end: now + 30 * 24 * 60 * 60,
+      current_period_end: Math.floor(periodEnd.getTime() / 1000),
       metadata: {
+        paymentSessionKey: data.idempotencyKey,
         userId: data.userId,
         tierId: data.tierId,
         billingCycle: data.billingCycle,
@@ -108,6 +118,7 @@ export const testPaymentProviderAdapter: PaymentProviderAdapter = {
       mode: "subscription",
       status: "complete",
       payment_status: "paid",
+      currency: data.currencyCode.toLowerCase(),
       customer: data.providerCustomerId,
       metadata: {
         source: "openfront-gym-test",
@@ -164,14 +175,28 @@ export const testPaymentProviderAdapter: PaymentProviderAdapter = {
     return { url: `${returnUrl}${returnUrl.includes("?") ? "&" : "?"}testPortal=${digest(customerId)}` };
   },
 
-  async refundPayment(paymentIntentId, amount, idempotencyKey) {
-    return {
-      id: `test_refund_${digest(`${paymentIntentId}:${amount ?? "full"}:${idempotencyKey ?? ""}`)}`,
+  async refundPayment(paymentIntentId, amount, idempotencyKey, evidence) {
+    const key = `${paymentIntentId}:${idempotencyKey || "no-key"}`;
+    const existing = testRefunds.get(key);
+    if (existing) return structuredClone(existing);
+    const refund = {
+      id: `test_refund_${digest(key)}`,
       object: "refund",
       payment_intent: paymentIntentId,
       amount: amount ?? 0,
+      currency: evidence?.currencyCode.toLowerCase() || "usd",
       status: "succeeded",
+      metadata: evidence ? { gymRefundOperationKey: evidence.operationKey, gymRefundCurrency: evidence.currencyCode, gymRefundReason: evidence.reason } : {},
     } as Stripe.Refund;
+    testRefunds.set(key, refund);
+    return structuredClone(refund);
+  },
+
+  async findRefundPayment(paymentIntentId, operationKey) {
+    const refund = [...testRefunds.values()].find(candidate =>
+      candidate.payment_intent === paymentIntentId && candidate.metadata?.gymRefundOperationKey === operationKey,
+    );
+    return refund ? structuredClone(refund) : null;
   },
 
   constructWebhookEvent(payload, signature) {

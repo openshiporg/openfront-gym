@@ -10,7 +10,7 @@ import { sanitizeGymLogoSvg } from "../utils/gymLogo";
 import {
   DEFAULT_STOREFRONT_HUE,
   normalizeStorefrontHue,
-} from "../../platform/store-settings/lib/storefront-branding";
+} from "../lib/storefront-branding";
 
 export const GymSettings = list({
   access: {

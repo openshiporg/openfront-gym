@@ -11,6 +11,8 @@ export type DashboardUser = {
     canManageAllRecords?: boolean;
     canManageSettings?: boolean;
     canManageOnboarding?: boolean;
+    canManageCheckIns?: boolean;
+    canManageFacilities?: boolean;
     canViewReports?: boolean;
     isInstructor?: boolean;
   } | null;
@@ -30,6 +32,8 @@ export async function getDashboardUser(): Promise<DashboardUser> {
             canManageAllRecords
             canManageSettings
             canManageOnboarding
+            canManageCheckIns
+            canManageFacilities
             canViewReports
             isInstructor
           }

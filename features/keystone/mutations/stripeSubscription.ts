@@ -1,5 +1,7 @@
 import type { Context } from ".keystone/types";
+import { currentRoleActor } from "../access/currentRoleActor";
 import { getAdapterForProvider } from "../utils/paymentProviderAdapter";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import {
   claimMembershipBillingAttempt,
   failMembershipBillingAttempt,
@@ -9,34 +11,31 @@ import {
   type MembershipBillingOperation,
 } from "./membershipBillingAttempts";
 
+import { membershipTierChangeCurrency, snapshotMembershipAgreement, tierAmountMinor } from "../../integrations/payment/commercial-agreement";
+
 const PROVIDER_CODE = "pp_stripe";
 
-function actorOrganizationId(context: Context) {
-  const organizationId = (context.session as any)?.data?.organization?.id;
-  if (typeof organizationId !== "string" || !organizationId) throw new Error("Organization context required");
-  return organizationId;
-}
+type CurrentRoleActor = Awaited<ReturnType<typeof currentRoleActor>>;
 
-function assertUserSessionAccess(context: Context, userId: string) {
-  const session = context.session as any;
-  if (!session?.itemId) throw new Error("Authentication required");
-  if (session.itemId === userId || session.data?.role?.canManageAllRecords) return;
+function assertUserSessionAccess(actor: CurrentRoleActor, userId: string) {
+  if (actor.userId === userId || actor.canManageAllRecords) return;
   throw new Error("You cannot manage another member's billing");
 }
 
-async function getAuthorizedMembership(context: Context, membershipId: string) {
-  const organizationId = actorOrganizationId(context);
+async function getAuthorizedMembership(context: Context, membershipId: string, currentActor?: CurrentRoleActor) {
+  const actor = currentActor ?? await currentRoleActor(context);
+  const organizationId = actor.organizationId;
   const memberships = await context.sudo().query.Membership.findMany({
     where: { AND: [{ id: { equals: membershipId } }, { organization: { id: { equals: organizationId } } }] },
     take: 1,
-    query: "id organization { id defaultCurrency } stripeSubscriptionId billingCycle status autoRenew nextBillingDate member { id stripeCustomerId organization { id } } tier { id freezeAllowed organization { id } }",
+    query: "id agreementSnapshot agreementHistory organization { id defaultCurrency } stripeSubscriptionId billingCycle status autoRenew nextBillingDate member { id stripeCustomerId organization { id } } tier { id freezeAllowed organization { id } }",
   });
   const membership = memberships[0] as any;
   if (!membership || membership.organization?.id !== organizationId || membership.member?.organization?.id !== organizationId) {
     throw new Error("Membership not found");
   }
-  assertUserSessionAccess(context, membership.member?.id);
-  return membership;
+  assertUserSessionAccess(actor, membership.member?.id);
+  return { membership, actor };
 }
 
 async function getAdapter(context: Context, organizationId: string) {
@@ -68,8 +67,9 @@ export async function createStripeSetupIntent(
   { userId }: { userId: string },
   context: Context
 ) {
-  const organizationId = actorOrganizationId(context);
-  assertUserSessionAccess(context, userId);
+  const actor = await currentRoleActor(context);
+  assertUserSessionAccess(actor, userId);
+  const organizationId = actor.organizationId;
   const users = await context.sudo().query.User.findMany({
     where: { AND: [{ id: { equals: userId } }, { organization: { id: { equals: organizationId } } }] },
     take: 1,
@@ -89,8 +89,8 @@ export async function cancelMembership(
   { membershipId, reason, idempotencyKey }: { membershipId: string; reason?: string; idempotencyKey: string },
   context: Context
 ) {
-  const membership = await getAuthorizedMembership(context, membershipId);
-  const organizationId = actorOrganizationId(context);
+  const { membership, actor } = await getAuthorizedMembership(context, membershipId);
+  const organizationId = actor.organizationId;
   const normalizedReason = reason?.trim() || "";
   if (normalizedReason.length > 500) throw new Error("Cancellation reason must be 500 characters or fewer");
   const scope = billingAttemptScope(organizationId, membershipId, "cancel", idempotencyKey, { reason: normalizedReason });
@@ -130,8 +130,8 @@ export async function freezeMembership(
   { membershipId, endDate, idempotencyKey }: { membershipId: string; endDate: string; idempotencyKey: string },
   context: Context
 ) {
-  const membership = await getAuthorizedMembership(context, membershipId);
-  const organizationId = actorOrganizationId(context);
+  const { membership, actor } = await getAuthorizedMembership(context, membershipId);
+  const organizationId = actor.organizationId;
   const endsAt = new Date(endDate);
   if (Number.isNaN(endsAt.getTime())) throw new Error("Freeze end date must be in the future");
   const scope = billingAttemptScope(organizationId, membershipId, "freeze", idempotencyKey, { endDate: endsAt.toISOString() });
@@ -140,7 +140,7 @@ export async function freezeMembership(
   }
   if (membership.status !== "active") throw new Error("Only active memberships can be frozen");
   if (!membership.autoRenew) throw new Error("A membership ending after this paid period cannot be frozen");
-  if (!membership.tier?.freezeAllowed) throw new Error("This membership tier does not allow freezes");
+  if (!(membership.agreementSnapshot?.freezeAllowed ?? membership.tier?.freezeAllowed)) throw new Error("This membership tier does not allow freezes");
   if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
   const startsAt = new Date();
   const maximumEnd = new Date(startsAt.getTime() + 365 * 24 * 60 * 60 * 1000);
@@ -153,12 +153,24 @@ export async function freezeMembership(
     tierId: membership.tier.id,
   });
   if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership freeze already completed" };
+  let adapter: Awaited<ReturnType<typeof getAdapter>>["adapter"];
   try {
-    const { adapter } = await getAdapter(context, organizationId);
+    ({ adapter } = await getAdapter(context, organizationId));
+  } catch (error) {
+    await failMembershipBillingAttempt(context, attempt, error);
+    throw error;
+  }
+  // Once provider execution begins, a transport error is ambiguous: the remote
+  // pause may have succeeded even if its response was lost. Preserve the pending
+  // freeze fence and require same-key recovery after the lease.
+  try {
     await adapter.pauseSubscription(membership.stripeSubscriptionId, endsAt, attempt.providerIdempotencyKey);
-    await finishMembershipBillingAttempt(context, attempt, { status: "frozen", freezeStartDate: startsAt, freezeEndDate: endsAt });
-    return { membership: await currentMembership(context, membershipId), message: "Membership frozen immediately" };
-  } catch (error) { await failMembershipBillingAttempt(context, attempt, error); throw error; }
+  } catch (error) {
+    await failMembershipBillingAttempt(context, attempt, error, "unknown");
+    throw error;
+  }
+  await finishMembershipBillingAttempt(context, attempt, { status: "frozen", freezeStartDate: startsAt, freezeEndDate: endsAt });
+  return { membership: await currentMembership(context, membershipId), message: "Membership frozen immediately" };
 }
 
 export async function unfreezeMembership(
@@ -166,8 +178,8 @@ export async function unfreezeMembership(
   { membershipId, idempotencyKey }: { membershipId: string; idempotencyKey: string },
   context: Context
 ) {
-  const membership = await getAuthorizedMembership(context, membershipId);
-  const organizationId = actorOrganizationId(context);
+  const { membership, actor } = await getAuthorizedMembership(context, membershipId);
+  const organizationId = actor.organizationId;
   const scope = billingAttemptScope(organizationId, membershipId, "unfreeze", idempotencyKey, {});
   if (await isCompletedMembershipBillingAttempt(context, scope)) {
     return { membership: await currentMembership(context, membershipId), message: "Membership resume already completed" };
@@ -192,11 +204,10 @@ export async function changeMembershipTier(
   { membershipId, newTierId, idempotencyKey }: { membershipId: string; newTierId: string; idempotencyKey: string },
   context: Context
 ) {
-  if (!(context.session as any)?.data?.role?.canManageAllRecords) {
-    throw new Error("Contact the front desk to change membership tiers");
-  }
-  const membership = await getAuthorizedMembership(context, membershipId);
-  const organizationId = actorOrganizationId(context);
+  const actor = await currentRoleActor(context);
+  if (!actor.canManageAllRecords) throw new Error("Contact the front desk to change membership tiers");
+  const { membership, actor: authorizedActor } = await getAuthorizedMembership(context, membershipId, actor);
+  const organizationId = authorizedActor.organizationId;
   const scope = billingAttemptScope(organizationId, membershipId, "tier-change", idempotencyKey, { newTierId });
   if (await isCompletedMembershipBillingAttempt(context, scope)) {
     return { membership: await currentMembership(context, membershipId), message: "Membership tier change already completed" };
@@ -205,11 +216,29 @@ export async function changeMembershipTier(
   if (membership.tier?.id === newTierId) throw new Error("Membership is already on this tier");
   if (!membership.autoRenew) throw new Error("A membership ending after this paid period cannot change tiers");
   if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
-  const newTiers = await context.sudo().query.MembershipTier.findMany({ where: { AND: [{ id: { equals: newTierId } }, { organization: { id: { equals: organizationId } } }] }, take: 1, query: "id classCreditsPerMonth monthlyPrice annualPrice stripeMonthlyPriceId stripeAnnualPriceId stripeProductId organization { id }" });
+  const settingsRows = await context.sudo().query.GymSettings.findMany({
+    where: { organization: { id: { equals: organizationId } } },
+    take: 2,
+    query: "currencyCode",
+  });
+  if (settingsRows.length > 1) throw new Error("Gym currency settings are ambiguous; reconcile them before changing tiers.");
+  const contractCurrency = membershipTierChangeCurrency(
+    membership.agreementSnapshot,
+    membership.organization.defaultCurrency,
+    settingsRows[0]?.currencyCode,
+  );
+  const newTiers = await context.sudo().query.MembershipTier.findMany({ where: { AND: [{ id: { equals: newTierId } }, { organization: { id: { equals: organizationId } } }] }, take: 1, query: "id name classCreditsPerMonth monthlyPrice annualPrice monthlyPriceMinor annualPriceMinor freezeAllowed contractLength accessHours accessHoursJson guestPasses personalTrainingSessions maxClassBookings stripeMonthlyPriceId stripeAnnualPriceId stripeProductId organization { id }" });
   const newTier = newTiers[0] as any;
   if (!newTier) throw new Error("New membership tier not found");
   const newPriceId = membership.billingCycle === "monthly" ? newTier.stripeMonthlyPriceId : newTier.stripeAnnualPriceId;
   if (!newPriceId) throw new Error("Stripe price not configured for this tier");
+  const planAmount = membership.billingCycle === "monthly" ? newTier.monthlyPrice : newTier.annualPrice;
+  if (!Number.isFinite(planAmount) || planAmount < 0) throw new Error("Membership tier has an invalid price");
+  // Preserve a new checkout's first-paid ledger policy across pre-payment tier changes;
+  // legacy agreements remain unmarked and keep their scalar-balance reconciliation.
+  const newAgreementSnapshot = snapshotMembershipAgreement(newTier, membership.billingCycle, contractCurrency, {
+    initialCreditLedger: membership.agreementSnapshot?.creditLedgerPolicy === "monthly-grant-v1",
+  });
   const attempt = await claimMembershipBillingAttempt(context, scope, {
     status: membership.status,
     autoRenew: membership.autoRenew,
@@ -217,30 +246,39 @@ export async function changeMembershipTier(
     tierId: membership.tier.id,
   });
   if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership tier change already completed" };
+  let providerExecutionStarted = false;
   try {
     const { adapter } = await getAdapter(context, organizationId);
-    const planAmount = membership.billingCycle === "monthly" ? newTier.monthlyPrice : newTier.annualPrice;
-    if (!Number.isFinite(planAmount) || planAmount < 0) throw new Error("Membership tier has an invalid price");
     await adapter.validateMembershipPrice({
       priceId: newPriceId,
       productId: newTier.stripeProductId,
-      amount: Math.round(planAmount * 100),
-      currencyCode: membership.organization.defaultCurrency || "USD",
+      amount: tierAmountMinor(newTier, membership.billingCycle),
+      currencyCode: contractCurrency,
       billingCycle: membership.billingCycle === "annual" ? "annual" : "monthly",
     });
+    providerExecutionStarted = true;
     await adapter.changeSubscriptionPrice(
       membership.stripeSubscriptionId,
       newPriceId,
       { tierId: newTierId, billingCycle: membership.billingCycle },
       attempt.providerIdempotencyKey,
     );
-    await finishMembershipBillingAttempt(context, attempt, { tierId: newTierId, classCreditsRemaining: newTier.classCreditsPerMonth });
-    await context.prisma.member.updateMany({
-      where: { organizationId, userId: membership.member.id },
-      data: { membershipTierId: newTierId },
+    await finishMembershipBillingAttempt(context, attempt, {
+      tierId: newTierId,
+      agreementSnapshot: newAgreementSnapshot,
+      agreementHistory: [...(Array.isArray(membership.agreementHistory) ? membership.agreementHistory : []), membership.agreementSnapshot],
+    }, async (transaction: any) => {
+      const memberUpdate = await transaction.member.updateMany({
+        where: { organizationId, userId: membership.member.id },
+        data: { membershipTierId: newTierId },
+      });
+      if (memberUpdate.count !== 1) throw new Error("Membership owner projection changed while finalizing the tier change");
     });
-    return { membership: await currentMembership(context, membershipId), message: "Membership tier updated successfully" };
-  } catch (error) { await failMembershipBillingAttempt(context, attempt, error); throw error; }
+    return { membership: await currentMembership(context, membershipId), message: "Membership tier updated; included class allowance applies from the next service month" };
+  } catch (error) {
+    await failMembershipBillingAttempt(context, attempt, error, providerExecutionStarted ? "unknown" : "definite");
+    throw error;
+  }
 }
 
 function validateReturnUrl(returnUrl: string) {
@@ -258,24 +296,25 @@ export async function markPaymentRecoveryContacted(
   { membershipId }: { membershipId: string },
   context: Context
 ) {
-  const session = context.session as any;
-  if (!session?.itemId || !session.data?.role?.canManageAllRecords) {
-    throw new Error("Payment recovery management permission required");
-  }
-  const organizationId = actorOrganizationId(context);
+  const actor = await currentRoleActor(context);
+  if (!actor.canManageAllRecords) throw new Error("Payment recovery management permission required");
+  const organizationId = actor.organizationId;
   const memberships = await context.sudo().query.Membership.findMany({
     where: { AND: [{ id: { equals: membershipId } }, { organization: { id: { equals: organizationId } } }] },
     take: 1,
-    query: "id cancelReason organization { id }",
+    query: "id recoveryHistory organization { id }",
   });
   const membership = memberships[0] as any;
   if (!membership) throw new Error("Membership not found");
-  const note = `[Recovery contacted ${new Date().toISOString()}]`;
-  return context.sudo().db.Membership.updateOne({
-    where: { id: membershipId },
-    data: {
-      cancelReason: membership.cancelReason ? `${membership.cancelReason}\n${note}` : note,
-    },
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  return prisma.$transaction(async (tx: any) => {
+    const lockResult = await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`membership-recovery:${organizationId}:${membershipId}`}, 0))`;
+    if (lockResult instanceof Error) throw lockResult;
+    const current = await tx.membership.findFirst({ where: { id: membershipId, organizationId } });
+    if (!current) throw new Error("Membership not found");
+    return tx.membership.update({ where: { id: membershipId }, data: {
+      recoveryHistory: [...(Array.isArray(current.recoveryHistory) ? current.recoveryHistory : []), { contactedAt: new Date().toISOString(), actorId: actor.userId }],
+    } });
   });
 }
 
@@ -284,8 +323,9 @@ export async function getStripeBillingPortal(
   { userId, returnUrl }: { userId: string; returnUrl: string },
   context: Context
 ) {
-  const organizationId = actorOrganizationId(context);
-  assertUserSessionAccess(context, userId);
+  const actor = await currentRoleActor(context);
+  assertUserSessionAccess(actor, userId);
+  const organizationId = actor.organizationId;
   const users = await context.sudo().query.User.findMany({
     where: { AND: [{ id: { equals: userId } }, { organization: { id: { equals: organizationId } } }] },
     take: 1,

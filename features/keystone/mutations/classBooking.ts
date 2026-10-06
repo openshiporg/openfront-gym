@@ -1,4 +1,5 @@
 import { Context } from '.keystone/types';
+import { currentRoleActor } from "../access/currentRoleActor";
 import {
   createCapacityControlledBooking,
   promoteCapacityControlledWaitlistBooking,
@@ -78,11 +79,10 @@ export async function checkClassAvailability(
   };
 }
 
-function assertOperatorSession(context: Context) {
-  const session = context.session as any;
-  if (!session?.itemId) throw new Error('Authentication required');
-  if (session.data?.role?.canManageAllRecords) return;
-  throw new Error('Operator access required');
+async function currentOperatorActor(context: Context) {
+  const actor = await currentRoleActor(context);
+  if (!actor.canManageAllRecords) throw new Error('Operator access required');
+  return actor;
 }
 
 /**
@@ -94,17 +94,15 @@ export async function bookClass(
   args: { classInstanceId: string; memberId: string },
   context: Context
 ) {
-  if (!(context.session as any)?.itemId) throw new Error('Authentication required');
+  const actor = await currentRoleActor(context);
   const { classInstanceId, memberId } = args;
-  const session = context.session as any;
-  const organizationId = session.data?.organization?.id;
-  if (!organizationId) throw new Error('Organization context required');
+  const organizationId = actor.organizationId;
   const result = await createCapacityControlledBooking(context.prisma, {
     classInstanceId,
     memberId,
-    actorUserId: session.itemId,
+    actorUserId: actor.userId,
     actorOrganizationId: organizationId,
-    actorCanManageAllRecords: Boolean(session.data?.role?.canManageAllRecords),
+    actorCanManageAllRecords: actor.canManageAllRecords,
     capacityMode: 'waitlist',
   });
   const booking = await context.sudo().query.ClassBooking.findOne({
@@ -120,9 +118,8 @@ export async function promoteFromWaitlist(
   args: { classInstanceId: string },
   context: Context
 ) {
-  assertOperatorSession(context);
-  const organizationId = (context.session as any)?.data?.organization?.id;
-  if (!organizationId) throw new Error('Organization context required');
+  const actor = await currentOperatorActor(context);
+  const organizationId = actor.organizationId;
   const result = await promoteCapacityControlledWaitlistBooking(
     context.prisma,
     args.classInstanceId,

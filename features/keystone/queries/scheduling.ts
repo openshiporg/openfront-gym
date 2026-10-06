@@ -1,4 +1,5 @@
-import { localDateParts, localTimeToUtc, resolveGymTimeZone } from "../../../lib/timezone";
+import { resolveGymTimeZone } from "../../../lib/timezone";
+import { scheduleDurationMinutes } from "../lib/scheduling-time";
 
 function schedulingActor(context: any) {
   const session = context.session as any;
@@ -47,7 +48,7 @@ export async function getSchedulingWorkspace(
   if (effectiveUserId) {
     eventWhere.AND.push({ OR: [
       { instructor: { user: { id: { equals: effectiveUserId } } } },
-      { classSchedule: instructorFilter },
+      { AND: [{ instructor: null }, { classSchedule: instructorFilter }] },
     ] });
   }
 
@@ -63,17 +64,17 @@ export async function getSchedulingWorkspace(
   if (isInstructorOnly) {
     upcomingWhere.AND.push({ OR: [
       { instructor: { user: { id: { equals: effectiveUserId } } } },
-      { classSchedule: instructorFilter },
+      { AND: [{ instructor: null }, { classSchedule: instructorFilter }] },
     ] });
   }
 
-  const [instances, schedules, instructors, upcomingInstances, settings, organizations] = await Promise.all([
+  const [instances, schedules, instructors, classTypes, upcomingInstances, settings, organizations, locations, resources] = await Promise.all([
     sudo.query.ClassInstance.findMany({
       where: eventWhere,
       take: 1000,
       orderBy: [{ date: "asc" }],
       query: `
-        id date isCancelled maxCapacity bookingsCount
+        id date endsAt isCancelled maxCapacity bookingsCount location { id name } resource { id name }
         classSchedule { id name startTime endTime maxCapacity instructor { user { name } } }
         instructor { user { name } }
       `,
@@ -83,8 +84,9 @@ export async function getSchedulingWorkspace(
       take: 500,
       orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
       query: `
-        id name description dayOfWeek startTime endTime maxCapacity isActive
+        id name description dayOfWeek startTime endTime maxCapacity isActive location { id name } resource { id name }
         instructor { id user { id name email } }
+        classType { id name }
       `,
     }),
     sudo.query.Instructor.findMany({
@@ -92,13 +94,19 @@ export async function getSchedulingWorkspace(
       take: 500,
       query: "id user { id name email }",
     }),
+    sudo.query.ClassType.findMany({
+      where: tenant,
+      take: 500,
+      orderBy: [{ name: "asc" }],
+      query: "id name",
+    }),
     sudo.query.ClassInstance.findMany({
       where: upcomingWhere,
       orderBy: [{ date: "asc" }],
       take: 30,
       query: `
-        id date isCancelled cancellationReason bookingsCount maxCapacity
-        classSchedule { id name dayOfWeek startTime endTime maxCapacity }
+        id date endsAt isCancelled cancellationReason bookingsCount maxCapacity location { id name } resource { id name }
+        classSchedule { id name dayOfWeek startTime endTime maxCapacity instructor { id user { name } } }
         instructor { id user { name } }
       `,
     }),
@@ -112,31 +120,15 @@ export async function getSchedulingWorkspace(
       take: 1,
       query: "timezone",
     }),
+    sudo.query.Location.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: 200, query: "id name" }),
+    sudo.query.GymResource.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: 500, query: "id name capacity location { id }" }),
   ]);
 
   const timeZone = resolveGymTimeZone((settings[0] as any)?.timezone, (organizations[0] as any)?.timezone);
   const events = (instances as any[]).map((instance) => {
     const schedule = instance.classSchedule || {};
     const startDate = new Date(instance.date);
-    const endDate = schedule.endTime
-      ? (() => {
-          const [hours, minutes] = String(schedule.endTime).split(":").map(Number);
-          const local = localDateParts(startDate, timeZone);
-          let value = localTimeToUtc({ ...local, hour: hours, minute: minutes, second: 0 }, timeZone);
-          if (value <= startDate) {
-            const nextDay = new Date(Date.UTC(local.year, local.month - 1, local.day + 1));
-            value = localTimeToUtc({
-              year: nextDay.getUTCFullYear(),
-              month: nextDay.getUTCMonth() + 1,
-              day: nextDay.getUTCDate(),
-              hour: hours,
-              minute: minutes,
-              second: 0,
-            }, timeZone);
-          }
-          return value;
-        })()
-      : new Date(startDate.getTime() + 60 * 60 * 1000);
+    const endDate = instance.endsAt ? new Date(instance.endsAt) : new Date(startDate.getTime() + scheduleDurationMinutes(schedule.startTime, schedule.endTime) * 60 * 1000);
     return {
       id: instance.id,
       title: schedule.name || "Untitled Class",
@@ -152,5 +144,5 @@ export async function getSchedulingWorkspace(
     };
   });
 
-  return { events, schedules, instructors, upcomingInstances, timeZone };
+  return { events, schedules, instructors, classTypes, upcomingInstances, timeZone, locations, resources };
 }

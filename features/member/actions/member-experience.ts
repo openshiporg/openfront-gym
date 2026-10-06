@@ -56,12 +56,22 @@ export async function updateMemberProfileAction(data: {
   return response.data.updateMemberProfile;
 }
 
-export async function getMemberCheckInCodeAction(): Promise<{ qrDataUrl: string; expiresIn: number }> {
-  const response = await keystoneClient<{ memberCheckInCode: { qrDataUrl: string; expiresIn: number } }>(`
+export async function getMemberCheckInCodeAction(): Promise<{
+  success: boolean;
+  qrDataUrl: string | null;
+  expiresIn: number;
+  error: string | null;
+}> {
+  const response = await keystoneClient<{
+    memberCheckInCode: { qrDataUrl: string | null; expiresIn: number; error: string | null };
+  }>(`
     query MemberCheckInCode {
-      memberCheckInCode { qrDataUrl expiresIn }
+      memberCheckInCode { qrDataUrl expiresIn error }
     }
   `);
-  if (!response.success) throw new Error(response.error);
-  return response.data.memberCheckInCode;
+  if (!response.success) {
+    return { success: false, qrDataUrl: null, expiresIn: 0, error: "Check-in code is unavailable right now. Try again shortly." };
+  }
+  const result = response.data.memberCheckInCode;
+  return { success: !result.error && Boolean(result.qrDataUrl), ...result };
 }

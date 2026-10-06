@@ -18,7 +18,7 @@ function rosterActor(context: any) {
 function assignmentFilter(userId: string) {
   return { OR: [
     { instructor: { user: { id: { equals: userId } } } },
-    { classSchedule: { instructor: { user: { id: { equals: userId } } } } },
+    { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: userId } } } } }] },
   ] };
 }
 
@@ -36,7 +36,7 @@ export const ROSTER_DETAIL_PROJECTION = `
   classSchedule { id name dayOfWeek startTime endTime maxCapacity instructor { id user { name email } } }
   instructor { id user { name email } }
   bookings(orderBy: [{ waitlistPosition: asc }, { bookedAt: asc }], take: 1000) {
-    id status bookedAt waitlistPosition memberName memberEmail memberPhone
+    id status eligibilityReviewReason bookedAt waitlistPosition memberName memberEmail memberPhone
     member { id name email phone user { id } }
   }
 `;
@@ -50,7 +50,7 @@ export function rosterInstructorAccountProjection(from: string) {
     classSchedules(take: 30) {
       id name dayOfWeek startTime endTime maxCapacity
       instances(
-        where: { date: { gte: ${boundedFrom} }, isCancelled: { equals: false } }
+        where: { date: { gte: ${boundedFrom} }, isCancelled: { equals: false }, instructor: null }
         orderBy: [{ date: asc }]
         take: 20
       ) { id date maxCapacity instructor { id } bookings { id status waitlistPosition } }

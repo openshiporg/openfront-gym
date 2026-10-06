@@ -120,6 +120,10 @@ export const TrainerAppointment = list({
     checkedInAt: timestamp(),
     completedAt: timestamp(),
     payment: relationship({ ref: "GymPayment" }),
+    trainingPackage: relationship({ ref: "TrainingPackage" }),
+    replacesAppointment: relationship({ ref: "TrainerAppointment" }),
+    resourceStartsAt: timestamp(),
+    resourceEndsAt: timestamp(),
     ...trackingFields,
   },
 });

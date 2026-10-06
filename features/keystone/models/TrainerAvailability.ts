@@ -1,3 +1,4 @@
+import { denyAll } from "@keystone-6/core/access";
 import { list } from "@keystone-6/core";
 import { checkbox, integer, relationship, select, text, timestamp } from "@keystone-6/core/fields";
 import { canManageTenant, tenantFilter, tenantItemAccess } from "../access/tenantPolicy";
@@ -25,9 +26,9 @@ export const TrainerAvailability = list({
   access: {
     operation: {
       query: ({ session }: any) => Boolean(session),
-      create: canManageAppointments,
-      update: canManageAppointments,
-      delete: canManageAppointments,
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
     },
     filter: { query: canReadTrainerAvailability },
     item: { update: tenantItem, delete: tenantItem },

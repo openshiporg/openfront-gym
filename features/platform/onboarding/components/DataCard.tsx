@@ -23,6 +23,7 @@ export function DataCard({ title, content, onCopy, copied, copyKey, showPasteBut
               size="sm"
               variant="ghost"
               onClick={onPaste}
+              aria-label={`Paste ${title}`}
               className="h-6 w-6 p-0 hover:bg-background/80"
             >
               <Clipboard className="h-3 w-3 text-muted-foreground" />
@@ -32,6 +33,7 @@ export function DataCard({ title, content, onCopy, copied, copyKey, showPasteBut
             size="sm"
             variant="ghost"
             onClick={() => onCopy(content, copyKey)}
+            aria-label={copied ? `${title} copied` : `Copy ${title}`}
             className="h-6 w-6 p-0 hover:bg-background/80"
           >
             {copied ? (

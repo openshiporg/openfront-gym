@@ -59,16 +59,19 @@ export async function startOnboarding() {
   return updateOnboardingStatus('in_progress');
 }
 
-export async function runDeterministicOnboardingAction(template: 'minimal' | 'full') {
+export async function runDeterministicOnboardingAction(
+  template: 'minimal' | 'full' | 'custom',
+  customData?: unknown,
+) {
   const actor = await getOnboardingActor();
   if (actor.onboardingStatus !== 'in_progress') throw new Error('Onboarding must be in progress before seeding.');
   const response = await keystoneClient<{
     runDeterministicOnboarding: { success: boolean; instanceCount: number };
   }>(`
-    mutation RunDeterministicOnboarding($template: String!) {
-      runDeterministicOnboarding(template: $template) { success organizationId runId instanceCount }
+    mutation RunDeterministicOnboarding($template: String!, $data: JSON) {
+      runDeterministicOnboarding(template: $template, data: $data) { success organizationId runId instanceCount }
     }
-  `, { template });
+  `, { template, data: template === 'custom' ? customData : null });
   if (!response.success || !response.data?.runDeterministicOnboarding?.success) {
     throw new Error(response.success ? 'Deterministic onboarding failed.' : response.error);
   }

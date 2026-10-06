@@ -1,18 +1,23 @@
+import { currentRoleActor } from '../access/currentRoleActor';
+import { lockTransactionKey } from './classCapacity';
+import { enqueueOperationalNotice } from '../lib/operational-notices';
+import { guardKeystonePrismaResults } from '../lib/prisma-result';
+
 export async function setMemberAccountStatus(
   _root: unknown,
   { memberId, status }: { memberId: string; status: string },
   context: any,
 ) {
-  const session = context.session as any;
-  const organizationId = session?.data?.organization?.id;
-  if (!session?.itemId || !organizationId || !session.data?.role?.canManagePeople) {
-    throw new Error("Member management permission required");
-  }
+  const actor = await currentRoleActor(context);
+  const organizationId = actor.organizationId;
+  if (!actor.canManagePeople) throw new Error("Member management permission required");
   if (status !== "active" && status !== "suspended" && status !== "cancelled") {
     throw new Error("Member account status must be active, suspended, or cancelled");
   }
 
-  return context.prisma.$transaction(async (transaction: any) => {
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  return prisma.$transaction(async (transaction: any) => {
+    await lockTransactionKey(transaction, `member:${memberId}`);
     await transaction.$queryRaw`
       SELECT true AS locked
       FROM (SELECT pg_advisory_xact_lock(hashtextextended(${`member-account:${memberId}`}, 0))) AS acquired
@@ -47,6 +52,12 @@ export async function setMemberAccountStatus(
         throw new Error("Only an incomplete member with no operational or billing history can be closed");
       }
     }
-    return transaction.member.update({ where: { id: member.id }, data: { status } });
+    const updated = await transaction.member.update({ where: { id: member.id }, data: { status } });
+    await transaction.classBooking.updateMany({ where: {
+      organizationId, memberId, status: { in: ['confirmed', 'waitlist'] }, classInstance: { date: { gt: new Date() } },
+      ...(status === 'active' ? { eligibilityReviewReason: 'Member account is suspended' } : {}),
+    }, data: { eligibilityReviewReason: status === 'active' ? '' : 'Member account is suspended' } });
+    await enqueueOperationalNotice(transaction, { organizationId, memberId, key: `member-status:${memberId}:${updated.updatedAt.toISOString()}`, kind: 'membership', message: `Your member account is now ${status}. Existing reservations remain visible for staff review; participation requires current eligibility.` });
+    return updated;
   });
 }

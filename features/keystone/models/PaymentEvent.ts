@@ -1,3 +1,4 @@
+import { denyAll } from "@keystone-6/core/access";
 import { list } from "@keystone-6/core";
 import { integer, json, relationship, select, text, timestamp } from "@keystone-6/core/fields";
 
@@ -21,9 +22,9 @@ export const PaymentEvent = list({
   access: {
     operation: {
       query: permissions.canManageAllRecords,
-      create: permissions.canManageAllRecords,
-      update: permissions.canManageAllRecords,
-      delete: permissions.canManageAllRecords,
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
     },
     filter: {
       query: tenantFilter,

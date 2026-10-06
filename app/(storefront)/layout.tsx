@@ -5,8 +5,11 @@ import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
+  const configuredOrigin = process.env.NEXTAUTH_URL?.trim();
+  const metadataBase = configuredOrigin ? new URL(configuredOrigin) : undefined;
   if (!config) {
     return {
+      metadataBase,
       title: UNCONFIGURED_STOREFRONT.name,
       description: UNCONFIGURED_STOREFRONT.description,
       robots: { index: false, follow: false },
@@ -14,6 +17,7 @@ export async function generateMetadata(): Promise<Metadata> {
   }
   const description = config.heroSubheadline || config.description || config.tagline || undefined;
   return {
+    metadataBase,
     title: config.name,
     description,
     openGraph: {

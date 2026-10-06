@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Context } from ".keystone/types";
+import { reviewFutureMembershipBookings } from "../lib/membership-credits";
+import { enqueueOperationalNotice } from "../lib/operational-notices";
 import { lockTransactionKey } from "./classCapacity";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
 export type MembershipBillingOperation = "cancel" | "freeze" | "unfreeze" | "tier-change";
 
@@ -80,7 +83,8 @@ function assertMatchingEvidence(attempt: any, requestHash: string) {
 
 export async function isCompletedMembershipBillingAttempt(context: Context, rawScope: AttemptScope) {
   const scope = normalizeScope(rawScope);
-  const attempt = await (context.prisma as any).membershipBillingAttempt.findUnique({
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  const attempt = await prisma.membershipBillingAttempt.findUnique({
     where: uniqueAttemptWhere(scope),
     select: { requestHash: true, status: true },
   });
@@ -95,12 +99,14 @@ export async function claimMembershipBillingAttempt(
 ): Promise<ClaimedAttempt> {
   const scope = normalizeScope(rawScope);
   const claimToken = randomUUID();
-  return context.prisma.$transaction(async (transaction: any) => {
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  return prisma.$transaction(async (transaction: any) => {
     await lockTransactionKey(transaction, `membership-billing:${scope.organizationId}:${scope.membershipId}`);
     const membership = await transaction.membership.findFirst({
       where: { id: scope.membershipId, organizationId: scope.organizationId },
       select: {
         id: true,
+        memberId: true,
         status: true,
         autoRenew: true,
         stripeSubscriptionId: true,
@@ -113,6 +119,20 @@ export async function claimMembershipBillingAttempt(
       if (membership[field] !== expected) {
         throw new Error("Membership changed while claiming the billing operation; retry");
       }
+    }
+    if (scope.operation === "freeze") {
+      const memberId = membership.memberId;
+      if (typeof memberId !== "string" || memberId.length === 0) {
+        throw new Error("Membership member not found");
+      }
+      const member = await transaction.member.findFirst({
+        where: { organizationId: scope.organizationId, userId: memberId },
+        select: { id: true },
+      });
+      if (member instanceof Error) throw member;
+      if (!member?.id) throw new Error("Membership member not found");
+      // Serialize publishing the pending freeze fence with class/check-in writes.
+      await lockTransactionKey(transaction, `member:${member.id}`);
     }
 
     const existing = await transaction.membershipBillingAttempt.findUnique({
@@ -128,6 +148,17 @@ export async function claimMembershipBillingAttempt(
         providerIdempotencyKey: providerIdempotencyKey(scope),
         replay: true,
       };
+    }
+    const unresolvedRemote = await transaction.membershipBillingAttempt.findFirst({
+      where: { organizationId: scope.organizationId, membershipId: scope.membershipId, operation: { in: ["freeze", "tier-change"] }, status: "processing" },
+      select: { id: true, operation: true },
+    });
+    if (unresolvedRemote instanceof Error) throw unresolvedRemote;
+    if (unresolvedRemote && unresolvedRemote.id !== existing?.id) {
+      if (unresolvedRemote.operation === "freeze") {
+        throw new Error("Retry the pending freeze with its original idempotency key before another billing change");
+      }
+      throw new Error("Retry the pending membership tier change with its original idempotency key before another billing change");
     }
 
     const now = new Date();
@@ -209,8 +240,10 @@ export async function finishMembershipBillingAttempt(
   context: Context,
   claim: ClaimedAttempt,
   membershipData: Record<string, unknown>,
+  finalizeRelated?: (transaction: any, membership: any) => Promise<void>,
 ) {
-  const finalized = await context.prisma.$transaction(async (transaction: any) => {
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  const finalized = await prisma.$transaction(async (transaction: any) => {
     await lockTransactionKey(transaction, `membership-billing:${claim.organizationId}:${claim.membershipId}`);
     const attempt = await transaction.membershipBillingAttempt.findUnique({ where: { id: claim.attemptId } });
     if (
@@ -225,6 +258,10 @@ export async function finishMembershipBillingAttempt(
       attempt.generation !== claim.generation
     ) return false;
 
+    const membership = await transaction.membership.findFirst({ where: { id: claim.membershipId, organizationId: claim.organizationId } });
+    const member = membership && await transaction.member.findFirst({ where: { organizationId: claim.organizationId, userId: membership.memberId } });
+    if (!member) throw new Error("Membership member disappeared while finalizing billing");
+    await lockTransactionKey(transaction, `member:${member.id}`);
     const membershipUpdate = await transaction.membership.updateMany({
       where: {
         id: claim.membershipId,
@@ -234,6 +271,12 @@ export async function finishMembershipBillingAttempt(
       data: membershipData,
     });
     if (membershipUpdate.count !== 1) throw new Error("Membership disappeared while finalizing billing operation");
+    const updated = await transaction.membership.findFirst({ where: { id: claim.membershipId, organizationId: claim.organizationId } });
+    if (!updated) throw new Error("Membership disappeared while finalizing billing operation");
+    if (finalizeRelated) await finalizeRelated(transaction, updated);
+    await reviewFutureMembershipBookings(transaction, updated);
+    await enqueueOperationalNotice(transaction, { organizationId: claim.organizationId, memberId: member.id,
+      key: `billing:${claim.attemptId}`, kind: "membership", message: `Membership ${claim.operation} completed. Review your membership and affected bookings.` });
     const attemptUpdate = await transaction.membershipBillingAttempt.updateMany({
       where: {
         id: claim.attemptId,
@@ -249,8 +292,18 @@ export async function finishMembershipBillingAttempt(
   if (!finalized) throw new Error("Billing operation claim was replaced; retry with the same idempotency key");
 }
 
-export async function failMembershipBillingAttempt(context: Context, claim: ClaimedAttempt, error: unknown) {
-  await (context.prisma as any).membershipBillingAttempt.updateMany({
+export async function failMembershipBillingAttempt(
+  context: Context,
+  claim: ClaimedAttempt,
+  error: unknown,
+  providerOutcome: "definite" | "unknown" = "definite",
+) {
+  const lastError = error instanceof Error ? error.message.slice(0, 2000) : "Billing operation failed";
+  const data = ["freeze", "tier-change"].includes(claim.operation) && providerOutcome === "unknown"
+    ? { lastError }
+    : { status: "failed", leaseUntil: null, lastError };
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  await prisma.membershipBillingAttempt.updateMany({
     where: {
       id: claim.attemptId,
       organizationId: claim.organizationId,
@@ -258,10 +311,6 @@ export async function failMembershipBillingAttempt(context: Context, claim: Clai
       status: "processing",
       claimToken: claim.claimToken,
     },
-    data: {
-      status: "failed",
-      leaseUntil: null,
-      lastError: error instanceof Error ? error.message.slice(0, 2000) : "Billing operation failed",
-    },
+    data,
   });
 }

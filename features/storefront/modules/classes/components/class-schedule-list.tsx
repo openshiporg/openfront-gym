@@ -1,49 +1,29 @@
-"use client"
+import Link from "next/link";
+import { getUpcomingClassOccurrences } from "@/features/storefront/lib/data/classes";
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
+import { formatOccurrenceDate, formatOccurrenceTime } from "@/features/storefront/lib/class-occurrence";
+import { bookingReturnPath } from "@/features/storefront/lib/return-path";
 
-import Link from "next/link"
+export default async function ClassScheduleList({ classId }: { classId: string }) {
+  const [sessions, config] = await Promise.all([
+    getUpcomingClassOccurrences({ days: 14, classTypeId: classId, limit: 8 }),
+    getStorefrontConfig(),
+  ]);
+  const timeZone = config?.timezone || "UTC";
 
-// Mock schedule data - in production, this would fetch from GraphQL API
-const getScheduleForClass = (classId: string) => {
-  return [
-    { id: "s1", date: "Tomorrow", time: "7:00 AM", spots: 5 },
-    { id: "s2", date: "Wednesday", time: "7:00 AM", spots: 8 },
-    { id: "s3", date: "Friday", time: "7:00 AM", spots: 3 },
-    { id: "s4", date: "Saturday", time: "9:00 AM", spots: 12 },
-    { id: "s5", date: "Sunday", time: "10:00 AM", spots: 15 },
-  ]
-}
-
-export default function ClassScheduleList({ classId }: { classId: string }) {
-  const sessions = getScheduleForClass(classId)
+  if (!sessions.length) {
+    return <div className="border border-[var(--sf-border)] bg-[var(--sf-surface)] p-6 text-sm text-[var(--sf-muted)]">No upcoming dated sessions are published for this class.</div>;
+  }
 
   return (
-    <div className="space-y-3">
+    <div className="border-t border-[var(--sf-border)]">
       {sessions.map((session) => (
-        <div
-          key={session.id}
-          className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-        >
-          <div>
-            <div className="font-medium">{session.date}</div>
-            <div className="text-sm text-muted-foreground">{session.time}</div>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">
-              {session.spots} spots
-            </span>
-            <button
-              className={`px-4 py-2 rounded-md text-sm font-medium ${
-                session.spots > 0
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "bg-muted text-muted-foreground cursor-not-allowed"
-              }`}
-              disabled={session.spots === 0}
-            >
-              {session.spots > 0 ? "Book" : "Full"}
-            </button>
-          </div>
-        </div>
+        <article key={session.id} className="grid gap-4 border-b border-[var(--sf-border)] py-5 sm:grid-cols-[8rem_minmax(0,1fr)_auto] sm:items-center">
+          <div><p className="font-bold tabular-nums text-[var(--sf-primary)]">{formatOccurrenceTime(session.startsAt, timeZone)}</p><p className="mt-1 text-xs text-[var(--sf-muted)]">{formatOccurrenceDate(session.startsAt, timeZone)}</p></div>
+          <div><h3 className="font-semibold">{session.name || session.classType?.name || "Class"}</h3>{session.instructor?.name ? <p className="mt-1 text-sm text-[var(--sf-muted)]">{session.instructor.name}</p> : null}</div>
+          <div className="sm:text-right"><p className="text-sm font-semibold">{session.availability.spotsRemaining > 0 ? `${session.availability.spotsRemaining} spots open` : "Waitlist"}</p><Link href={bookingReturnPath(session.id)} className="mt-2 inline-flex text-xs font-semibold text-[var(--sf-primary)] underline underline-offset-4">{session.availability.spotsRemaining > 0 ? "Reserve" : "Join waitlist"}</Link></div>
+        </article>
       ))}
     </div>
-  )
+  );
 }

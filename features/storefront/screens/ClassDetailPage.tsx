@@ -1,7 +1,6 @@
 import { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, CalendarDays, ChevronLeft, Clock, Flame, Dumbbell, MapPin } from "lucide-react";
 import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
 import { getClassTypeById, getUpcomingClassOccurrences } from "@/features/storefront/lib/data/classes";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
@@ -22,10 +21,7 @@ function getDescriptionText(description: unknown): string {
 
   if (text) return text;
 
-  return JSON.stringify(description)
-    .replace(/document|children|text|type|paragraph|\{|\}|\[|\]|\"|:/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return "";
 }
 
 const DIFFICULTY_LABEL: Record<string, string> = {
@@ -59,140 +55,17 @@ export async function ClassDetailPage(props: { params: Promise<{ id: string }> }
   if (!classType) notFound();
 
   const description = getDescriptionText(classType.description);
-  const difficulty = DIFFICULTY_LABEL[classType.difficulty] ?? "All levels";
+  const difficulty = DIFFICULTY_LABEL[classType.difficulty] ?? (classType.difficulty || "Level not published");
   const equipment = Array.isArray(classType.equipmentNeeded) ? classType.equipmentNeeded : [];
-  const brand = getStorefrontBrandName(config);
   const timeZone = config?.timezone || "UTC";
-  const location = config?.address || config?.locationName || "Main studio";
+  const location = "Session location not published · confirm with the club";
 
-  return (
-    <div className="sf-page">
-      <div className="sf-container">
-        <Link
-          href="/classes"
-          className="inline-flex items-center gap-2 text-sm font-medium text-[var(--sf-ink-muted)] transition hover:text-[var(--sf-accent)]"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Training catalog
-        </Link>
-
-        <div className="mt-10 grid gap-12 lg:mt-14 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          {/* Main */}
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="sf-tag border-[var(--sf-accent)] text-[var(--sf-accent)]">{difficulty}</span>
-              {classType.duration ? <span className="sf-tag">{classType.duration} min</span> : null}
-              {classType.caloriesBurn ? (
-                <span className="sf-tag inline-flex items-center gap-1.5">
-                  <Flame className="h-3 w-3" /> {classType.caloriesBurn} cal
-                </span>
-              ) : null}
-            </div>
-
-            <h1 className="sf-display mt-6 text-5xl sm:text-6xl">{classType.name}</h1>
-
-            {description ? (
-              <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[var(--sf-ink-muted)]">{description}</p>
-            ) : (
-              <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[var(--sf-ink-muted)]">
-                Coached {classType.name.toLowerCase()} sessions on the {brand} floor.
-              </p>
-            )}
-
-            {/* Spec row */}
-            <div className="mt-12 grid grid-cols-2 gap-px border border-[var(--sf-rule)] bg-[var(--sf-rule)] sm:grid-cols-3">
-              <div className="flex flex-col items-center justify-center gap-2 bg-[var(--sf-paper)] py-8">
-                <Clock className="h-5 w-5 text-[var(--sf-accent)]" />
-                <p className="sf-display text-3xl">{classType.duration || "—"}</p>
-                <p className="text-xs uppercase tracking-[0.12em] text-[var(--sf-ink-muted)]">minutes</p>
-              </div>
-              <div className="flex flex-col items-center justify-center gap-2 bg-[var(--sf-paper)] py-8">
-                <Flame className="h-5 w-5 text-[var(--sf-accent)]" />
-                <p className="sf-display text-3xl">{classType.caloriesBurn ?? "—"}</p>
-                <p className="text-xs uppercase tracking-[0.12em] text-[var(--sf-ink-muted)]">calories</p>
-              </div>
-              <div className="flex flex-col items-center justify-center gap-2 bg-[var(--sf-paper)] py-8 sm:col-span-1 col-span-2">
-                <Dumbbell className="h-5 w-5 text-[var(--sf-accent)]" />
-                <p className="sf-display text-3xl">{equipment.length || "—"}</p>
-                <p className="text-xs uppercase tracking-[0.12em] text-[var(--sf-ink-muted)]">equipment</p>
-              </div>
-            </div>
-
-            {/* Equipment */}
-            {equipment.length > 0 ? (
-              <section className="mt-12">
-                <p className="sf-eyebrow mb-4">Equipment needed</p>
-                <div className="flex flex-wrap gap-2">
-                  {equipment.map((item: string) => (
-                    <span key={item} className="sf-tag">{item}</span>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {/* Booking pointer */}
-            <section className="mt-12 border-t border-[var(--sf-rule)] pt-10">
-              <p className="sf-eyebrow mb-3">Book this format</p>
-              <h2 className="sf-display text-3xl sm:text-4xl">Choose a dated session</h2>
-              <p className="mt-4 max-w-xl sf-lead">
-                Capacity below belongs to a specific class occurrence, not the recurring template.
-              </p>
-              {occurrences.length ? (
-                <div className="mt-8 divide-y divide-[var(--sf-rule)] border-y border-[var(--sf-rule)]">
-                  {occurrences.map((occurrence) => (
-                    <div key={occurrence.id} className="grid gap-4 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                      <div>
-                        <p className="flex items-center gap-2 font-semibold">
-                          <CalendarDays className="h-4 w-4 text-[var(--sf-accent)]" />
-                          {formatOccurrenceDate(occurrence.startsAt, timeZone)} · {formatOccurrenceTime(occurrence.startsAt, timeZone)}
-                        </p>
-                        <p className="mt-2 flex items-center gap-2 text-sm text-[var(--sf-ink-muted)]">
-                          <MapPin className="h-3.5 w-3.5" /> {location} · {occurrence.availability.spotsRemaining} spot{occurrence.availability.spotsRemaining === 1 ? "" : "s"} left
-                        </p>
-                      </div>
-                      <Link href={bookingReturnPath(occurrence.id)} className="sf-btn-secondary w-fit">
-                        {occurrence.availability.spotsRemaining > 0 ? "Book" : "Join waitlist"}
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-8 border border-[var(--sf-rule)] bg-[var(--sf-paper-2)] px-5 py-5 text-sm text-[var(--sf-ink-muted)]">
-                  No upcoming dated occurrence is currently published for this format.
-                </p>
-              )}
-              <Link href="/schedule" className="sf-btn-primary mt-8 inline-flex items-center gap-2">
-                Open full schedule <ArrowRight className="h-4 w-4" />
-              </Link>
-            </section>
-          </div>
-
-          {/* Sidebar */}
-          <aside className="lg:sticky lg:top-24 lg:self-start">
-            <div className="sf-card p-8">
-              <p className="sf-eyebrow">Ready when you are</p>
-              <h2 className="sf-display mt-3 text-3xl italic">Train with us</h2>
-              <p className="mt-4 text-sm leading-relaxed text-[var(--sf-ink-muted)]">
-                Classes are included with membership. Start a membership or jump straight into the schedule.
-              </p>
-              <div className="mt-6 flex flex-col gap-3">
-                <Link href="/schedule" className="sf-btn-primary w-full">View schedule</Link>
-                <Link href="/memberships" className="sf-btn-secondary w-full">See memberships</Link>
-              </div>
-            </div>
-
-            <div className="sf-card mt-4 p-6">
-              <h3 className="sf-label">Questions about this class?</h3>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--sf-ink-muted)]">
-                The front desk can confirm prerequisites, room, and availability.
-              </p>
-              <Link href="/contact" className="sf-btn-ghost mt-4 inline-flex">
-                Contact the desk
-              </Link>
-            </div>
-          </aside>
-        </div>
-      </div>
-    </div>
-  );
+  return <div className="sf-page"><div className="sf-container">
+    <Link href="/classes" className="sf-link">← All class formats</Link>
+    <header className="sf-page-header mt-8"><div><p className="sf-eyebrow">{difficulty} · Typically {classType.duration} minutes</p><h1 className="sf-display mt-4">{classType.name}</h1></div><p className="sf-lead">{description || "Explore upcoming sessions or ask the coaching team what to expect from this format."}</p></header>
+    <div className="sf-detail-grid"><section aria-labelledby="format-sessions"><div className="sf-section-heading"><h2 id="format-sessions">Choose your next session</h2></div><p className="sf-muted mb-5">Up to six upcoming sessions in the next 14 days. Times in {timeZone}.</p>
+      {occurrences.length ? <div className="sf-session-list">{occurrences.map(occurrence => <article className="sf-detail-session" key={occurrence.id}><div><time className="text-xl font-semibold" dateTime={occurrence.startsAt}>{formatOccurrenceTime(occurrence.startsAt, timeZone)}</time><p className="sf-muted text-sm mt-1">{formatOccurrenceDate(occurrence.startsAt, timeZone)}</p>{occurrence.instructor ? <Link className="sf-link text-sm mt-3 inline-flex" href={`/instructors/${occurrence.instructor.id}`}>With {occurrence.instructor.name} →</Link> : <p className="sf-muted text-sm mt-3">Coach not published</p>}<p className="sf-muted text-xs mt-2">{location}</p></div><div className="space-y-3"><p className="sf-badge">{occurrence.availability.spotsRemaining > 0 ? `${occurrence.availability.spotsRemaining} spaces` : "Waitlist available"}</p><Link href={bookingReturnPath(occurrence.id)} className={occurrence.availability.spotsRemaining > 0 ? "sf-btn-primary" : "sf-btn-secondary"}>{occurrence.availability.spotsRemaining > 0 ? "Book session" : "Join waitlist"}</Link></div></article>)}</div> : <div className="sf-empty"><h3>No sessions published in this window</h3><p>Explore other class formats or ask the club when this class returns.</p><Link href="/schedule" className="sf-btn-secondary">Explore the timetable</Link></div>}
+      <Link className="sf-link mt-6 inline-flex" href={`/schedule?format=${encodeURIComponent(classType.id)}`}>See this format in the full timetable →</Link>
+    </section><aside className="space-y-5"><section className="sf-panel"><p className="sf-eyebrow">Before you arrive</p><h2 className="text-2xl font-semibold mt-3">Get ready for the session</h2><dl className="sf-facts"><div><dt>Level</dt><dd>{difficulty}</dd></div><div><dt>Typical class length</dt><dd>{classType.duration} minutes</dd></div><div><dt>Equipment listed for this format</dt><dd>{equipment.length ? equipment.join(" · ") : "Ask the club what to bring"}</dd></div></dl><p className="sf-muted text-sm">Confirm equipment, prerequisites and your session location with the club if you are visiting for the first time.</p><Link href="/contact" className="sf-link mt-4 inline-flex">Ask about this class →</Link></section><section className="sf-notice"><strong>Membership and class access</strong><p>Your plan must include eligible class access. Availability and credits for the session date are checked when you book.</p><Link href="/memberships" className="sf-link">Compare membership options →</Link></section><Link href="/policies" className="sf-link inline-flex">Booking and participation guidance →</Link></aside></div>
+  </div></div>;
 }

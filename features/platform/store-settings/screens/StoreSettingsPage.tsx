@@ -19,6 +19,7 @@ import {
   type HoursState,
 } from '@/features/platform/store-settings/components/WeeklyHoursEditor'
 import { saveGymSettings } from '../actions/store-settings'
+import { isConfiguredPublicEmail } from '@/features/storefront/lib/contact-config'
 
 interface GymSettingsData {
   id?: string
@@ -447,8 +448,13 @@ export function StoreSettingsPage({ initialSettings }: { initialSettings: GymSet
                 <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="(555) 000-0000" className={fieldInput} />
               </div>
               <div className="px-5 py-3">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Email</p>
-                <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="hello@gym.com" className={fieldInput} />
+                <label htmlFor="gym-contact-email" className="text-[11px] uppercase tracking-wider text-muted-foreground">Email</label>
+                <Input id="gym-contact-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="hello@gym.com" className={fieldInput} />
+                {!isConfiguredPublicEmail(form.email) ? (
+                  <p role="status" className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                    Contact email is not configured. Replace the starter placeholder before publishing; the storefront will not present it as a working address.
+                  </p>
+                ) : null}
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Country Code</p>

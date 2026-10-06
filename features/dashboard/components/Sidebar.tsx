@@ -59,7 +59,7 @@ interface User {
 interface SidebarProps {
   adminMeta: AdminMeta | null
   user?: User | null
-  onOpenDialog?: () => void
+  onOpenDialog: () => void
 }
 
 export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
@@ -382,7 +382,7 @@ export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
                 console.error('Error dismissing onboarding:', error);
               }
             }}
-            onOpenDialog={onOpenDialog ?? (() => {})}
+            onOpenDialog={onOpenDialog}
           />
         </div>
         {user && <UserProfileClient user={user} />}

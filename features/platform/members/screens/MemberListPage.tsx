@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageContainer } from "@/features/dashboard/components/PageContainer";
 import { MemberInviteForm } from "../components/MemberInviteForm";
+import { requireDashboardManager } from "@/features/dashboard/lib/current-user";
+import { normalizeDashboardListPagination } from "@/lib/list-pagination";
 import MemberListPageClient, {
   type MemberSummary,
 } from "./MemberListPageClient";
@@ -74,13 +76,15 @@ export default async function MemberListPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireDashboardManager();
   const resolvedSearchParams = await searchParams;
   const query = getParam(resolvedSearchParams.q).trim();
   const status = getParam(resolvedSearchParams.status);
   const tier = getParam(resolvedSearchParams.tier);
   const joinedFrom = getParam(resolvedSearchParams.joinedFrom);
   const joinedTo = getParam(resolvedSearchParams.joinedTo);
-  const page = Math.max(1, parseInt(getParam(resolvedSearchParams.page) || "1", 10));
+  const pagination = normalizeDashboardListPagination(getParam(resolvedSearchParams.page), PAGE_SIZE, PAGE_SIZE);
+  const page = pagination.page;
   const notice = getParam(resolvedSearchParams.notice);
   const error = getParam(resolvedSearchParams.error);
 
@@ -139,8 +143,8 @@ export default async function MemberListPage({
     membershipTiers: { id: string; name?: string | null }[];
   }>(queryDocument, {
     where,
-    take: PAGE_SIZE,
-    skip: (page - 1) * PAGE_SIZE,
+    take: pagination.pageSize,
+    skip: pagination.skip,
   });
 
   const members = response.success ? response.data.members : [];
@@ -258,7 +262,7 @@ export default async function MemberListPage({
         <div>
           <MemberListPageClient
             members={members}
-            viewProfileBasePath="/dashboard/Member"
+            viewProfileBasePath="/dashboard/members"
             suspendMember={suspendMember}
           />
         </div>

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-const seedPath = path.join(root, 'features/platform/onboarding/lib/seed.json');
+const seedPath = path.join(root, 'features/keystone/onboarding/seed.json');
 const publicDir = path.join(root, 'public');
 const requiredKeys = [
   'gymSettings',

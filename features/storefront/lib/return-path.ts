@@ -1,5 +1,9 @@
 const STOREFRONT_RETURN_ROOTS = [
   "/account",
+  "/member/profile",
+  "/member/check-in-code",
+  "/contact",
+  "/policies",
   "/join",
   "/schedule",
   "/classes",
@@ -23,7 +27,7 @@ export function safeStorefrontReturnPath(
     value.startsWith("//") ||
     value.includes("\\") ||
     /[\u0000-\u001f\u007f]/.test(value) ||
-    /%(?:2f|5c)/i.test(value)
+    /%(?:2f|5c)/i.test(value.split(/[?#]/, 1)[0])
   ) {
     return fallback;
   }
@@ -53,7 +57,7 @@ export function accountSignInPath(returnTo: string) {
   return `/account?returnTo=${encodeURIComponent(safeReturnTo)}`;
 }
 
-export function joinPath(tierId?: string | null, returnTo?: string | null) {
+export function joinPath(tierId?: string | null, returnTo?: string | null, cycle?: string | null) {
   const params = new URLSearchParams();
   if (tierId && /^[A-Za-z0-9_-]{1,200}$/.test(tierId)) {
     params.set("tier", tierId);
@@ -61,6 +65,7 @@ export function joinPath(tierId?: string | null, returnTo?: string | null) {
   if (returnTo) {
     params.set("returnTo", safeStorefrontReturnPath(returnTo));
   }
+  if (cycle === "annual" || cycle === "monthly") params.set("cycle", cycle);
   const query = params.toString();
   return query ? `/join?${query}` : "/join";
 }

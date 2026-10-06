@@ -20,16 +20,18 @@ export async function ResetPage({ searchParams }: ResetPageProps) {
         <div className="flex items-center space-x-1.5">
           <Logo aria-hidden="true" />
         </div>
-        <h3 className="mt-6 text-lg font-semibold text-foreground dark:text-foreground">
+        <h1 className="mt-6 text-lg font-semibold text-foreground dark:text-foreground">
           {mode === "reset" ? "Reset your password" : "Reset password"}
-        </h3>
+        </h1>
         <p className="mt-2 text-sm text-muted-foreground dark:text-muted-foreground">
           {mode === "reset"
             ? "Enter your new password below."
-            : "Enter your email address and we'll send you a link to reset your password."}
+            : process.env.MAIL_ENABLED === "false"
+              ? "Reset email is unavailable. Contact the club for account recovery help."
+              : "Enter your email address. If an eligible account exists and email delivery is available, reset instructions may be sent."}
         </p>
 
-        <ResetForm mode={mode} token={token} />
+        {mode === "reset" || process.env.MAIL_ENABLED !== "false" ? <ResetForm mode={mode} token={token} /> : null}
       </div>
     </div>
   );

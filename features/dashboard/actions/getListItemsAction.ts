@@ -7,6 +7,7 @@
 import { keystoneClient } from '../lib/keystoneClient'
 import { getList } from './getList'
 import { getFieldTypeFromViewsIndex } from '../views/getFieldTypeFromViewsIndex'
+import { normalizeDashboardListWindow } from '@/lib/list-pagination'
 
 interface ListItemsVariables extends Record<string, unknown> {
   where?: any
@@ -131,8 +132,9 @@ export async function getListItemsAction(
       }
     `
     
-    // Execute the query
-    const response = await keystoneClient(query, variables, cacheOptions)
+    // Clamp caller-controlled take/skip values before the GraphQL request.
+    const pagination = normalizeDashboardListWindow(variables.take, variables.skip, list.pageSize)
+    const response = await keystoneClient(query, { ...variables, ...pagination }, cacheOptions)
     
     if (!response.success) {
       console.error(`❌ GraphQL query failed:`, response.error)

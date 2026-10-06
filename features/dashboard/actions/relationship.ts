@@ -1,13 +1,14 @@
 "use server";
 
 import { keystoneClient, type KeystoneResponse } from "@/features/dashboard/lib/keystoneClient";
+import { normalizeDashboardListWindow } from "@/lib/list-pagination";
 
 // Relationship Options Server Action
 export async function getRelationshipOptions(
   listKey: string,
   where: Record<string, unknown>,
-  take: number,
-  skip: number,
+  take: unknown,
+  skip: unknown,
   labelField: string,
   extraSelection: string,
   gqlNames: {
@@ -16,6 +17,8 @@ export async function getRelationshipOptions(
     listQueryCountName: string;
   }
 ): Promise<KeystoneResponse<any>> {
+  const pagination = normalizeDashboardListWindow(take, skip);
+
   try {
     const query = `
       query GetOptions($where: ${gqlNames.whereInputName}!, $take: Int!, $skip: Int!) {
@@ -30,8 +33,8 @@ export async function getRelationshipOptions(
 
     const response = await keystoneClient(query, {
       where,
-      take,
-      skip,
+      take: pagination.take,
+      skip: pagination.skip,
     });
 
     // Return the entire response object directly

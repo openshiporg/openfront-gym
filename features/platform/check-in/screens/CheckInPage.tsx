@@ -25,14 +25,14 @@ export async function CheckInPage({
   const resolved = searchParams ? await searchParams : undefined;
   const q = resolved?.q ?? "";
   const data = await getFrontDeskData(q);
-  const openVisitsRecent = data.checkIns.filter((entry) => !entry.checkOutTime).length;
+  const openVisitsRecent = data.checkIns.length;
   const validatedRecent = data.checkIns.filter((entry) => entry.membershipValidated).length;
-  const eligibleMatches = data.members.filter((member) => member.status === "active" && member.user?.membership?.status === "active").length;
+  const eligibleMatches = data.members.filter((member) => member.status === "active" && member.membershipEligible).length;
 
   const header = (
     <div className="flex flex-col gap-1">
       <h1 className="text-lg font-semibold md:text-2xl">Front desk check-in</h1>
-      <p className="text-muted-foreground">Search members, validate active access, and record walk-in check-ins.</p>
+      <p className="text-muted-foreground">Confirm identity and current membership eligibility; the server rechecks hours, policy, and location when recording entry.</p>
     </div>
   );
 
@@ -45,8 +45,8 @@ export async function CheckInPage({
     <PageContainer title="Check-in" header={header} breadcrumbs={breadcrumbs}>
       <div className="w-full min-w-0 space-y-5 p-4 md:p-6">
         <div className="grid grid-cols-3 divide-x rounded-lg border bg-card">
-          <div className="p-3"><p className="text-xs text-muted-foreground">Open visits in recent 12</p><p className="mt-1 text-2xl font-semibold tabular-nums">{openVisitsRecent}</p></div>
-          <div className="p-3"><p className="text-xs text-muted-foreground">Validated in recent 12</p><p className="mt-1 text-2xl font-semibold tabular-nums">{validatedRecent}</p></div>
+          <div className="p-3"><p className="text-xs text-muted-foreground">Open visits shown (up to 12)</p><p className="mt-1 text-2xl font-semibold tabular-nums">{openVisitsRecent}</p></div>
+          <div className="p-3"><p className="text-xs text-muted-foreground">Validated open visits</p><p className="mt-1 text-2xl font-semibold tabular-nums">{validatedRecent}</p></div>
           <div className="p-3"><p className="text-xs text-muted-foreground">Eligible search matches</p><p className="mt-1 text-2xl font-semibold tabular-nums">{eligibleMatches}</p></div>
         </div>
         <div className="rounded-lg border bg-card p-4 space-y-4">
@@ -81,23 +81,15 @@ export async function CheckInPage({
           <section className="min-w-0 rounded-lg border bg-background">
             <div className="border-b px-5 py-4">
               <h2 className="text-sm font-semibold">Member lookup</h2>
-              <p className="text-xs text-muted-foreground mt-1">Find a member and record a front-desk check-in.</p>
+              <p className="text-xs text-muted-foreground mt-1">Search by name, email, or phone. Contact details are used to match members but are not displayed in results.</p>
             </div>
 
             <div className="divide-y">
               {data.members.length === 0 ? (
-                <div className="px-5 py-10"><p className="text-sm font-medium">No matching members.</p><p className="mt-1 text-xs text-muted-foreground">Search by full or partial name, email, or phone. No access decision was made.</p></div>
+                <div className="px-5 py-10"><p className="text-sm font-medium">{q.trim().length >= 2 ? "No matching members." : "Search for a member."}</p><p className="mt-1 text-xs text-muted-foreground">Search with at least two characters by name, email, or phone. No access decision was made.</p></div>
               ) : (
                 data.members.map((member) => {
-                  const membership = member.user?.membership;
-                  const canCheckIn = member.status === "active" && membership?.status === "active";
-                  const membershipState = membership?.status ?? "missing";
-                  const creditsCopy =
-                    membership?.classCreditsRemaining === -1
-                      ? "Unlimited classes"
-                      : typeof membership?.classCreditsRemaining === "number"
-                        ? `${membership.classCreditsRemaining} credits left`
-                        : "No credit data";
+                  const canCheckIn = member.status === "active" && member.membershipEligible;
 
                   return (
                     <div key={member.id} className="px-5 py-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -105,15 +97,12 @@ export async function CheckInPage({
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-semibold text-foreground">{member.name}</p>
                           <Badge variant="outline" className="capitalize">{member.status ?? "unknown"}</Badge>
-                          <Badge className={membershipState === "active" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}>
-                            Membership {membershipState}
+                          <Badge className={member.membershipEligible ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}>
+                            {member.membershipEligible ? "Entitlement eligible" : "Entitlement blocked"}
                           </Badge>
                         </div>
-                        <p className="break-all text-xs text-muted-foreground">{member.email}{member.phone ? ` · ${member.phone}` : ""}</p>
                         <p className="text-xs text-muted-foreground">
-                          {member.membershipTier?.name ? `${member.membershipTier.name} · ` : ""}
-                          {creditsCopy}
-                          {member.lastCheckIn ? ` · last check-in ${formatDateTime(member.lastCheckIn, data.timeZone)}` : ""}
+                          {member.membershipEligible ? "Current paid membership period" : member.entitlementReason}
                         </p>
                       </div>
 
@@ -129,7 +118,7 @@ export async function CheckInPage({
                             <option key={location.id} value={location.id}>{location.name || "Unnamed location"}</option>
                           ))}
                         </select></label>
-                        <Button type="submit" disabled={!canCheckIn} title={!canCheckIn ? "Active member and active membership are required" : undefined}>
+                        <Button type="submit" disabled={!canCheckIn} title={!canCheckIn ? member.entitlementReason : undefined}>
                           {canCheckIn ? "Check in" : "Access blocked"}
                         </Button>
                       </form>
@@ -142,8 +131,8 @@ export async function CheckInPage({
 
           <section className="min-w-0 rounded-lg border bg-background">
             <div className="border-b px-5 py-4">
-              <h2 className="text-sm font-semibold">Recent check-ins</h2>
-              <p className="text-xs text-muted-foreground mt-1">Most recent 12 front-desk records returned across active locations.</p>
+              <h2 className="text-sm font-semibold">Current open visits</h2>
+              <p className="text-xs text-muted-foreground mt-1">Only unclosed visits are shown (up to 12); closed visit history is not loaded here.</p>
             </div>
             <div className="divide-y">
               {data.checkIns.length === 0 ? (
@@ -156,21 +145,17 @@ export async function CheckInPage({
                       <Badge variant="outline" className="capitalize">{entry.method.replace(/_/g, " ")}</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {entry.member?.email || "No email"}
-                      {entry.location?.name ? ` · ${entry.location.name}` : ""}
+                      {entry.location?.name || "Location not recorded"}
                     </p>
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-xs text-muted-foreground">
                         {formatDateTime(entry.checkInTime, data.timeZone)}
-                        {entry.checkOutTime ? ` · checked out ${formatDateTime(entry.checkOutTime, data.timeZone)}` : " · open visit"}
                         {entry.membershipValidated ? " · validated" : " · pending validation"}
                       </p>
-                      {!entry.checkOutTime ? (
-                        <form action={manualCheckOut}>
-                          <input type="hidden" name="checkInId" value={entry.id} />
-                          <Button type="submit" variant="outline" size="sm">Check out</Button>
-                        </form>
-                      ) : null}
+                      <form action={manualCheckOut}>
+                        <input type="hidden" name="checkInId" value={entry.id} />
+                        <Button type="submit" variant="outline" size="sm">Check out</Button>
+                      </form>
                     </div>
                   </div>
                 ))

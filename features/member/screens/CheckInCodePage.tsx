@@ -1,126 +1,39 @@
-"use client"
-
-import { useState, useEffect, useCallback } from "react"
-import Image from "next/image"
-import { RefreshCw, Clock, QrCode } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { getMemberCheckInCodeAction } from "../actions/member-experience"
-
-const QR_REFRESH_INTERVAL = 30000 // 30 seconds
-
+"use client";
+import { useState, useEffect, useCallback, useRef } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { getMemberCheckInCodeAction } from "../actions/member-experience";
 export default function CheckInCodePage() {
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
-  const [timeLeft, setTimeLeft] = useState(30)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const fetchQRCode = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-
+  const [code, setCode] = useState<{ image: string; expiresAt: number } | null>(null);
+  const [now, setNow] = useState(Date.now);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const request = useRef(0);
+  const busy = useRef(false);
+  const fetchCode = useCallback(async () => {
+    if (busy.current) return;
+    busy.current = true; const sequence = ++request.current; const started = Date.now();
+    setLoading(true); setError(""); setCode(null);
     try {
-      const data = await getMemberCheckInCodeAction()
-      setQrDataUrl(data.qrDataUrl)
-      setTimeLeft(data.expiresIn)
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
-
+      const result = await getMemberCheckInCodeAction();
+      if (sequence !== request.current) return;
+      if (!result.success || !result.qrDataUrl || !result.expiresIn) { setError(result.error || "A check-in code could not be issued. Ask the front desk for help."); return; }
+      // Subtract request transit time rather than extending server-issued validity.
+      const expiresAt = started + result.expiresIn * 1000;
+      setCode({ image: result.qrDataUrl, expiresAt }); setNow(Date.now());
+    } catch { if (sequence === request.current) setError("We couldn’t refresh your code. Check your connection and try again, or ask the front desk to check you in."); }
+    finally { if (sequence === request.current) { busy.current = false; setLoading(false); } }
+  }, []);
+  const invalidateRequest = useCallback(() => { request.current++; busy.current = false; }, []);
   useEffect(() => {
-    fetchQRCode()
-
-    const refreshInterval = setInterval(fetchQRCode, QR_REFRESH_INTERVAL)
-    return () => clearInterval(refreshInterval)
-  }, [fetchQRCode])
-
-  useEffect(() => {
-    if (timeLeft <= 0) return
-
-    const countdown = setInterval(() => {
-      setTimeLeft((prev) => Math.max(0, prev - 1))
-    }, 1000)
-
-    return () => clearInterval(countdown)
-  }, [timeLeft])
-
-  return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
-            <QrCode className="w-8 h-8 text-primary" />
-          </div>
-          <h1 className="text-2xl font-bold">Your Check-In Code</h1>
-          <p className="text-muted-foreground mt-2">
-            Show this code at the gym entrance
-          </p>
-        </div>
-
-        <div className="bg-card border rounded-2xl p-8 shadow-lg">
-          <div className="relative">
-            {isLoading ? (
-              <div className="w-[280px] h-[280px] mx-auto flex items-center justify-center bg-muted rounded-lg animate-pulse">
-                <RefreshCw className="w-8 h-8 text-muted-foreground animate-spin" />
-              </div>
-            ) : error ? (
-              <div className="w-[280px] h-[280px] mx-auto flex flex-col items-center justify-center bg-destructive/10 rounded-lg text-center p-4">
-                <p className="text-destructive font-medium mb-4">{error}</p>
-                <Button onClick={fetchQRCode} variant="outline" size="sm">
-                  Try Again
-                </Button>
-              </div>
-            ) : qrDataUrl ? (
-              <div className="relative">
-                <Image
-                  src={qrDataUrl}
-                  alt="Check-in QR Code"
-                  width={280}
-                  height={280}
-                  unoptimized
-                  className="w-[280px] h-[280px] mx-auto rounded-lg"
-                />
-                <div
-                  className="absolute inset-0 rounded-lg"
-                  style={{
-                    background: `conic-gradient(from 0deg, hsl(var(--primary)) ${(timeLeft / 30) * 100}%, transparent ${(timeLeft / 30) * 100}%)`,
-                    mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                    maskComposite: 'xor',
-                    WebkitMaskComposite: 'xor',
-                    padding: '3px',
-                    pointerEvents: 'none',
-                  }}
-                />
-              </div>
-            ) : null}
-          </div>
-
-          <div className="mt-6 flex items-center justify-center gap-2 text-muted-foreground">
-            <Clock className="w-4 h-4" />
-            <span className="text-sm">
-              Refreshes in <span className="font-mono font-bold text-foreground">{timeLeft}s</span>
-            </span>
-          </div>
-        </div>
-
-        <div className="text-center space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Code updates automatically for security
-          </p>
-          <Button
-            onClick={fetchQRCode}
-            variant="ghost"
-            size="sm"
-            disabled={isLoading}
-            className="gap-2"
-          >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
-            Refresh Now
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
+    void fetchCode();
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    const refresh = setInterval(() => { if (document.visibilityState === "visible") void fetchCode(); }, 25000);
+    const visible = () => { if (document.visibilityState === "visible") { setNow(Date.now()); void fetchCode(); } };
+    document.addEventListener("visibilitychange", visible);
+    return () => { invalidateRequest(); clearInterval(tick); clearInterval(refresh); document.removeEventListener("visibilitychange", visible); };
+  }, [fetchCode, invalidateRequest]);
+  const seconds = code ? Math.max(0, Math.floor((code.expiresAt - now) / 1000)) : 0;
+  const valid = code && seconds > 0;
+  return <div className="sf-page"><div className="sf-container"><Link href="/account" className="sf-link">← Your account</Link><div className="sf-join-grid mt-8"><header><p className="sf-eyebrow">Ready for your visit</p><h1 className="sf-display text-[var(--text-display-s)] mt-4">Your check-in code</h1><p className="sf-lead mt-5">Show the current code to the front desk scanner when you arrive.</p><div className="sf-notice mt-6"><strong>Keep this page open at check-in.</strong><p>The code expires quickly and refreshes automatically. A screenshot may expire before you arrive.</p></div><p className="sf-muted mt-5">If a code is unavailable or the scanner cannot read it, ask staff to check you in. Your membership and participation requirements still apply.</p><Link href="/account/participation" className="sf-link mt-5 inline-flex">Review participation requirements →</Link></header><section className="sf-panel" aria-label="Entrance code" aria-busy={loading}><div className="sf-section-heading"><h2>Entrance code</h2><span className="sf-badge">{loading ? "Refreshing" : valid ? "Ready to scan" : "Not ready"}</span></div><div className="mx-auto grid aspect-square w-full max-w-72 place-items-center border border-[var(--sf-border)] p-4 text-center">{loading ? <p role="status">Getting a fresh code…</p> : error ? <p role="alert">{error}</p> : valid ? <Image src={code.image} alt="Current member check-in QR code" width={280} height={280} unoptimized className="w-full bg-white" /> : <p role="status">This code has expired. Refresh to get a new code.</p>}</div><p className="sf-muted text-center my-5">{valid ? `Expires in ${seconds} seconds` : "Only a current code can be scanned"}</p><button type="button" className="sf-btn-primary w-full" onClick={() => void fetchCode()} disabled={loading}>{loading ? "Refreshing…" : "Get a fresh code"}</button></section></div></div></div>;
 }

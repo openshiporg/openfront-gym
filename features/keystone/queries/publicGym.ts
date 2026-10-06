@@ -1,7 +1,7 @@
 import type { KeystoneContext } from "@keystone-6/core/types";
 import { resolveGymTimeZone } from "../../../lib/timezone";
 import { sanitizeGymLogoSvg } from "../utils/gymLogo";
-import { normalizeStorefrontHue } from "../../platform/store-settings/lib/storefront-branding";
+import { normalizeStorefrontHue } from "../lib/storefront-branding";
 
 const DEFAULT_INSTANCE_WINDOW_DAYS = 14;
 const MAX_INSTANCE_WINDOW_DAYS = 90;

@@ -183,28 +183,31 @@ export async function getUpcomingClassOccurrences(options?: {
   return records
     .filter((instance) => {
       if (!instance.schedule) return false;
+      if (options?.instructorId && (instance.instructor ?? instance.schedule.instructor)?.id !== options.instructorId) return false;
       return !options?.classTypeId || instance.schedule.classType?.id === options.classTypeId;
     })
     .slice(0, Math.min(Math.max(options?.limit ?? 100, 1), 100))
-    .map((instance) => {
-      const schedule = instance.schedule!;
-      const instructor = instance.instructor ?? schedule.instructor ?? null;
-      return {
-        id: instance.id,
-        startsAt: instance.startsAt,
-        scheduleId: schedule.id,
-        name: schedule.name,
-        description: schedule.description ?? null,
-        startTime: schedule.startTime,
-        endTime: schedule.endTime,
-        maxCapacity: instance.availability.maxCapacity,
-        classType: schedule.classType ?? null,
-        instructor: instructor
-          ? { id: instructor.id, name: instructor.name }
-          : null,
-        availability: instance.availability,
-      };
-    });
+    .map(occurrenceShape);
+}
+
+function occurrenceShape(instance: PublicInstance): ClassOccurrenceData {
+  const schedule = instance.schedule!;
+  const instructor = instance.instructor ?? schedule.instructor ?? null;
+  return {
+    id: instance.id,
+    startsAt: instance.startsAt,
+    scheduleId: schedule.id,
+    name: schedule.name,
+    description: schedule.description ?? null,
+    startTime: schedule.startTime,
+    endTime: schedule.endTime,
+    maxCapacity: instance.availability.maxCapacity,
+    classType: schedule.classType ?? null,
+    instructor: instructor
+      ? { id: instructor.id, name: instructor.name }
+      : null,
+    availability: instance.availability,
+  };
 }
 
 export async function getBookingCount(instanceId: string): Promise<number> {
@@ -288,4 +291,21 @@ function estimateDurationFromTimes(startTime?: string, endTime?: string): number
   if ([sh, sm, eh, em].some(Number.isNaN)) return 60;
   const diff = eh * 60 + em - (sh * 60 + sm);
   return diff > 0 ? diff : 60;
+}
+
+/** Resolve an explicit booking link independently of the bounded timetable window. */
+export async function getClassOccurrenceById(id: string): Promise<ClassOccurrenceData | null> {
+  if (!/^[A-Za-z0-9_-]{1,200}$/.test(id)) return null;
+  const result = await gymClient.request<{ publicGymClassInstance: PublicInstance | null }>(gql`
+    ${CLASS_TYPE_FIELDS}
+    ${INSTRUCTOR_FIELDS}
+    ${SCHEDULE_FIELDS}
+    query StorefrontSelectedOccurrence($id: ID!) {
+      publicGymClassInstance(id: $id) {
+        id startsAt schedule { ...StorefrontSchedule } instructor { ...StorefrontScheduleInstructor }
+        availability { maxCapacity confirmedBookings waitlistCount spotsRemaining state }
+      }
+    }
+  `, { id });
+  return result.publicGymClassInstance?.schedule ? occurrenceShape(result.publicGymClassInstance) : null;
 }

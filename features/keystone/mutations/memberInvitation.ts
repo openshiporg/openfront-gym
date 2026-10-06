@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { normalizeAuthIdentity } from "../../../lib/authRateLimit";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { ensureBoundedMemberRole } from "./memberRole";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -22,7 +23,8 @@ export async function inviteMember(
   if (phone.length > 40) throw new Error("Phone number is too long");
 
   return context.transaction(async (transactionContext: any) => {
-    await transactionContext.prisma.$queryRaw`
+    const prisma = guardKeystonePrismaResults(transactionContext.prisma);
+    await prisma.$queryRaw`
       SELECT true AS locked
       FROM (SELECT pg_advisory_xact_lock(hashtextextended(${`member-invite:${organizationId}`}, 0))) AS acquired
     `;

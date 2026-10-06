@@ -13,9 +13,11 @@ import { isSignedIn, permissions, rules } from "../access";
 import { trackingFields } from "./trackingFields";
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 import { tenantFilter } from "../access/tenantPolicy";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
 const validateClassScheduleTenant = validateTenantOwnership([
   { field: "instructor", list: "instructor" },
+  { field: "classType", list: "classType" },
 ]);
 
 export const ClassSchedule = list({
@@ -37,13 +39,14 @@ export const ClassSchedule = list({
 
       const nextCapacity = args.resolvedData.maxCapacity;
       if (args.operation === "update" && typeof nextCapacity === "number" && args.item?.id) {
-        const inheritedInstances = await args.context.prisma.classInstance.findMany({
+        const prisma = guardKeystonePrismaResults(args.context.prisma as any);
+        const inheritedInstances = await prisma.classInstance.findMany({
           where: { classScheduleId: args.item.id, maxCapacity: null },
           select: { id: true },
         });
         const instanceIds = inheritedInstances.map((instance: any) => instance.id);
         if (instanceIds.length) {
-          const counts = await args.context.prisma.classBooking.groupBy({
+          const counts = await prisma.classBooking.groupBy({
             by: ["classInstanceId"],
             where: { classInstanceId: { in: instanceIds }, status: "confirmed" },
             _count: { _all: true },
@@ -59,9 +62,9 @@ export const ClassSchedule = list({
   access: {
     operation: {
       query: isSignedIn,
-      create: permissions.canManageAllRecords,
-      update: permissions.canManageAllRecords,
-      delete: permissions.canManageAllRecords,
+      create: denyAll,
+      update: denyAll,
+      delete: denyAll,
     },
     filter: {
       query: rules.canReadClassSchedule,
@@ -81,6 +84,8 @@ export const ClassSchedule = list({
       graphql: { isNonNull: { read: true } },
       db: { extendPrismaSchema: requiredRelationshipDb("organization") },
     }),
+    location: relationship({ ref: "Location" }),
+    resource: relationship({ ref: "GymResource" }),
     name: text({
       validation: { isRequired: true },
       ui: {

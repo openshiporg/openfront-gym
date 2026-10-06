@@ -1,5 +1,5 @@
 import type { Context } from ".keystone/types";
-import { getPaymentProviderAdapter } from "../../integrations/payment";
+import { getPaymentProviderAdapterForExecution } from "../../integrations/payment";
 
 export type PaymentProviderRecord = {
   id: string;
@@ -40,10 +40,6 @@ export async function getAdapterForProvider(
   organizationId: string
 ) {
   const provider = await getPaymentProvider(context, providerCode, organizationId);
-  const adapterKey =
-    process.env.PAYMENT_TEST_MODE === "true" && provider.adapterKey === "stripe"
-      ? "test"
-      : provider.adapterKey;
-  const adapter = await getPaymentProviderAdapter(adapterKey);
+  const adapter = await getPaymentProviderAdapterForExecution(provider.adapterKey);
   return { provider, adapter };
 }

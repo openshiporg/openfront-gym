@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { guardKeystonePrismaResults } from "../features/keystone/lib/prisma-result";
 
 export function rateLimitStorageKey(key: string) {
   const bounded = key.trim().slice(0, 200);
@@ -16,7 +17,8 @@ export async function consumeAuthAttempt(
 ) {
   const boundedKey = rateLimitStorageKey(key);
   if (!boundedKey) return false;
-  return prisma.$transaction(async (transaction: any) => {
+  const guardedPrisma = guardKeystonePrismaResults(prisma);
+  return guardedPrisma.$transaction(async (transaction: any) => {
     await transaction.$queryRaw`SELECT true AS locked FROM (SELECT pg_advisory_xact_lock(hashtextextended(${`auth-rate:${boundedKey}`}, 0))) AS acquired`;
     const existing = await transaction.authRateLimitBucket.findUnique({ where: { key: boundedKey } });
     if (!existing || existing.resetAt <= now) {

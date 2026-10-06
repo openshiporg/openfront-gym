@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useActionState } from "react";
 import { Loader2, CheckCircle2 } from "lucide-react";
 import { login, signUp } from "@/features/storefront/lib/data/user";
@@ -7,10 +8,11 @@ import { login, signUp } from "@/features/storefront/lib/data/user";
 interface LoginPageProps {
   redirectTo?: string;
   allowSignup?: boolean;
+  showHeading?: boolean;
 }
 
-export default function LoginPage({ redirectTo, allowSignup = false }: LoginPageProps) {
-  const [view, setView] = useState<"signin" | "signup">(allowSignup ? "signup" : "signin");
+export default function LoginPage({ redirectTo, allowSignup = false, showHeading = false }: LoginPageProps) {
+  const [view, setView] = useState<"signin" | "signup">("signin");
   const [signinError, signinAction, signinPending] = useActionState(login, null);
   const [signupError, signupAction, signupPending] = useActionState(signUp, null);
 
@@ -20,11 +22,15 @@ export default function LoginPage({ redirectTo, allowSignup = false }: LoginPage
 
   return (
     <div className="w-full">
+      {showHeading ? (
+        <h1 className="sf-display mb-7 text-[var(--text-display-s)]">Member account</h1>
+      ) : null}
       <div className="mb-7 flex border-b border-[var(--color-rule)]">
-        {(allowSignup ? (["signup", "signin"] as const) : (["signin"] as const)).map((v) => (
+        {(allowSignup ? (["signin", "signup"] as const) : (["signin"] as const)).map((v) => (
           <button
             key={v}
             type="button"
+            aria-pressed={view === v}
             onClick={() => setView(v)}
             className={`flex-1 border-b-2 pb-3 text-sm font-medium transition-colors ${
               view === v
@@ -44,7 +50,7 @@ export default function LoginPage({ redirectTo, allowSignup = false }: LoginPage
             <label htmlFor="signin-email" className={labelClass}>
               Email
             </label>
-            <input id="signin-email" name="email" type="email" placeholder="member@kineticperformance.club" required autoComplete="email" className={inputClass} />
+            <input id="signin-email" name="email" type="email" required autoComplete="email" className={inputClass} />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="signin-password" className={labelClass}>
@@ -52,7 +58,8 @@ export default function LoginPage({ redirectTo, allowSignup = false }: LoginPage
             </label>
             <input id="signin-password" name="password" type="password" required autoComplete="current-password" className={inputClass} />
           </div>
-          {signinError ? <p className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{signinError}</p> : null}
+          <Link href="/dashboard/reset" className="sf-link text-sm">Forgot your password?</Link>
+          {signinError ? <p role="alert" className="sf-status-error px-3 py-2 text-sm">{signinError}</p> : null}
           <button type="submit" disabled={signinPending} className="sf-btn-primary mt-2 flex h-12 w-full items-center justify-center gap-2 disabled:opacity-50">
             {signinPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Sign in
           </button>
@@ -64,19 +71,19 @@ export default function LoginPage({ redirectTo, allowSignup = false }: LoginPage
             <label htmlFor="signup-name" className={labelClass}>
               Full name
             </label>
-            <input id="signup-name" name="name" placeholder="Maya Patel" required autoComplete="name" className={inputClass} />
+            <input id="signup-name" name="name" required autoComplete="name" className={inputClass} />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="signup-email" className={labelClass}>
               Email
             </label>
-            <input id="signup-email" name="email" type="email" placeholder="member@kineticperformance.club" required autoComplete="email" className={inputClass} />
+            <input id="signup-email" name="email" type="email" required autoComplete="email" className={inputClass} />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="signup-phone" className={labelClass}>
               Phone
             </label>
-            <input id="signup-phone" name="phone" type="tel" placeholder="(555) 000-0000" autoComplete="tel" className={inputClass} />
+            <input id="signup-phone" name="phone" type="tel" autoComplete="tel" className={inputClass} />
           </div>
           <div className="space-y-1.5">
             <label htmlFor="signup-password" className={labelClass}>
@@ -85,7 +92,7 @@ export default function LoginPage({ redirectTo, allowSignup = false }: LoginPage
             <input id="signup-password" name="password" type="password" minLength={12} maxLength={128} required autoComplete="new-password" className={inputClass} />
             <p className="text-xs text-[var(--color-ink-muted)]">Use 12–128 characters.</p>
           </div>
-          {signupError ? <p className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{signupError}</p> : null}
+          {signupError ? <p role="alert" className="sf-status-error px-3 py-2 text-sm">{signupError}</p> : null}
           <ul className="space-y-2 pt-1">
             {["Facility access starts with your plan", "Class entitlement depends on tier", "Billing is handled securely by Stripe"].map((t) => (
               <li key={t} className="flex items-center gap-2 text-xs text-[var(--color-ink-muted)]">

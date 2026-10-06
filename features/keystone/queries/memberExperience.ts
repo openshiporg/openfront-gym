@@ -1,4 +1,7 @@
 import { generateQRCodeDataURL } from "../../../lib/qrcode";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
+import { lockParticipationPolicy } from '../lib/operational-policy';
+import { memberCheckInUnavailableReason } from "../../member/lib/check-in-eligibility";
 
 const MAX_PROFILE_NAME_LENGTH = 120;
 const MAX_PROFILE_PHONE_LENGTH = 40;
@@ -122,12 +125,23 @@ export async function updateMemberProfile(
   }
 
   await context.transaction(async (transactionContext: any) => {
-    const member = await transactionContext.prisma.member.findFirst({
+    const prisma = guardKeystonePrismaResults(transactionContext.prisma);
+    if (data.healthNotes !== undefined && (healthNotes.notes || healthNotes.conditions?.length || healthNotes.injuries?.length)) {
+      const tx = prisma;
+      await lockParticipationPolicy(tx, organizationId);
+      const policy = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
+      const consent = policy && await tx.participationEvidence.findFirst({ where: {
+        organizationId, memberId: current.id, policyId: policy.id, healthConsent: true, revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      } });
+      if (!consent) throw new Error('Review the studio policy and record health-data consent in Participation and privacy before saving optional health information');
+    }
+    const member = await prisma.member.findFirst({
       where: { id: current.id, userId, organizationId },
       select: { id: true },
     });
     if (!member) throw new Error("Member profile not found");
-    await transactionContext.prisma.member.update({
+    await prisma.member.update({
       where: { id: member.id },
       data: {
         name,
@@ -152,11 +166,13 @@ export async function updateMemberProfile(
 export async function getMemberCheckInCode(_root: unknown, _args: unknown, context: any) {
   const member = await profileForActor(context);
   const membershipStatus = member.user?.membership?.status;
-  if (member.status !== "active" || membershipStatus !== "active") {
-    throw new Error(`Membership is ${membershipStatus || member.status || "inactive"}`);
+  const unavailableReason = memberCheckInUnavailableReason(member.status, membershipStatus);
+  if (unavailableReason) {
+    return { qrDataUrl: null, expiresIn: 0, error: unavailableReason };
   }
   return {
     qrDataUrl: await generateQRCodeDataURL(member.id, member.organization.id),
     expiresIn: 30,
+    error: null,
   };
 }

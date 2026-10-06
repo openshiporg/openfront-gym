@@ -1,4 +1,5 @@
 import { consumeAuthAttempt, normalizeAuthIdentity } from "../../../lib/authRateLimit";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { ensureBoundedMemberRole } from "./memberRole";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -8,7 +9,7 @@ export async function registerMember(
   args: { data: { email: string; password: string; name: string; phone?: string | null } },
   context: any,
 ) {
-  if (process.env.PUBLIC_SIGNUPS_ALLOWED !== "true") {
+  if (process.env.PUBLIC_MEMBER_SIGNUPS_ALLOWED !== "true") {
     throw new Error("Public signup is not enabled");
   }
 
@@ -28,9 +29,7 @@ export async function registerMember(
     throw new Error("Too many signup attempts. Try again later");
   }
 
-  const organizationId =
-    process.env.PUBLIC_SIGNUP_ORGANIZATION_ID?.trim() ||
-    process.env.SIGNUP_ORGANIZATION_ID?.trim();
+  const organizationId = process.env.PUBLIC_MEMBER_SIGNUP_ORGANIZATION_ID?.trim();
   if (!organizationId) throw new Error("Public signup is not configured for an organization");
   const storefrontOrganizationId = process.env.STOREFRONT_ORGANIZATION_ID?.trim();
   if (!storefrontOrganizationId || storefrontOrganizationId !== organizationId) {
@@ -38,8 +37,9 @@ export async function registerMember(
   }
 
   return context.transaction(async (transactionContext: any) => {
+    const prisma = guardKeystonePrismaResults(transactionContext.prisma);
     const sudo = transactionContext.sudo();
-    await transactionContext.prisma.$queryRaw`
+    await prisma.$queryRaw`
       SELECT true AS locked
       FROM (SELECT pg_advisory_xact_lock(hashtextextended(${`public-signup:${organizationId}`}, 0))) AS acquired
     `;

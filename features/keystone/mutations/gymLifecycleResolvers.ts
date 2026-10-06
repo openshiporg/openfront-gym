@@ -1,5 +1,6 @@
 import type { Context } from ".keystone/types";
-import { getTenantId } from "../access/tenantPolicy";
+import { currentCheckInActor } from "../access/currentCheckInActor";
+import { currentRoleActor } from "../access/currentRoleActor";
 import {
   cancelCapacityControlledBooking,
   cancelCapacityControlledClassInstance,
@@ -9,16 +10,8 @@ import {
   type LifecycleActor,
 } from "./gymLifecycle";
 
-function actorFromContext(context: Context): LifecycleActor {
-  const session = context.session as any;
-  const organizationId = getTenantId(session);
-  if (!session?.itemId || !organizationId) throw new Error("Organization session required");
-  return {
-    userId: session.itemId,
-    organizationId,
-    canManageAllRecords: Boolean(session.data?.role?.canManageAllRecords),
-    isInstructor: Boolean(session.data?.role?.isInstructor),
-  };
+async function actorFromContext(context: Context): Promise<LifecycleActor> {
+  return currentRoleActor(context);
 }
 
 export async function cancelClassBooking(
@@ -28,7 +21,7 @@ export async function cancelClassBooking(
 ) {
   const result = await cancelCapacityControlledBooking(context.prisma, {
     bookingId,
-    actor: actorFromContext(context),
+    actor: await actorFromContext(context),
   });
   const booking = await context.db.ClassBooking.findOne({ where: { id: result.bookingId } });
   return {
@@ -45,7 +38,7 @@ export async function cancelClassInstance(
 ) {
   return cancelCapacityControlledClassInstance(context.prisma, {
     ...args,
-    actor: actorFromContext(context),
+    actor: await actorFromContext(context),
   });
 }
 
@@ -61,7 +54,7 @@ export async function markClassAttendance(
 ) {
   const result = await markCapacityControlledAttendance(context.prisma, {
     ...args,
-    actor: actorFromContext(context),
+    actor: await actorFromContext(context),
   });
   return context.db.AttendanceRecord.findOne({ where: { id: result.id } });
 }
@@ -73,7 +66,7 @@ export async function recordMemberCheckIn(
 ) {
   const result = await recordCapacityControlledMemberCheckIn(context.prisma, {
     ...args,
-    actor: actorFromContext(context),
+    actor: await currentCheckInActor(context),
   });
   return {
     checkIn: await context.db.CheckIn.findOne({ where: { id: result.checkIn.id } }),
@@ -88,7 +81,7 @@ export async function checkOutMember(
 ) {
   const result = await checkOutControlledMember(context.prisma, {
     checkInId,
-    actor: actorFromContext(context),
+    actor: await currentCheckInActor(context),
   });
   return {
     checkIn: await context.db.CheckIn.findOne({ where: { id: result.checkIn.id } }),

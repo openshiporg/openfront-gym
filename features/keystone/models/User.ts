@@ -8,6 +8,7 @@ import { trackingFields } from './trackingFields'
 import { connectedRelationshipId, validateTenantOwnership } from './tenantRelationships'
 import { elevatedRoleCapabilities, roleCapabilityFields } from './roleCapabilities'
 import { normalizeAuthIdentity } from '../../../lib/authRateLimit'
+import { guardKeystonePrismaResults } from '../lib/prisma-result'
 
 const validateUserTenant = validateTenantOwnership([
   { field: 'role', list: 'role' },
@@ -23,7 +24,8 @@ export async function validateUserInput(args: any) {
     args.addValidationError('You cannot change the role assigned to your own account');
     return;
   }
-  const role = await args.context.prisma.role.findUnique({
+  const prisma = guardKeystonePrismaResults(args.context.prisma as any)
+  const role = await prisma.role.findUnique({
     where: { id: roleId },
     select: Object.fromEntries(roleCapabilityFields.map((field) => [field, true])),
   });

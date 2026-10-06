@@ -2,10 +2,9 @@ import { createHash } from "node:crypto";
 
 function stableValue(value: unknown): unknown {
   if (value instanceof Date) return value.toISOString();
-  if (typeof value === "string") {
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toISOString();
-  }
+  // Strings are commercial/user evidence, not implicitly dates. Callers
+  // normalize declared temporal fields before hashing the request.
+  if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map(stableValue);
   if (value && typeof value === "object") {
     return Object.fromEntries(

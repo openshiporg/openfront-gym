@@ -1,84 +1,52 @@
 import { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { ArrowRight, UsersRound } from "lucide-react";
 import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
 import { getInstructors } from "@/features/storefront/lib/data/instructors";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
-  return {
-    title: `Our instructors — ${getStorefrontBrandName(config)}`,
-    description: "Meet the coaches behind the programming.",
-  };
+  return { title: `Our instructors — ${getStorefrontBrandName(config)}`, description: "Meet the coaches behind the programming." };
 }
 
-function getBioText(bio: any): string {
+function getBioText(bio: unknown): string {
   if (typeof bio === "string") return bio;
-  if (!bio?.document?.[0]?.children?.[0]?.text) return "";
-  return bio.document[0].children[0].text;
+  if (!bio || typeof bio !== "object") return "";
+  const document = (bio as { document?: Array<{ children?: Array<{ text?: string }> }> }).document;
+  return document?.flatMap((node) => node.children || []).map((child) => child.text || "").join(" ").trim() || "";
 }
 
 export async function InstructorsPage() {
   const instructors = await getInstructors();
 
   return (
-    <div className="sf-page px-5 pb-24 pt-12 sm:px-8">
-      <div className="mx-auto max-w-7xl">
-        <header className="sf-page-header border-b border-[var(--color-rule)] pb-12">
-          <div>
-            <p className="sf-eyebrow">Coaching team</p>
-            <h1 className="sf-display mt-4 text-[var(--text-display-s)]">The people behind the programming</h1>
-          </div>
-          <p className="max-w-md text-base leading-relaxed text-[var(--color-ink-muted)]">
-            Every class and schedule is led by a coach with a defined specialty and teaching focus.
-          </p>
+    <div className="sf-page">
+      <div className="sf-container">
+        <header className="sf-page-header">
+          <div><p className="sf-eyebrow">Your coaching team</p><h1 className="sf-display mt-4 text-[var(--text-display-s)]">The people behind the programming</h1></div>
+          <p className="max-w-md text-base leading-7 text-[var(--sf-muted)]">Find a coach whose approach fits your goals, then explore their upcoming classes.</p>
         </header>
 
-        {instructors.length === 0 ? (
-          <div className="mt-14 border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-16 text-sm text-[var(--color-ink-muted)]">
-            No instructors available yet.
+        {instructors.length ? (
+          <div className="sf-coach-grid">
+            {instructors.map((instructor) => {
+              const bio = getBioText(instructor.bio);
+              return (
+                <Link key={instructor.id} href={`/instructors/${instructor.id}`} className="sf-coach-card">
+                  <div className="sf-coach-photo">
+                    {instructor.photo ? <Image src={instructor.photo} alt={`${instructor.user.name} coaching portrait`} width={480} height={600} sizes="(max-width: 700px) 45vw, 30vw" className="h-full w-full object-cover grayscale-[20%]" unoptimized /> : <span>Portrait not published</span>}
+                  </div>
+                  <h2 className="text-2xl font-bold tracking-[-0.04em]">{instructor.user.name}</h2>
+                  <div>{bio ? <p className="line-clamp-2 text-sm leading-6 text-[var(--sf-muted)]">{bio}</p> : null}<p className="mt-2 text-xs font-semibold text-[var(--sf-primary)]">{instructor.specialties?.length ? instructor.specialties.join(" / ") : "Specialties not published"}</p></div>
+                  <ArrowRight className="h-4 w-4 text-[var(--sf-muted)] transition-transform group-hover:translate-x-1 group-hover:text-[var(--sf-foreground)]" aria-hidden="true" />
+                </Link>
+              );
+            })}
           </div>
         ) : (
-          <div className="mt-14 grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
-            {instructors.map((instructor) => (
-              <Link
-                key={instructor.id}
-                href={`/instructors/${instructor.id}`}
-                className="group min-w-0 border border-[var(--color-rule)] bg-[var(--color-surface)] transition hover:border-[var(--color-accent)]/50"
-              >
-                <div className="relative flex aspect-[5/4] items-end overflow-hidden bg-[var(--color-accent-soft)] p-6">
-                  {instructor.photo ? (
-                    <Image
-                      src={instructor.photo}
-                      alt={`${instructor.user.name} coaching portrait`}
-                      width={800}
-                      height={640}
-                      sizes="(max-width: 768px) 100vw, 33vw"
-                      className="absolute inset-0 h-full w-full object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    <span className="sf-display text-7xl text-[var(--color-accent)]/35">{instructor.user.name.charAt(0)}</span>
-                  )}
-                </div>
-
-                <div className="p-6">
-                  <p className="sf-label">Coach</p>
-                  <h3 className="mt-2 text-2xl font-semibold group-hover:text-[var(--color-accent)]">{instructor.user.name}</h3>
-                  {getBioText(instructor.bio) ? (
-                    <p className="mt-4 line-clamp-3 text-sm leading-relaxed text-[var(--color-ink-muted)]">
-                      {getBioText(instructor.bio)}
-                    </p>
-                  ) : null}
-
-                  {instructor.specialties && instructor.specialties.length > 0 ? (
-                    <p className="mt-5 text-sm text-[var(--color-ink-muted)]">{instructor.specialties.slice(0, 3).join(" · ")}</p>
-                  ) : null}
-                </div>
-              </Link>
-            ))}
-          </div>
+          <div className="border border-[var(--sf-border)] bg-[var(--sf-surface)] p-8 sm:p-10"><UsersRound className="h-8 w-8 text-[var(--sf-primary)]" aria-hidden="true" /><h2 className="mt-7 text-2xl font-bold">No active instructors are published.</h2></div>
         )}
       </div>
     </div>

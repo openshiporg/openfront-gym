@@ -171,14 +171,38 @@ export const stripePaymentProviderAdapter: PaymentProviderAdapter = {
     return { url: session.url };
   },
 
-  refundPayment(paymentIntentId, amount, idempotencyKey) {
+  refundPayment(paymentIntentId, amount, idempotencyKey, evidence) {
     return getStripeClient().refunds.create(
       {
         payment_intent: paymentIntentId,
         ...(amount ? { amount } : {}),
+        ...(evidence ? { metadata: {
+          gymRefundOperationKey: evidence.operationKey,
+          gymRefundCurrency: evidence.currencyCode,
+          gymRefundReason: evidence.reason,
+        } } : {}),
       },
       idempotencyKey ? { idempotencyKey } : undefined
     );
+  },
+
+  async findRefundPayment(paymentIntentId, operationKey) {
+    const stripe = getStripeClient();
+    let startingAfter: string | undefined;
+    for (let pageCount = 0; pageCount < 100; pageCount += 1) {
+      const page = await stripe.refunds.list({
+        payment_intent: paymentIntentId,
+        limit: 100,
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      });
+      const match = page.data.find(refund => refund.metadata?.gymRefundOperationKey === operationKey);
+      if (match) return match;
+      if (!page.has_more) return null;
+      const lastId = page.data.at(-1)?.id;
+      if (!lastId) throw new Error("Stripe refund history page was incomplete; operator reconciliation required");
+      startingAfter = lastId;
+    }
+    throw new Error("Stripe refund history exceeds the automatic reconciliation bound; operator review required");
   },
 
   constructWebhookEvent(payload, signature) {

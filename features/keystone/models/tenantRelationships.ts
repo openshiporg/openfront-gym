@@ -1,3 +1,5 @@
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
+
 type TenantRelationshipTarget = {
   field: string;
   list: string;
@@ -82,6 +84,7 @@ export function validateTenantOwnership(
       }
     }
 
+    const prisma = guardKeystonePrismaResults(context.prisma as any);
     for (const target of targets) {
       const relationshipValue = resolvedData[target.field];
       const relationshipId = relationshipValue === undefined
@@ -93,7 +96,7 @@ export function validateTenantOwnership(
         continue;
       }
 
-      const related = await context.prisma[target.list].findUnique({
+      const related = await prisma[target.list].findUnique({
         where: { id: relationshipId },
         select: { id: true, organizationId: true },
       });
@@ -125,7 +128,8 @@ export async function validateResourceLocation({
     : connectedRelationshipId(resolvedData.resource);
   if (!locationId || !resourceId) return;
 
-  const resource = await context.prisma.gymResource.findUnique({
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  const resource = await prisma.gymResource.findUnique({
     where: { id: resourceId },
     select: { locationId: true },
   });

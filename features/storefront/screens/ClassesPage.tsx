@@ -15,7 +15,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export async function ClassesPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ difficulty?: string; duration?: string }>;
+  searchParams?: Promise<{ difficulty?: string; duration?: string; q?: string }>;
 }) {
   const resolved = searchParams ? await searchParams : undefined;
   const difficulty = resolved?.difficulty ?? "all";
@@ -30,17 +30,20 @@ export async function ClassesPage({
             <h1 className="sf-display text-5xl sm:text-6xl">
               Choose the class
               <br />
-              <span className="italic">that fits today</span>
+              <span>that fits today</span>
             </h1>
           </div>
           <p className="sf-lead max-w-md">
-            Filter by intensity or duration, then move into the live schedule to reserve a spot.
+            Find your kind of training. Explore the level, equipment and coaching before choosing a dated session.
           </p>
         </header>
 
-        <div className="grid gap-10 lg:grid-cols-[16rem_minmax(0,1fr)]">
-          <ClassFilters selectedDifficulty={difficulty} selectedDuration={duration} />
-          <ClassGrid difficulty={difficulty} duration={duration} />
+        <div>
+          <form action="/classes" className="sf-discovery-filters mb-5"><label>Search class formats<input name="q" type="search" defaultValue={resolved?.q} placeholder="Strength, yoga, conditioning…" /></label><input type="hidden" name="difficulty" value={difficulty} /><input type="hidden" name="duration" value={duration} /><button type="submit" className="sf-btn-primary">Search formats</button></form>
+          <ClassFilters q={resolved?.q} selectedDifficulty={difficulty} selectedDuration={duration} />
+          <div className="mt-8">
+            <ClassGrid q={resolved?.q} difficulty={difficulty} duration={duration} />
+          </div>
         </div>
       </div>
     </div>

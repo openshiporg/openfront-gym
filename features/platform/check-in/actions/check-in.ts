@@ -8,32 +8,18 @@ import { FRONT_DESK_DATA_DOCUMENT } from "../graphql";
 export type FrontDeskMember = {
   id: string;
   name: string;
-  email: string;
-  phone?: string | null;
   status?: string | null;
-  lastCheckIn?: string | null;
-  membershipTier?: { id: string; name?: string | null } | null;
-  user?: {
-    id: string;
-    membership?: {
-      id: string;
-      status: string;
-      classCreditsRemaining?: number | null;
-      tier?: { id: string; name?: string | null } | null;
-    } | null;
-  } | null;
+  membershipEligible: boolean;
+  entitlementReason: string;
 };
 
 export type FrontDeskCheckIn = {
   id: string;
   checkInTime: string;
-  checkOutTime?: string | null;
   method: string;
   membershipValidated: boolean;
   member?: {
-    id: string;
     name?: string | null;
-    email?: string | null;
   } | null;
   location?: {
     id: string;
@@ -44,22 +30,14 @@ export type FrontDeskCheckIn = {
 export async function getFrontDeskData(query?: string) {
   const trimmed = query?.trim() ?? "";
 
-  const where = trimmed
-    ? {
-        OR: [
-          { name: { contains: trimmed, mode: "insensitive" } },
-          { email: { contains: trimmed, mode: "insensitive" } },
-          { phone: { contains: trimmed, mode: "insensitive" } },
-        ],
-      }
-    : undefined;
-
   const response = await keystoneClient<{
-    members: FrontDeskMember[];
-    checkIns: FrontDeskCheckIn[];
-    locations: { id: string; name?: string | null }[];
-    gymSettings: { timezone?: string | null; organization?: { timezone?: string | null } | null }[];
-  }>(FRONT_DESK_DATA_DOCUMENT, { where });
+    frontDeskWorkspace: {
+      members: FrontDeskMember[];
+      checkIns: FrontDeskCheckIn[];
+      locations: { id: string; name?: string | null }[];
+      gymSettings: { timezone?: string | null; organization?: { timezone?: string | null } | null }[];
+    };
+  }>(FRONT_DESK_DATA_DOCUMENT, { query: trimmed });
 
   if (!response.success) {
     return {
@@ -74,12 +52,12 @@ export async function getFrontDeskData(query?: string) {
 
   return {
     success: true as const,
-    members: response.data.members,
-    checkIns: response.data.checkIns,
-    locations: response.data.locations,
+    members: response.data.frontDeskWorkspace.members,
+    checkIns: response.data.frontDeskWorkspace.checkIns,
+    locations: response.data.frontDeskWorkspace.locations,
     timeZone: resolveGymTimeZone(
-      response.data.gymSettings[0]?.timezone,
-      response.data.gymSettings[0]?.organization?.timezone,
+      response.data.frontDeskWorkspace.gymSettings[0]?.timezone,
+      response.data.frontDeskWorkspace.gymSettings[0]?.organization?.timezone,
     ),
   };
 }

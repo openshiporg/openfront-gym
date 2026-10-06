@@ -11,6 +11,7 @@ import { buildOrderByClause } from '../../lib/buildOrderByClause'
 import { buildWhereClause } from '../../lib/buildWhereClause'
 import { notFound } from 'next/navigation'
 import { ListPageClient } from './ListPageClient'
+import { normalizeDashboardListPagination } from '@/lib/list-pagination'
 
 interface PageProps {
   params: Promise<{ listKey: string }>;
@@ -36,8 +37,8 @@ export async function ListPage({ params, searchParams }: PageProps) {
   }
 
   // Parse search params
-  const currentPage = parseInt(searchParamsObj.page?.toString() || '1', 10) || 1
-  const pageSize = parseInt(searchParamsObj.pageSize?.toString() || list.pageSize?.toString() || '50', 10)
+  const pagination = normalizeDashboardListPagination(searchParamsObj.page, searchParamsObj.pageSize, list.pageSize)
+  const { page: currentPage, pageSize } = pagination
   const searchString = searchParamsObj.search?.toString() || ''
 
   // Build dynamic orderBy clause using Keystone's defaults
@@ -65,7 +66,7 @@ export async function ListPage({ params, searchParams }: PageProps) {
   const variables = {
     where,
     take: pageSize,
-    skip: (currentPage - 1) * pageSize,
+    skip: pagination.skip,
     orderBy
   }
 

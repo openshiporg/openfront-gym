@@ -31,8 +31,22 @@ import { OnboardingRun } from './OnboardingRun';
 import { GymRefundAttempt } from './GymRefundAttempt';
 import { MembershipBillingAttempt } from './MembershipBillingAttempt';
 import { AuthRateLimitBucket } from './AuthRateLimitBucket';
+import { OperationalNotice, ParticipationPolicy, ParticipationEvidence, OperationsCase, IntegrationCredential } from './Operations';
+import { MembershipCreditGrant } from './MembershipCreditGrant';
+import { MembershipCreditEntry } from './MembershipCreditEntry';
+import { TrainingPackage } from './TrainingPackage';
+import { TrainingCreditEntry } from './TrainingCreditEntry';
+import { CoachingAssignment } from './CoachingAssignment';
+import { TrainingLead } from './TrainingLead';
+import { MemberImportRecord } from './MemberImportRecord';
+import { RetailItem, RetailSale, RetailReturn, RetailStockEntry, RetailClose } from './RetailModels';
 
 export const models = {
+  RetailItem, RetailSale, RetailReturn, RetailStockEntry, RetailClose,
+  MemberImportRecord,
+  TrainingPackage, TrainingCreditEntry, CoachingAssignment, TrainingLead,
+  MembershipCreditGrant, MembershipCreditEntry,
+  OperationalNotice, ParticipationPolicy, ParticipationEvidence, OperationsCase, IntegrationCredential,
   Organization,
   User,
   Role,

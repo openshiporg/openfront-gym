@@ -7,10 +7,13 @@ import { cn } from "@/lib/utils";
 import { signOut } from "@/features/storefront/lib/data/user";
 
 const BASE_NAV = [
-  { href: "/account", label: "Overview", icon: User, exact: true },
+  { href: "/account", label: "Your next session", icon: User, exact: true },
   { href: "/account/bookings", label: "Bookings", icon: Calendar },
   { href: "/account/membership", label: "Membership", icon: CreditCard },
+  { href: "/member/check-in-code", label: "Check-in code", icon: Calendar },
   { href: "/account/profile", label: "Profile", icon: User },
+  { href: "/account/participation", label: "Participation & privacy", icon: User },
+  { href: "/account/training", label: "Training", icon: GraduationCap },
 ];
 
 export default function AccountNav({ user }: { user: any }) {
@@ -24,10 +27,10 @@ export default function AccountNav({ user }: { user: any }) {
     <aside className="space-y-5 md:sticky md:top-28 md:self-start">
       <div className="border-l-2 border-[var(--color-accent)] pl-4">
         <p className="text-lg font-semibold">Member account</p>
-        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{user?.email}</p>
+        <p className="mt-1 text-sm break-all text-[var(--color-ink-muted)]">{user?.email}</p>
       </div>
 
-      <nav className="flex gap-2 overflow-x-auto border-y border-[var(--color-rule)] py-2 md:block md:space-y-1 md:overflow-visible md:border-y-0 md:py-0">
+      <nav aria-label="Member account" className="flex gap-2 overflow-x-auto border-y border-[var(--color-rule)] py-2 md:block md:space-y-1 md:overflow-visible md:border-y-0 md:py-0">
         {items.map((item) => {
           const active = item.exact ? pathname === item.href : pathname?.startsWith(item.href) && item.href !== "/account";
           const Icon = item.icon;
@@ -35,6 +38,7 @@ export default function AccountNav({ user }: { user: any }) {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? "page" : undefined}
               className={cn(
                 "flex min-h-11 shrink-0 items-center gap-3 whitespace-nowrap px-3 py-3 text-sm font-medium transition-colors",
                 active

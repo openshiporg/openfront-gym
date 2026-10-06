@@ -5,28 +5,28 @@ import { ChevronDown } from "lucide-react";
 
 const FAQS = [
   {
-    q: "How do class credits work?",
-    a: "Credits are included with selected plans and reset each billing cycle. Each booked class consumes one credit unless your tier includes unlimited classes.",
+    q: "Where do plan prices and terms come from?",
+    a: "The amounts, access hours, class credits, guest passes, contract length, and freeze eligibility shown here come from the gym's published membership tiers.",
+  },
+  {
+    q: "How does class booking work?",
+    a: "Choose a dated session from the schedule. The server checks your membership, credits, booking status, and current capacity again before confirming a spot.",
+  },
+  {
+    q: "What happens when a class is full?",
+    a: "The booking flow offers the waitlist when that dated session has no open spots. Your resulting status and waitlist position come from the server response.",
   },
   {
     q: "Can I freeze my membership?",
-    a: "Yes. Eligible plans can be frozen for a limited period each year. During a freeze, facility and class access are paused and billing rules depend on your plan policy.",
+    a: "A signed-in member can request a freeze only when the current plan allows it and the membership has the provider-backed state required by the account controls.",
   },
   {
-    q: "What is the cancellation policy?",
-    a: "Monthly memberships typically require notice before the next billing cycle. Annual commitments may carry different terms depending on the tier configuration.",
+    q: "Can I stop renewal?",
+    a: "The member account can end renewal after the current paid period when an active provider subscription is connected. The account shows the resulting access-through date.",
   },
   {
-    q: "Can I upgrade or downgrade later?",
-    a: "Yes. Tier changes can be made later and should flow through billing, access, and class entitlement logic from your account and Stripe-backed membership state.",
-  },
-  {
-    q: "Do you support access-only memberships?",
-    a: "Yes. A plan can include full facility access while including zero class credits, making it suitable for gyms that separate floor access from class access.",
-  },
-  {
-    q: "What happens if I miss a class?",
-    a: "Cancellation and no-show policy can vary by gym. Class access, credits, and attendance policy tie back to your membership tier and booking state.",
+    q: "Where are payment methods and invoices managed?",
+    a: "Eligible signed-in members can open the provider-hosted billing portal from the membership page. If no provider customer is connected, the page directs the member to the front desk.",
   },
 ];
 

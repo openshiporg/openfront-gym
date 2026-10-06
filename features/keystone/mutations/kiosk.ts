@@ -1,4 +1,4 @@
-import { getKioskOrganizationId, isKioskTokenValid } from "../../platform/kiosk/auth";
+import { getKioskOrganizationId, isKioskTokenValid } from "../../kiosk/auth";
 import { validateQRCode } from "../../../lib/qrcode";
 import { consumeAuthAttempt } from "../../../lib/authRateLimit";
 import {

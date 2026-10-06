@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { AlertTriangle, ArrowUpRight, CheckCircle2, Clock3, Users } from "lucide-react";
 import { PageContainer } from "@/features/dashboard/components/PageContainer";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { requireDashboardUser } from "@/features/dashboard/lib/current-user";
 import {
   getRosterDetail,
   markRosterAttendance,
@@ -84,8 +85,12 @@ function AttendanceActionForm({
 }
 
 export async function RosterDetailPage({ id }: { id: string }) {
+  const user = await requireDashboardUser();
   const session = await getRosterDetail(id);
-  if (!session) notFound();
+  if (!session) {
+    if (user.role?.canManageAllRecords) notFound();
+    redirect("/dashboard/no-access");
+  }
 
   const bookings = session.bookings ?? [];
   const confirmedBookings = bookings.filter((b: any) => b.status === "confirmed");
@@ -96,7 +101,7 @@ export async function RosterDetailPage({ id }: { id: string }) {
   const capacity = session.maxCapacity ?? session.classSchedule?.maxCapacity ?? 0;
   const availableSpots = Math.max(capacity - confirmedBookings.length, 0);
   // Server render needs the current instant to gate attendance controls.
-  // eslint-disable-next-line react-hooks/purity -- this is a server-only time comparison.
+  // eslint-disable-next-line react-hooks/purity -- intentional server-time eligibility boundary
   const sessionStarted = new Date(session.date).getTime() <= Date.now();
 
   const header = (
@@ -195,6 +200,7 @@ export async function RosterDetailPage({ id }: { id: string }) {
                           <TableCell>
                             <div>
                               <p className="text-sm font-semibold text-foreground">{booking.member?.name ?? booking.memberName ?? "Member"}</p>
+                              {booking.eligibilityReviewReason && <p className="text-xs text-destructive">Review: {booking.eligibilityReviewReason}</p>}
                               <p className="mt-1 text-xs text-muted-foreground">{booking.member?.email ?? booking.memberEmail ?? "—"}</p>
                               {booking.member?.phone || booking.memberPhone ? (
                                 <p className="mt-1 text-xs text-muted-foreground">{booking.member?.phone ?? booking.memberPhone}</p>
@@ -251,6 +257,7 @@ export async function RosterDetailPage({ id }: { id: string }) {
                       <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div>
                           <p className="text-sm font-semibold text-foreground">{booking.member?.name ?? booking.memberName ?? "Member"}</p>
+                              {booking.eligibilityReviewReason && <p className="text-xs text-destructive">Review: {booking.eligibilityReviewReason}</p>}
                           <p className="text-xs text-muted-foreground">{booking.member?.email ?? booking.memberEmail ?? "—"}</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -333,6 +340,7 @@ export async function RosterDetailPage({ id }: { id: string }) {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-foreground">{booking.member?.name ?? booking.memberName ?? "Member"}</p>
+                              {booking.eligibilityReviewReason && <p className="text-xs text-destructive">Review: {booking.eligibilityReviewReason}</p>}
                           <p className="mt-1 text-xs text-muted-foreground">{booking.member?.email ?? booking.memberEmail ?? "—"}</p>
                         </div>
                         <Badge variant="outline">#{booking.waitlistPosition ?? "—"}</Badge>

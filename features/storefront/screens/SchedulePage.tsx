@@ -1,14 +1,17 @@
+import { Suspense } from "react";
 import { Metadata } from "next";
 import WeeklySchedule from "@/features/storefront/modules/classes/components/weekly-schedule";
 import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
-import { getUpcomingClassOccurrences } from "@/features/storefront/lib/data/classes";
+import { getUpcomingClassOccurrences, getClassOccurrenceById } from "@/features/storefront/lib/data/classes";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 import {
   formatOccurrenceDate,
   formatOccurrenceShortDate,
   formatOccurrenceTime,
-  occurrenceDayIndex,
+
 } from "@/features/storefront/lib/class-occurrence";
+
+import { calendarDays, localDateKey } from "@/features/storefront/lib/discovery";
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
@@ -26,19 +29,25 @@ function calculateDuration(startTime: string, endTime: string): number {
 
 export async function SchedulePage({ book }: { book?: string } = {}) {
   const [occurrences, config] = await Promise.all([
-    getUpcomingClassOccurrences({ days: 7 }),
+    getUpcomingClassOccurrences({ days: 14 }),
     getStorefrontConfig(),
   ]);
+  if (book && !occurrences.some(item => item.id === book)) {
+    const selected = await getClassOccurrenceById(book);
+    if (selected) occurrences.push(selected);
+  }
   const timeZone = config?.timezone || "UTC";
-  const location = config?.address || config?.locationName || "Main studio";
+  const location = "Session location not published · confirm with the club";
   const scheduleData = occurrences.map((occurrence) => ({
-    day: occurrenceDayIndex(occurrence.startsAt, timeZone),
+    dateKey: localDateKey(occurrence.startsAt, timeZone),
+    instructorId: occurrence.instructor?.id,
+    classTypeId: occurrence.classType?.id,
     time: formatOccurrenceTime(occurrence.startsAt, timeZone),
     date: occurrence.startsAt,
     dateLabel: formatOccurrenceDate(occurrence.startsAt, timeZone),
     shortDateLabel: formatOccurrenceShortDate(occurrence.startsAt, timeZone),
     name: occurrence.name || occurrence.classType?.name || "Class",
-    instructor: occurrence.instructor?.name || "Instructor TBD",
+    instructor: occurrence.instructor?.name || "Instructor not published",
     duration:
       occurrence.classType?.duration ||
       calculateDuration(occurrence.startTime, occurrence.endTime),
@@ -56,14 +65,14 @@ export async function SchedulePage({ book }: { book?: string } = {}) {
         <header className="mb-12 max-w-3xl">
           <p className="sf-eyebrow mb-3">Class calendar</p>
           <h1 className="sf-display text-5xl sm:text-6xl">
-            This week&apos;s bookable schedule
+            Make time to train
           </h1>
           <p className="mt-5 sf-lead">
-            Pick a day, check capacity, and reserve through the existing member booking flow.
+            Find your next session. Compare times, meet your coach and choose a space that fits your day.
           </p>
         </header>
 
-        <WeeklySchedule key={book || "schedule"} scheduleData={scheduleData} initialBookingId={book} />
+        <Suspense fallback={<p role="status" className="sf-notice">Loading the timetable…</p>}><WeeklySchedule scheduleData={scheduleData} days={calendarDays(new Date(), timeZone)} timeZone={timeZone} initialBookingId={book} /></Suspense>
       </div>
     </div>
   );

@@ -1,6 +1,12 @@
+import { assertFacilityAccessHours } from "../lib/membership-access-hours";
+import { assertInstructorQualifications } from "./trainerQualifications";
+import { assertNoPendingMembershipFreeze, restoreBookingCredit, assertMembershipServiceEligibility } from "../lib/membership-credits";
+import { assertParticipationAllowed, lockParticipationPolicy } from "../lib/operational-policy";
+import { enqueueOperationalNotice } from "../lib/operational-notices";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import {
   lockTransactionKey,
-  promoteCapacityControlledWaitlistBooking,
+  promoteCapacityControlledWaitlistBookingInTransaction,
 } from "./classCapacity";
 import {
   normalizeAttendanceOutcome,
@@ -15,7 +21,14 @@ export type LifecycleActor = {
   canManageAllRecords: boolean;
   isInstructor?: boolean;
   trustedKiosk?: boolean;
+  canManageCheckIns?: boolean;
+  canManageFacilities?: boolean;
 };
+
+function assertFacilityStaff(actor: LifecycleActor) {
+  if (actor.canManageAllRecords || actor.canManageCheckIns || actor.canManageFacilities || actor.trustedKiosk) return;
+  throw new Error("Facility check-in management permission required");
+}
 
 function assertActorOrganization(actor: LifecycleActor, organizationId?: string | null) {
   if (!organizationId || !actor.organizationId || actor.organizationId !== organizationId) {
@@ -32,7 +45,9 @@ export async function cancelCapacityControlledBooking(
   prisma: any,
   input: { bookingId: string; actor: LifecycleActor }
 ) {
+  prisma = guardKeystonePrismaResults(prisma);
   const result = await prisma.$transaction(async (transaction: any) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId!);
     const identity = await transaction.classBooking.findFirst({
       where: { id: input.bookingId, organizationId: input.actor.organizationId },
       select: { classInstanceId: true, memberId: true },
@@ -71,6 +86,7 @@ export async function cancelCapacityControlledBooking(
         classInstanceId: booking.classInstance.id,
         cancelled: false,
         releasedConfirmedSpot: false,
+        promotion: { promoted: false, message: "No confirmed spot was released" },
       };
     }
     if (!['confirmed', 'waitlist'].includes(booking.status)) {
@@ -90,19 +106,9 @@ export async function cancelCapacityControlledBooking(
       },
     });
 
-    const membership = booking.member.user.membership;
-    const allowance = membership?.tier?.classCreditsPerMonth;
-    const unlimited = allowance === -1;
-    if (booking.status === "confirmed" && membership && !unlimited && typeof allowance === "number") {
-      const currentCredits = membership.classCreditsRemaining ?? 0;
-      const nextCredits = Math.min(currentCredits + 1, Math.max(allowance, 0));
-      if (nextCredits > currentCredits) {
-        await transaction.membership.update({
-          where: { id: membership.id },
-          data: { classCreditsRemaining: nextCredits },
-        });
-      }
-    }
+    if (booking.status === "confirmed") await restoreBookingCredit(transaction, booking.id);
+    await enqueueOperationalNotice(transaction, { organizationId: input.actor.organizationId!, memberId: booking.memberId,
+      key: `booking:${booking.id}:cancelled`, kind: "cancellation", message: "Your class booking has been cancelled. Any restorable credit returns to its original service month." });
 
     const waiting = await transaction.classBooking.findMany({
       where: {
@@ -121,18 +127,26 @@ export async function cancelCapacityControlledBooking(
       )
     );
 
+    const releasedConfirmedSpot = booking.status === "confirmed";
+    const promotion = releasedConfirmedSpot
+      ? await promoteCapacityControlledWaitlistBookingInTransaction(
+          transaction,
+          booking.classInstance.id,
+          input.actor.organizationId!,
+          true,
+        )
+      : { promoted: false, message: "No confirmed spot was released" };
+
     return {
       bookingId: booking.id,
       classInstanceId: booking.classInstance.id,
       cancelled: true,
-      releasedConfirmedSpot: booking.status === "confirmed",
+      releasedConfirmedSpot,
+      promotion,
     };
   });
 
-  const promotion = result.releasedConfirmedSpot
-    ? await promoteCapacityControlledWaitlistBooking(prisma, result.classInstanceId, input.actor.organizationId!)
-    : { promoted: false, message: "No confirmed spot was released" };
-  return { ...result, promotion };
+  return result;
 }
 
 export async function cancelCapacityControlledClassInstance(
@@ -143,6 +157,7 @@ export async function cancelCapacityControlledClassInstance(
     actor: LifecycleActor;
   },
 ) {
+  prisma = guardKeystonePrismaResults(prisma);
   const reason = input.reason.trim();
   if (reason.length < 3 || reason.length > 1000) {
     throw new Error("Class cancellation reason must be between 3 and 1000 characters");
@@ -152,6 +167,7 @@ export async function cancelCapacityControlledClassInstance(
   }
 
   return prisma.$transaction(async (transaction: any) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId!);
     await lockTransactionKey(transaction, `class-instance:${input.classInstanceId}`);
     const loadClassInstance = () => transaction.classInstance.findFirst({
       where: { id: input.classInstanceId, organizationId: input.actor.organizationId },
@@ -205,21 +221,10 @@ export async function cancelCapacityControlledClassInstance(
     let refundedCredits = 0;
     for (const booking of classInstance.bookings) {
       if (booking.status !== "confirmed") continue;
-      const membership = booking.member?.user?.membership;
-      const allowance = membership?.tier?.classCreditsPerMonth;
-      const unlimited = allowance === -1;
-      if (membership && !unlimited && typeof allowance === "number") {
-        const currentCredits = membership.classCreditsRemaining ?? 0;
-        const nextCredits = Math.min(currentCredits + 1, Math.max(allowance, 0));
-        if (nextCredits > currentCredits) {
-          await transaction.membership.update({
-            where: { id: membership.id },
-            data: { classCreditsRemaining: nextCredits },
-          });
-          refundedCredits += 1;
-        }
-      }
+      if (await restoreBookingCredit(transaction, booking.id)) refundedCredits += 1;
     }
+    for (const booking of classInstance.bookings) await enqueueOperationalNotice(transaction, { organizationId: input.actor.organizationId!, memberId: booking.memberId,
+      key: `booking:${booking.id}:class-cancelled`, kind: "cancellation", message: `Your class has been cancelled: ${reason}` });
 
     const cancelledAt = new Date();
     await transaction.classBooking.updateMany({
@@ -258,13 +263,15 @@ export async function markCapacityControlledAttendance(
     actor: LifecycleActor;
   }
 ) {
+  prisma = guardKeystonePrismaResults(prisma);
   const outcome = normalizeAttendanceOutcome(input.outcome);
   return prisma.$transaction(async (transaction: any) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId!);
     await lockTransactionKey(transaction, `attendance:${input.bookingId}`);
     const booking = await transaction.classBooking.findFirst({
       where: { id: input.bookingId, organizationId: input.actor.organizationId },
       include: {
-        member: { select: { id: true, organizationId: true } },
+        member: { include: { user: { include: { membership: true } } } },
         classInstance: {
           include: {
             instructor: { include: { user: { select: { id: true } } } },
@@ -287,10 +294,7 @@ export async function markCapacityControlledAttendance(
     if (booking.classInstance.date.getTime() > Date.now()) {
       throw new Error("Attendance cannot be marked before the class starts");
     }
-    const assignedInstructorIds = [
-      booking.classInstance.instructor?.user?.id,
-      booking.classInstance.classSchedule?.instructor?.user?.id,
-    ].filter(Boolean);
+    const assignedInstructorIds = [booking.classInstance.instructor?.user?.id ?? booking.classInstance.classSchedule?.instructor?.user?.id].filter(Boolean);
     if (
       !input.actor.canManageAllRecords &&
       !(input.actor.isInstructor && assignedInstructorIds.includes(input.actor.userId))
@@ -298,6 +302,23 @@ export async function markCapacityControlledAttendance(
       throw new Error("Attendance management permission required");
     }
 
+    if (outcome !== "no-show") {
+      await lockTransactionKey(transaction, `member:${booking.memberId}`);
+      const currentMember = await transaction.member.findFirst({ where: { id: booking.memberId, organizationId: input.actor.organizationId }, include: { user: { include: { membership: true } } } });
+      assertInstructorQualifications(booking.classInstance.instructor ?? booking.classInstance.classSchedule?.instructor ?? {}, new Date());
+      if (currentMember?.status !== "active") throw new Error("Member account is not active");
+      try {
+        assertMembershipServiceEligibility(currentMember.user?.membership, booking.classInstance.date);
+      } catch (error) {
+        // An operator may record yesterday's attendance after a monthly renewal.
+        // The immutable debit lot proves that historical service was paid; it
+        // never grants access to a suspended/frozen member or an unfunded date.
+        const debit = await transaction.membershipCreditEntry.findUnique({ where: { key: `${booking.id}:debit` }, include: { grant: true } });
+        const membership = currentMember.user?.membership;
+        if (membership?.status !== "active" || !(error instanceof Error) || error.message !== "Service is outside the paid membership period" || debit?.grant?.membershipId !== membership.id || booking.classInstance.date < debit.grant.periodStart || booking.classInstance.date >= debit.grant.periodEnd) throw error;
+      }
+      await assertParticipationAllowed(transaction, input.actor.organizationId!, booking.memberId, booking.classInstance.date, booking.classInstance.locationId);
+    }
     const requestedMinutes = Number(input.minutesLate ?? 0);
     const minutesLate = outcome === "late"
       ? Math.min(Math.max(Number.isFinite(requestedMinutes) ? Math.floor(requestedMinutes) : 5, 1), 180)
@@ -335,23 +356,27 @@ export async function recordCapacityControlledMemberCheckIn(
     actor: LifecycleActor;
   }
 ) {
+  prisma = guardKeystonePrismaResults(prisma);
+  assertFacilityStaff(input.actor);
   const method = normalizeCheckInMethod(input.method);
   return prisma.$transaction(async (transaction: any) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId!);
     await lockTransactionKey(transaction, `check-in:${input.memberId}`);
+    await lockTransactionKey(transaction, `member:${input.memberId}`);
     const member = await transaction.member.findFirst({
       where: { id: input.memberId, organizationId: input.actor.organizationId },
       include: {
-        user: { include: { membership: { select: { status: true } } } },
+        user: { include: { membership: true } },
         subscriptions: { where: { status: "active" }, select: { id: true } },
       },
     });
     if (!member?.user?.id) throw new Error("Member not found");
     assertActorOrganization(input.actor, member.organizationId);
-    assertOwnerOrOperator(input.actor, member.user.id);
     if (member.status !== "active") throw new Error(`Member status is ${member.status}`);
-    const membershipStatus = member.user.membership?.status;
-    const validAccess = membershipStatus ? membershipStatus === "active" : member.subscriptions.length > 0;
-    if (!validAccess) throw new Error("No active membership or subscription");
+    if (member.user.membership?.id) await assertNoPendingMembershipFreeze(transaction, input.actor.organizationId!, member.user.membership.id);
+    assertMembershipServiceEligibility(member.user.membership, new Date());
+    await assertFacilityAccessHours(transaction, input.actor.organizationId!, member.user.membership, new Date());
+    await assertParticipationAllowed(transaction, input.actor.organizationId!, member.id, new Date(), input.locationId);
 
     if (input.locationId) {
       const location = await transaction.location.findFirst({
@@ -400,6 +425,7 @@ export async function recordControlledGuestCheckIn(
     idempotencyKey: string;
   }
 ) {
+  prisma = guardKeystonePrismaResults(prisma);
   const guestName = input.guestName.trim();
   const idempotencyKey = input.idempotencyKey.trim();
   if (!guestName) throw new Error("Guest name is required");
@@ -416,6 +442,9 @@ export async function recordControlledGuestCheckIn(
     throw new Error("Guest check-in organization is invalid");
   }
   return prisma.$transaction(async (transaction: any) => {
+    await lockParticipationPolicy(transaction, input.organizationId);
+    await assertFacilityAccessHours(transaction, organizationId, null, new Date());
+    await assertParticipationAllowed(transaction, organizationId, null, new Date());
     await lockTransactionKey(transaction, `guest-check-in:${organizationId}:${idempotencyKey}`);
     const marker = `[request:${idempotencyKey}]`;
     const existing = await transaction.checkIn.findFirst({
@@ -441,7 +470,10 @@ export async function checkOutControlledMember(
   prisma: any,
   input: { checkInId: string; actor: LifecycleActor }
 ) {
+  prisma = guardKeystonePrismaResults(prisma);
+  assertFacilityStaff(input.actor);
   return prisma.$transaction(async (transaction: any) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId!);
     await lockTransactionKey(transaction, `check-out:${input.checkInId}`);
     const checkIn = await transaction.checkIn.findFirst({
       where: { id: input.checkInId, organizationId: input.actor.organizationId },
@@ -449,7 +481,6 @@ export async function checkOutControlledMember(
     });
     if (!checkIn) throw new Error("Check-in not found");
     assertActorOrganization(input.actor, checkIn.organizationId);
-    assertOwnerOrOperator(input.actor, checkIn.member?.user?.id);
     if (checkIn.checkOutTime) return { checkIn, reused: true };
     const updated = await transaction.checkIn.update({
       where: { id: checkIn.id },

@@ -1,6 +1,8 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { GraphQLError } from "graphql";
 import { consumeAuthAttempt } from "../../../lib/authRateLimit";
 import { createCapacityControlledBooking } from "./classCapacity";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
 function resolveWindow(from?: string | null, to?: string | null) {
   const now = new Date();
@@ -22,12 +24,7 @@ function normalizeLocationName(value?: string | null) {
   return value?.trim().toLowerCase() ?? null;
 }
 
-function parseDiscoveryLocationTag(description?: string | null) {
-  const match = description?.match(/\[(?:location|facility):\s*([^\]]+)\]/i);
-  return match?.[1]?.trim() || null;
-}
-
-async function getDiscoveryClassFeed(context: any, options: {
+export async function getDiscoveryClassFeed(context: any, options: {
   organizationId: string;
   from?: string | null;
   to?: string | null;
@@ -54,6 +51,8 @@ async function getDiscoveryClassFeed(context: any, options: {
     query: `
       id
       date
+      endsAt
+      location { id name address phone isActive }
       maxCapacity
       classSchedule {
         id
@@ -93,8 +92,6 @@ async function getDiscoveryClassFeed(context: any, options: {
     return [];
   }
 
-  const defaultLocation = requestedLocation ?? activeLocations[0] ?? null;
-
   return instances
     .map((instance: any) => {
     const confirmedBookings = (instance.bookings ?? []).filter((booking: any) => booking.status === 'confirmed').length;
@@ -102,11 +99,7 @@ async function getDiscoveryClassFeed(context: any, options: {
     const maxCapacity = instance.maxCapacity ?? instance.classSchedule?.maxCapacity ?? 0;
     const spotsRemaining = Math.max(maxCapacity - confirmedBookings, 0);
 
-    const taggedLocationName = parseDiscoveryLocationTag(instance.classSchedule?.description);
-    const taggedLocation = taggedLocationName
-      ? activeLocations.find((location: any) => normalizeLocationName(location.name) === normalizeLocationName(taggedLocationName)) ?? null
-      : null;
-    const resolvedLocation = requestedLocation ?? taggedLocation ?? defaultLocation;
+    const resolvedLocation = instance.location?.isActive ? instance.location : null;
 
     if (requestedLocation && resolvedLocation?.id !== requestedLocation.id) {
       return null;
@@ -115,6 +108,7 @@ async function getDiscoveryClassFeed(context: any, options: {
     return {
       instanceId: instance.id,
       startsAt: instance.date,
+      endsAt: instance.endsAt,
       schedule: {
         id: instance.classSchedule?.id,
         name: instance.classSchedule?.name,
@@ -264,9 +258,26 @@ async function authorizeDiscovery(
   partner: string,
   requiredScope: "classes:read" | "bookings:create",
 ) {
+  if (credential.startsWith('gym_')) {
+    if (!(await consumeAuthAttempt(context.prisma, 'discovery-auth:global', 1000, 60 * 1000))) throw new Error('Too many discovery authentication attempts');
+    const digest = createHash('sha256').update(credential).digest('hex');
+    const prisma = guardKeystonePrismaResults(context.prisma as any);
+    const stored = await prisma.integrationCredential.findUnique({ where: { digest }, include: { organization: true } });
+    if (!stored || stored.revokedAt || !stored.expiresAt || stored.expiresAt <= new Date() || stored.organization?.status !== 'active') throw new Error('Unauthorized discovery request');
+    if (stored.partner !== partner.trim() || !Array.isArray(stored.scopes) || !stored.scopes.includes(requiredScope)) throw new Error('Unauthorized discovery scope or partner');
+    if (!(await consumeAuthAttempt(context.prisma, `discovery-key:${stored.id}`, 120, 60 * 1000))) throw new Error('Too many discovery requests');
+    return { organizationId: stored.organizationId, partner: stored.partner, mode: 'managed-key' };
+  }
   const configuredKey = process.env.DISCOVERY_API_KEY?.trim();
   const organizationId = process.env.DISCOVERY_ORGANIZATION_ID?.trim();
-  if (!configuredKey || configuredKey.length < 32 || !organizationId) throw new Error("Discovery API is not configured");
+  if (!configuredKey || configuredKey.length < 32 || !organizationId) {
+    throw new GraphQLError("Discovery API is not configured", {
+      extensions: {
+        code: "DISCOVERY_NOT_CONFIGURED",
+        http: { status: 503 },
+      },
+    });
+  }
   const scopes = new Set((process.env.DISCOVERY_API_SCOPES || "").split(",").map((scope) => scope.trim()).filter(Boolean));
   if (!scopes.has(requiredScope)) throw new Error(`Discovery credential is missing required scope: ${requiredScope}`);
   const normalizedPartner = partner.trim().slice(0, 120) || "authorized-partner";

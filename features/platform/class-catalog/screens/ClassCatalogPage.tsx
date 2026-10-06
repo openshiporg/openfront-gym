@@ -16,6 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Dumbbell, Flame, Plus, Save } from 'lucide-react'
 import { saveClassType as saveClassTypeRecord } from '../actions/class-catalog'
+import { validateClassTypeDraft } from '@/features/platform/lib/form-validation'
 
 type ClassTypeRecord = {
   id?: string
@@ -125,11 +126,16 @@ export function ClassCatalogPage({ initialClassTypes }: { initialClassTypes: Cla
 
   const saveClassType = async () => {
     setError(null)
+    const validationError = validateClassTypeDraft(form)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
     setIsSaving(true)
 
     try {
       const data: any = {
-        name: form.name,
+        name: form.name.trim(),
         description: toDocument(form.description),
         difficulty: form.difficulty,
         duration: Number(form.duration || 0),
@@ -237,13 +243,13 @@ export function ClassCatalogPage({ initialClassTypes }: { initialClassTypes: Cla
             </div>
             <div className="grid grid-cols-2 divide-x divide-border">
               <div className="px-5 py-3">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Class name</p>
-                <Input value={form.name} onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))} placeholder="HIIT" className="mt-1.5" />
+                <label htmlFor="class-name" className="text-[11px] uppercase tracking-wider text-muted-foreground">Class name</label>
+                <Input id="class-name" required aria-invalid={Boolean(error && !form.name.trim())} value={form.name} onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))} placeholder="HIIT" className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Difficulty</p>
                 <Select value={form.difficulty} onValueChange={(value) => setForm((current) => ({ ...current, difficulty: value }))}>
-                  <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label="Difficulty" className="mt-1.5"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="beginner">Beginner</SelectItem>
                     <SelectItem value="intermediate">Intermediate</SelectItem>
@@ -255,7 +261,7 @@ export function ClassCatalogPage({ initialClassTypes }: { initialClassTypes: Cla
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Description</p>
-              <Textarea value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} placeholder="Describe what members should expect from this class type." className="mt-1.5 min-h-[140px]" />
+              <Textarea aria-label="Description" value={form.description} onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))} placeholder="Describe what members should expect from this class type." className="mt-1.5 min-h-[140px]" />
             </div>
           </div>
 
@@ -267,11 +273,11 @@ export function ClassCatalogPage({ initialClassTypes }: { initialClassTypes: Cla
             <div className="grid grid-cols-2 divide-x divide-border">
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Duration (min)</p>
-                <Input type="number" value={form.duration} onChange={(e) => setForm((current) => ({ ...current, duration: Number(e.target.value) }))} className="mt-1.5" />
+                <Input aria-label="Duration in minutes" type="number" min={1} max={1440} value={form.duration} onChange={(e) => setForm((current) => ({ ...current, duration: Number(e.target.value) }))} className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Calories burn</p>
-                <Input type="number" value={form.caloriesBurn} onChange={(e) => setForm((current) => ({ ...current, caloriesBurn: Number(e.target.value) }))} className="mt-1.5" />
+                <Input aria-label="Estimated calories burned" type="number" min={0} value={form.caloriesBurn} onChange={(e) => setForm((current) => ({ ...current, caloriesBurn: Number(e.target.value) }))} className="mt-1.5" />
               </div>
             </div>
             <div className="px-5 py-4">
@@ -291,7 +297,7 @@ export function ClassCatalogPage({ initialClassTypes }: { initialClassTypes: Cla
           </div>
 
           {error && (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}

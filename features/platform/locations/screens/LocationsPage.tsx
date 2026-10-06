@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { MapPin, Phone, Plus, Save } from 'lucide-react'
 import { saveLocation as saveLocationRecord } from '../actions/locations'
+import { validateLocationDraft } from '@/features/platform/lib/form-validation'
 
 type LocationRecord = {
   id?: string
@@ -76,11 +77,16 @@ export function LocationsPage({ initialLocations }: { initialLocations: Location
 
   const saveLocation = async () => {
     setError(null)
+    const validationError = validateLocationDraft(form)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
     setIsSaving(true)
 
     try {
       const data = {
-        name: form.name,
+        name: form.name.trim(),
         address: form.address,
         phone: form.phone,
         isActive: Boolean(form.isActive),
@@ -185,16 +191,16 @@ export function LocationsPage({ initialLocations }: { initialLocations: Location
               <span className="text-[11px] uppercase tracking-wider font-semibold text-foreground">Location details</span>
             </div>
             <div className="px-5 py-3">
-              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Location name</p>
-              <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Downtown Club" className="mt-1.5" />
+              <label htmlFor="location-name" className="text-[11px] uppercase tracking-wider text-muted-foreground">Location name</label>
+              <Input id="location-name" required aria-invalid={Boolean(error && !form.name.trim())} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Downtown Club" className="mt-1.5" />
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Address</p>
-              <Textarea value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder="123 Main St, City, State" className="mt-1.5 min-h-[120px]" />
+              <Textarea aria-label="Address" value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} placeholder="123 Main St, City, State" className="mt-1.5 min-h-[120px]" />
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Phone</p>
-              <Input value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="(555) 000-0000" className="mt-1.5" />
+              <Input aria-label="Phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="(555) 000-0000" className="mt-1.5" />
             </div>
           </div>
 
@@ -208,12 +214,12 @@ export function LocationsPage({ initialLocations }: { initialLocations: Location
                 <p className="text-sm font-medium">Location active</p>
                 <p className="text-xs text-muted-foreground">Inactive locations can be retained without appearing as the primary facility.</p>
               </div>
-              <Switch checked={Boolean(form.isActive)} onCheckedChange={(checked) => setForm((f) => ({ ...f, isActive: checked }))} />
+              <Switch aria-label="Location active" checked={Boolean(form.isActive)} onCheckedChange={(checked) => setForm((f) => ({ ...f, isActive: checked }))} />
             </div>
           </div>
 
           {error && (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}

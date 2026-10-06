@@ -1,8 +1,12 @@
+import SubmitButton from "../modules/common/submit-button";
+import { creditLabel } from "../lib/discovery";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getUser } from "@/features/storefront/lib/data/user";
 import { getMembershipTiers } from "@/features/storefront/lib/data/memberships";
 import { formatMajorUnits } from "@/features/platform/lib/currency";
+import { formatMinorUnits } from '@/features/platform/lib/currency';
+import { refreshMyMembership } from '@/features/platform/operations/actions';
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 import {
   cancelMembershipAction,
@@ -19,8 +23,8 @@ function formatDate(value?: string | null, options?: Intl.DateTimeFormatOptions)
 }
 
 function statusClass(status: string) {
-  if (status === "active") return "border-emerald-700/25 bg-emerald-50 text-emerald-800";
-  if (status === "frozen") return "border-amber-700/25 bg-amber-50 text-amber-800";
+  if (status === "active") return "sf-status-success";
+  if (status === "frozen") return "sf-status-warning";
   return "border-[var(--color-rule)] bg-[var(--color-paper-2)] text-[var(--color-ink-muted)]";
 }
 
@@ -37,13 +41,20 @@ export default async function AccountMembershipPage({
     getMembershipTiers(user.organization?.id).catch(() => []),
     getStorefrontConfig(),
   ]);
-  const membership = user.membership;
+  const refreshed = await refreshMyMembership();
+  const currentUser = refreshed.error ? user : await getUser();
+  const membership = refreshed.membership ? { ...currentUser?.membership, ...refreshed.membership } : user.membership;
+  const timeZone = config?.timezone || "UTC";
+  const creditDate = (value: string) => new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(value));
+  const agreement = membership?.agreementSnapshot;
+  const freezeAllowed = agreement?.freezeAllowed ?? membership?.tier?.freezeAllowed;
   const currencyCode = config?.currencyCode || user.organization?.defaultCurrency || "USD";
   const hasStripeCustomer = Boolean(user.stripeCustomerId);
   const hasStripeSubscription = Boolean(membership?.stripeSubscriptionId);
 
   return (
     <div className="space-y-12">
+      {refreshed.error && <p role="alert" className="rounded border p-4">We could not refresh your membership. The details below may be out of date; ask the club before relying on the displayed balance.</p>}
       <header className="max-w-3xl">
         <p className="sf-eyebrow mb-3">Member access</p>
         <h1 className="sf-display text-[var(--text-display-s)]">Membership</h1>
@@ -53,7 +64,7 @@ export default async function AccountMembershipPage({
       </header>
 
       {resolved?.success ? (
-        <div className="border border-emerald-700/25 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
+        <div role="status" className="sf-status-success px-5 py-4 text-sm">
           {resolved.success === "cancelled"
             ? "Renewal cancelled. Your membership remains active through the current paid period."
             : resolved.success === "frozen"
@@ -67,7 +78,7 @@ export default async function AccountMembershipPage({
       ) : null}
 
       {resolved?.error ? (
-        <div className="border border-red-700/25 bg-red-50 px-5 py-4 text-sm text-red-900">{resolved.error}</div>
+        <div role="alert" className="sf-status-error px-5 py-4 text-sm">{resolved.error}</div>
       ) : null}
 
       {membership ? (
@@ -76,9 +87,9 @@ export default async function AccountMembershipPage({
             <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="sf-eyebrow">Current plan</p>
-                <h2 className="sf-display mt-3 text-4xl">{membership.tier?.name ?? "Membership"}</h2>
+                <h2 className="sf-display mt-3 text-4xl">{agreement?.tierName || membership.tier?.name || "Membership"}</h2>
                 <p className="mt-3 text-sm text-[var(--color-ink-muted)]">
-                  {formatMajorUnits(membership.tier?.monthlyPrice ?? 0, currencyCode)} per month
+                  {agreement?.amount !== undefined ? `${formatMinorUnits(agreement.amount, agreement.currencyCode || currencyCode)} per ${membership.billingCycle === 'annual' ? 'year' : 'month'}` : 'Legacy agreement — contact staff to verify accepted price'}
                 </p>
               </div>
               <span className={`w-fit border px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${statusClass(membership.status)}`}>
@@ -90,7 +101,7 @@ export default async function AccountMembershipPage({
               <div className="bg-[var(--color-surface)] p-5">
                 <dt className="sf-label">Class access</dt>
                 <dd className="mt-2 text-xl font-semibold">
-                  {membership.tier?.classCreditsPerMonth === -1
+                  {refreshed.error ? "Refresh unavailable" : (agreement?.classCreditsPerMonth ?? membership.tier?.classCreditsPerMonth) === -1
                     ? "Unlimited"
                     : `${membership.classCreditsRemaining ?? 0} remaining`}
                 </dd>
@@ -110,18 +121,21 @@ export default async function AccountMembershipPage({
                 <dd className="mt-2 text-xl font-semibold">{formatDate(membership.cancelledAt)}</dd>
               </div>
             </dl>
+            {membership.creditPeriodStart && membership.creditPeriodEnd && !refreshed.error && <p className="sf-notice mt-5"><strong>Current class-credit period</strong><br />From {creditDate(membership.creditPeriodStart)} until {creditDate(membership.creditPeriodEnd)} ({timeZone}). Credits for a later service month are checked when you book that session.</p>}
           </section>
+
+          <section className="sf-panel"><h2 className="text-2xl font-semibold">Your accepted plan terms</h2>{agreement ? <><dl className="sf-facts"><div><dt>Class allowance</dt><dd>{creditLabel(agreement.classCreditsPerMonth)}</dd></div><div><dt>Access hours</dt><dd>{agreement.accessHours || "Contact the club to confirm"}</dd></div><div><dt>Freeze permission</dt><dd>{agreement.freezeAllowed ? "Included" : "Not included"}</dd></div></dl><p className="sf-muted">These are the terms recorded for your membership. Current advertised plans can differ. Class credits follow the session’s service month and do not reset simply because billing is annual.</p></> : <p className="sf-notice mt-4">Your membership predates saved plan terms. Contact the club to verify your accepted price and allowance.</p>}</section>
 
           <section className="grid gap-6 xl:grid-cols-2">
             <article className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-7">
               <p className="sf-eyebrow">Billing controls</p>
               <h2 className="mt-3 text-2xl font-semibold">Payment methods and invoices</h2>
               <p className="mt-3 text-sm leading-7 text-[var(--color-ink-muted)]">
-                Stripe-hosted billing is available when this account is linked to a real customer record.
+                Manage your payment method and view available invoices in secure Stripe billing.
               </p>
               {hasStripeCustomer ? (
                 <form action={openBillingPortalAction} className="mt-6">
-                  <button type="submit" className="sf-btn-primary w-full">Open billing portal</button>
+                  <SubmitButton  className="sf-btn-primary w-full">Open billing portal</SubmitButton>
                 </form>
               ) : (
                 <div className="mt-6 border border-[var(--color-rule)] bg-[var(--color-paper-2)] px-4 py-4 text-sm text-[var(--color-ink-muted)]">
@@ -141,55 +155,56 @@ export default async function AccountMembershipPage({
                 <div className="mt-6 space-y-4">
                   <div className="border border-[var(--color-rule)] bg-[var(--color-paper-2)] px-4 py-4 text-sm text-[var(--color-ink-muted)]">
                     Freeze window: {formatDate(membership.freezeStartDate)} to {formatDate(membership.freezeEndDate)}.
-                    Provider collection resumes at the freeze end unless you resume earlier.
+                    Billing resumes at the freeze end unless you resume earlier.
                   </div>
                   <form action={resumeMembershipAction}>
-                    <button type="submit" className="sf-btn-secondary w-full" disabled={!hasStripeSubscription}>
+                    <SubmitButton  className="sf-btn-secondary w-full" disabled={!hasStripeSubscription}>
                       Resume membership
-                    </button>
+                    </SubmitButton>
                   </form>
                 </div>
               ) : (
                 <form action={freezeMembershipAction} className="mt-6 space-y-4">
                   <label className="block space-y-2 text-sm font-medium">
-                    Freeze through
+                    Freeze through (UTC date)
                     <input
                       name="endDate"
                       type="date"
                       className="h-12 w-full border border-[var(--color-rule)] bg-[var(--color-paper)] px-4 text-sm outline-none focus:ring-2 focus:ring-[var(--color-focus)]"
                       required
                     />
-                    <span className="block text-xs font-normal text-[var(--color-ink-muted)]">The freeze starts as soon as you submit.</span>
+                    <span className="block text-xs font-normal text-[var(--color-ink-muted)]">The freeze starts immediately and ends at 23:59 UTC on this date.</span>
                   </label>
-                  <button
-                    type="submit"
+                  <SubmitButton
+
                     className="sf-btn-secondary w-full disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!hasStripeSubscription || !membership.autoRenew || !membership.tier?.freezeAllowed || membership.status !== "active"}
+                    disabled={!hasStripeSubscription || !membership.autoRenew || !freezeAllowed || membership.status !== "active"}
                   >
                     {!hasStripeSubscription
                       ? "Provider billing required to freeze"
                       : !membership.autoRenew
                         ? "Renewal is already ending"
-                      : !membership.tier?.freezeAllowed
+                      : !freezeAllowed
                         ? "Freeze not allowed on this tier"
                         : membership.status !== "active"
                           ? "Only active memberships can be frozen"
                           : "Freeze membership"}
-                  </button>
+                  </SubmitButton>
                 </form>
               )}
             </article>
           </section>
 
-          <section className="border border-red-700/20 bg-red-50/50 p-7">
+          <section className="sf-danger-panel">
             <p className="sf-eyebrow text-red-800">Cancellation</p>
             <h2 className="mt-3 text-2xl font-semibold text-red-950">End renewal after this paid period</h2>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-red-900/75">
               Stripe will stop renewal at the end of the current paid period. Access remains active through the date shown above; this does not issue a refund.
             </p>
             <form action={cancelMembershipAction} className="mt-6 space-y-4">
+              <label htmlFor="cancel-reason" className="block text-sm font-medium">Reason for cancelling (optional)</label>
               <textarea
-                name="reason"
+                id="cancel-reason" name="reason"
                 placeholder="Why are you cancelling?"
                 maxLength={500}
                 className="min-h-28 w-full border border-red-900/20 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-red-800/20"
@@ -198,8 +213,8 @@ export default async function AccountMembershipPage({
                 <input type="checkbox" name="confirmEndOfTerm" value="yes" required className="mt-1" />
                 <span>I understand renewal will stop and access will end after the current paid period.</span>
               </label>
-              <button
-                type="submit"
+              <SubmitButton
+
                 className="border border-red-800 px-5 py-3 text-sm font-semibold text-red-900 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!hasStripeSubscription || membership.status === "cancelled" || !membership.autoRenew}
               >
@@ -210,7 +225,7 @@ export default async function AccountMembershipPage({
                     : !membership.autoRenew
                       ? "Renewal already cancelled"
                       : "End renewal after paid period"}
-              </button>
+              </SubmitButton>
             </form>
           </section>
         </>
@@ -227,7 +242,7 @@ export default async function AccountMembershipPage({
             <p className="sf-eyebrow mb-2">Access levels</p>
             <h2 className="sf-display text-3xl">Available plans</h2>
           </div>
-          <div className="grid gap-5 md:grid-cols-3">
+          <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
             {tiers.map((tier) => {
               const isCurrent = membership?.tier?.id === tier.id;
               return (
@@ -250,7 +265,7 @@ export default async function AccountMembershipPage({
                   </ul>
                   {!isCurrent && membership ? (
                     <p className="mt-6 border-t border-[var(--color-rule)] pt-4 text-sm text-[var(--color-ink-muted)]">
-                      Contact the front desk to change plans. Operator review prevents accidental proration and class-credit resets.
+                      Contact the front desk to change plans. The club will confirm any price and class-allowance changes before making the switch.
                     </p>
                   ) : !membership ? (
                     <Link

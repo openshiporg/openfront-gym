@@ -5,6 +5,7 @@
 import { getAuthHeaders } from '@/features/dashboard/lib/cookies';
 import { GraphQLClient, ClientError } from 'graphql-request';
 import { getGraphQLEndpoint } from '@/features/dashboard/lib/getBaseUrl';
+import { internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
 
 // Define response type for keystoneClient
 export type KeystoneResponse<T = any> =
@@ -20,6 +21,7 @@ async function createGraphQLClient(): Promise<GraphQLClient> {
   return new GraphQLClient(endpoint, {
     credentials: 'include',
     headers: authHeaders || {},
+    fetch: internalGraphqlFetch,
   });
 }
 
@@ -111,7 +113,9 @@ export async function keystoneClient<T = any>(
     };
 
   } catch (error) {
-    console.error("Error fetching GraphQL data:", error);
+    // ClientError includes request variables, which can contain health notes,
+    // credentials or payment evidence. Keep diagnostics free of those values.
+    console.error("GraphQL request failed", { name: error instanceof Error ? error.name : 'UnknownError' });
 
     if (error instanceof ClientError) {
       const { message, errors } = formatGraphQLErrors(error);
@@ -179,7 +183,7 @@ async function _fetchGraphQLWithFiles(
     }
 
     // Send the multipart request
-    const response = await fetch(endpoint, {
+    const response = await internalGraphqlFetch(endpoint, {
       method: "POST",
       headers,
       credentials: "include",
@@ -196,7 +200,7 @@ async function _fetchGraphQLWithFiles(
     const json = await response.json();
 
     if (json.errors) {
-      console.error("GraphQL Errors:", json.errors);
+      console.error("GraphQL upload was rejected", { count: json.errors.length });
       return {
         success: false,
         error: `GraphQL Error: ${json.errors
@@ -210,7 +214,7 @@ async function _fetchGraphQLWithFiles(
       data: json.data
     };
   } catch (error) {
-    console.error("Error uploading files:", error);
+    console.error("GraphQL upload failed", { name: error instanceof Error ? error.name : 'UnknownError' });
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'

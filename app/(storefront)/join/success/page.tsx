@@ -6,8 +6,8 @@ import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
   return {
-    title: `Membership activated — ${getStorefrontBrandName(config)}`,
-    description: "Your membership checkout is complete.",
+    title: `Membership confirmation — ${getStorefrontBrandName(config)}`,
+    description: "Check your membership confirmation and payment verification status.",
   };
 }
 

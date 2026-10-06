@@ -11,8 +11,12 @@ import {
   isNonNullType,
   isListType,
   isInputObjectType,
+  Kind,
+  parse,
+  validate,
 } from 'graphql';
 import { getBaseUrl } from '@/features/dashboard/lib/getBaseUrl';
+import { internalGraphqlFetch } from '@/features/keystone/lib/internal-origin';
 
 // Get simple type name for display
 function getSimpleTypeName(type: any): string {
@@ -25,15 +29,75 @@ function getSimpleTypeName(type: any): string {
   return type.name || type.toString();
 }
 
-// Execute GraphQL query with authentication
-async function executeGraphQL(query: string, graphqlEndpoint: string, cookie: string): Promise<any> {
-  const response = await fetch(graphqlEndpoint, {
+function getRootOperationField(
+  schema: GraphQLSchema,
+  operationType: 'query' | 'mutation',
+  operationName: string,
+) {
+  if (!/^[_A-Za-z][_0-9A-Za-z]*$/.test(operationName)) {
+    throw new Error(`Invalid GraphQL operation field: ${operationName}`);
+  }
+  const rootType = operationType === 'query' ? schema.getQueryType() : schema.getMutationType();
+  const field = rootType?.getFields()[operationName];
+  if (!field) throw new Error(`GraphQL ${operationType} field not found: ${operationName}`);
+  return field;
+}
+
+function getRootArgumentType(
+  schema: GraphQLSchema,
+  operationType: 'query' | 'mutation',
+  operationName: string,
+  argumentName: string,
+) {
+  const field = getRootOperationField(schema, operationType, operationName);
+  const argument = field.args.find((candidate) => candidate.name === argumentName);
+  if (!argument) throw new Error(`GraphQL ${operationType} field ${operationName} has no ${argumentName} argument`);
+  return String(argument.type);
+}
+
+function validateMcpOperation(
+  schema: GraphQLSchema,
+  query: string,
+  expectedType: 'query' | 'mutation',
+  expectedRootField: string,
+) {
+  const document = parse(query);
+  const validationErrors = validate(schema, document);
+  if (validationErrors.length > 0) {
+    throw new Error(`Invalid MCP GraphQL operation: ${validationErrors.map((error) => error.message).join('; ')}`);
+  }
+  const operations = document.definitions.filter((definition) => definition.kind === Kind.OPERATION_DEFINITION);
+  if (operations.length !== 1 || operations[0].operation !== expectedType) {
+    throw new Error('MCP requests must contain exactly one operation of the expected type');
+  }
+  const rootSelections = operations[0].selectionSet.selections;
+  if (
+    rootSelections.length !== 1 ||
+    rootSelections[0].kind !== Kind.FIELD ||
+    rootSelections[0].name.value !== expectedRootField
+  ) {
+    throw new Error('MCP requests may execute only the selected GraphQL root field');
+  }
+}
+
+// Execute GraphQL under the caller's ordinary Keystone request context.
+async function executeGraphQL(
+  query: string,
+  graphqlEndpoint: string,
+  cookie: string,
+  schema: GraphQLSchema,
+  expectedType: 'query' | 'mutation',
+  expectedRootField: string,
+  variables: Record<string, unknown> = {},
+): Promise<any> {
+  validateMcpOperation(schema, query, expectedType, expectedRootField);
+  const response = await internalGraphqlFetch(graphqlEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Cookie': cookie,
     },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, variables }),
   });
 
   const result = await response.json();
@@ -45,7 +109,7 @@ async function executeGraphQL(query: string, graphqlEndpoint: string, cookie: st
 
 // Get GraphQL schema from introspection
 async function getGraphQLSchema(graphqlEndpoint: string, cookie: string): Promise<GraphQLSchema> {
-  const response = await fetch(graphqlEndpoint, {
+  const response = await internalGraphqlFetch(graphqlEndpoint, {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
@@ -353,18 +417,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
         
         if (name === 'queryData') {
           const { operation, fields } = args;
+          const operationName = typeof operation === 'string' ? operation : '';
+          getRootOperationField(schema, 'query', operationName);
           
-          // Build a simple GraphQL query
           const queryString = `
-            query ${operation.charAt(0).toUpperCase() + operation.slice(1)} {
-              ${operation} {
+            query MCPQuery {
+              ${operationName} {
                 ${fields}
               }
             }
           `.trim();
           
-          // Execute the query
-          const result = await executeGraphQL(queryString, graphqlEndpoint, cookie || '');
+          const result = await executeGraphQL(
+            queryString,
+            graphqlEndpoint,
+            cookie || '',
+            schema,
+            'query',
+            operationName,
+          );
           
           return new Response(JSON.stringify({
             jsonrpc: '2.0',
@@ -604,20 +675,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
         
         if (name === 'createData') {
           const { operation, data, fields } = args;
-          
-          // Parse the data JSON string
+          const operationName = typeof operation === 'string' ? operation : '';
+          const dataType = getRootArgumentType(schema, 'mutation', operationName, 'data');
           const dataObject = JSON.parse(data);
           
           const mutationString = `
-            mutation Create${operation.charAt(0).toUpperCase() + operation.slice(1)} {
-              ${operation}(data: ${JSON.stringify(dataObject).replace(/\"([^\"]+)\":/g, '$1:')}) {
+            mutation MCPCreate($data: ${dataType}) {
+              ${operationName}(data: $data) {
                 ${fields}
               }
             }
           `.trim();
           
-          // Execute the mutation
-          const result = await executeGraphQL(mutationString, graphqlEndpoint, cookie || '');
+          const result = await executeGraphQL(
+            mutationString,
+            graphqlEndpoint,
+            cookie || '',
+            schema,
+            'mutation',
+            operationName,
+            { data: dataObject },
+          );
           
           // Mark that data has changed
           dataHasChanged = true;
@@ -642,21 +720,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
         
         if (name === 'updateData') {
           const { operation, where, data, fields } = args;
-          
-          // Parse the JSON strings
+          const operationName = typeof operation === 'string' ? operation : '';
+          const whereType = getRootArgumentType(schema, 'mutation', operationName, 'where');
+          const dataType = getRootArgumentType(schema, 'mutation', operationName, 'data');
           const whereObject = JSON.parse(where);
           const dataObject = JSON.parse(data);
           
           const mutationString = `
-            mutation Update${operation.charAt(0).toUpperCase() + operation.slice(1)} {
-              ${operation}(where: ${JSON.stringify(whereObject).replace(/\"([^\"]+)\":/g, '$1:')}, data: ${JSON.stringify(dataObject).replace(/\"([^\"]+)\":/g, '$1:')}) {
+            mutation MCPUpdate($where: ${whereType}, $data: ${dataType}) {
+              ${operationName}(where: $where, data: $data) {
                 ${fields}
               }
             }
           `.trim();
           
-          // Execute the mutation
-          const result = await executeGraphQL(mutationString, graphqlEndpoint, cookie || '');
+          const result = await executeGraphQL(
+            mutationString,
+            graphqlEndpoint,
+            cookie || '',
+            schema,
+            'mutation',
+            operationName,
+            { where: whereObject, data: dataObject },
+          );
           
           // Mark that data has changed
           dataHasChanged = true;
@@ -681,20 +767,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
         
         if (name === 'deleteData') {
           const { operation, where, fields } = args;
-          
-          // Parse the where JSON string
+          const operationName = typeof operation === 'string' ? operation : '';
+          const whereType = getRootArgumentType(schema, 'mutation', operationName, 'where');
           const whereObject = JSON.parse(where);
           
           const mutationString = `
-            mutation Delete${operation.charAt(0).toUpperCase() + operation.slice(1)} {
-              ${operation}(where: ${JSON.stringify(whereObject).replace(/\"([^\"]+)\":/g, '$1:')}) {
+            mutation MCPDelete($where: ${whereType}) {
+              ${operationName}(where: $where) {
                 ${fields}
               }
             }
           `.trim();
           
-          // Execute the mutation
-          const result = await executeGraphQL(mutationString, graphqlEndpoint, cookie || '');
+          const result = await executeGraphQL(
+            mutationString,
+            graphqlEndpoint,
+            cookie || '',
+            schema,
+            'mutation',
+            operationName,
+            { where: whereObject },
+          );
           
           // Mark that data has changed
           dataHasChanged = true;
@@ -719,6 +812,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
         
         if (name === 'modelSpecificSearch') {
           const { modelName, searchQuery, fields, limit = 10 } = args;
+          if (typeof modelName !== 'string' || typeof searchQuery !== 'string' || typeof fields !== 'string') {
+            throw new Error('modelName, searchQuery, and fields must be strings');
+          }
+          if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1) {
+            throw new Error('limit must be a positive integer');
+          }
+          const resultLimit = Math.min(limit, 100);
           
           // Get all types from schema to find the correct model
           const typeMap = schema.getTypeMap();
@@ -813,41 +913,52 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
           }
           
           // Build search conditions using only fields that exist on the model
-          const searchConditions = [];
-          const searchTerm = searchQuery.trim();
+          const searchConditions: Record<string, unknown>[] = [];
+          const searchTerm = searchQuery.trim().slice(0, 200);
           
-          // Add ID search (exact match) - ID should always exist
           if (searchTerm && availableFields.includes('id')) {
-            searchConditions.push(`{ id: { equals: "${searchTerm}" } }`);
+            searchConditions.push({ id: { equals: searchTerm } });
           }
           
-          // Add text field search (case-insensitive contains) for fields that exist
           const commonSearchFields = ['name', 'title', 'label', 'description', 'email'];
           const validSearchFields = commonSearchFields.filter(field => availableFields.includes(field));
           
           for (const fieldName of validSearchFields) {
-            searchConditions.push(`{ ${fieldName}: { contains: "${searchTerm}", mode: insensitive } }`);
+            searchConditions.push({ [fieldName]: { contains: searchTerm, mode: 'insensitive' } });
           }
           
-          // Build the GraphQL query manually to avoid JSON.stringify issues with enums
-          let whereClause = '';
+          const queryFieldDefinition = getRootOperationField(schema, 'query', operationName);
+          const takeArgument = queryFieldDefinition.args.find((argument) => argument.name === 'take');
+          if (!takeArgument) throw new Error(`GraphQL query field ${operationName} has no take argument`);
+          const whereArgument = queryFieldDefinition.args.find((argument) => argument.name === 'where');
+          const variables: Record<string, unknown> = { take: resultLimit };
+          let whereArgumentDefinition = '';
           if (searchConditions.length > 0) {
-            whereClause = `where: { OR: [${searchConditions.join(', ')}] },`;
+            if (!whereArgument) throw new Error(`GraphQL query field ${operationName} has no where argument`);
+            variables.where = { OR: searchConditions };
+            whereArgumentDefinition = `$where: ${String(whereArgument.type)},`;
           }
           
           const queryString = `
-            query Search${foundModel} {
+            query MCPSearch(${whereArgumentDefinition} $take: ${String(takeArgument.type)}) {
               ${operationName}(
-                ${whereClause}
-                take: ${limit}
+                ${searchConditions.length > 0 ? 'where: $where,' : ''}
+                take: $take
               ) {
                 ${fields}
               }
             }
           `.trim();
           
-          // Execute the search query
-          const result = await executeGraphQL(queryString, graphqlEndpoint, cookie || '');
+          const result = await executeGraphQL(
+            queryString,
+            graphqlEndpoint,
+            cookie || '',
+            schema,
+            'query',
+            operationName,
+            variables,
+          );
           
           return new Response(JSON.stringify({
             jsonrpc: '2.0',

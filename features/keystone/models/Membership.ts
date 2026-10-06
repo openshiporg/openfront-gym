@@ -7,6 +7,7 @@ import {
   checkbox,
   integer,
   text,
+  json,
 } from "@keystone-6/core/fields";
 
 import { isSignedIn, permissions, rules } from "../access";
@@ -95,6 +96,13 @@ export const Membership = list({
       defaultValue: "monthly",
       validation: { isRequired: true },
     }),
+
+    agreementSnapshot: json({ defaultValue: {}, access: { update: denyAll } }),
+    agreementHistory: json({ defaultValue: [], access: { update: denyAll } }),
+    creditPeriodStart: timestamp({ access: { update: denyAll } }),
+    creditPeriodEnd: timestamp({ access: { update: denyAll } }),
+    billingEventAt: timestamp({ access: { update: denyAll } }),
+    recoveryHistory: json({ defaultValue: [], access: { read: permissions.canManageAllRecords, update: denyAll } }),
 
     nextBillingDate: timestamp({ access: { update: denyAll } }),
 

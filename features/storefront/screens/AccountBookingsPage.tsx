@@ -1,3 +1,4 @@
+import { chronologicalBookings } from "@/features/storefront/lib/discovery";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getUser } from "@/features/storefront/lib/data/user";
@@ -9,7 +10,7 @@ import { formatOccurrenceDate, formatOccurrenceTime } from "@/features/storefron
 export default async function AccountBookingsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ notice?: string; error?: string }>;
+  searchParams?: Promise<{ notice?: string; error?: string; view?: string }>;
 }) {
   const user = await getUser();
   if (!user) notFound();
@@ -24,7 +25,9 @@ export default async function AccountBookingsPage({
     getStorefrontConfig(),
   ]);
   const timeZone = config?.timezone || "UTC";
-  const location = config?.address || config?.locationName || "Main studio";
+  const location = "Session location not published · confirm with the club";
+  const view = resolved?.view === "history" ? "history" : resolved?.view === "waitlist" ? "waitlist" : "upcoming";
+  const rows = view === "history" ? history : chronologicalBookings(upcoming).filter((booking: any) => booking.status === (view === "waitlist" ? "waitlist" : "confirmed"));
 
   return (
     <div className="space-y-10">
@@ -34,38 +37,16 @@ export default async function AccountBookingsPage({
       </header>
 
       {resolved?.notice ? (
-        <div className="border border-emerald-700/25 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">{resolved.notice}</div>
+        <div role="status" className="sf-status-success px-5 py-4 text-sm">{resolved.notice}</div>
       ) : null}
       {resolved?.error ? (
-        <div className="border border-red-300 bg-red-50 px-5 py-4 text-sm text-red-800">{resolved.error}</div>
+        <div role="alert" className="sf-status-error px-5 py-4 text-sm">{resolved.error}</div>
       ) : null}
 
-      <section>
-        <div className="mb-5 flex items-end justify-between gap-4">
-          <h2 className="text-2xl font-semibold">Upcoming ({upcoming.length})</h2>
-          <Link href="/schedule" className="text-sm font-medium text-[var(--color-accent)] hover:underline">Browse schedule</Link>
-        </div>
-        {upcoming.length === 0 ? (
-          <div className="border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-16 text-center text-sm text-[var(--color-ink-muted)]">No upcoming classes booked.</div>
-        ) : (
-          <div className="space-y-4">
-            {upcoming.map((booking: any) => (
-              <BookingRow key={booking.id} booking={booking} canCancel timeZone={timeZone} location={location} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {history.length > 0 && (
-        <section>
-          <h2 className="mb-5 text-2xl font-semibold">Past classes ({history.length})</h2>
-          <div className="space-y-4 opacity-80">
-            {history.slice(0, 10).map((booking: any) => (
-              <BookingRow key={booking.id} booking={booking} timeZone={timeZone} location={location} />
-            ))}
-          </div>
-        </section>
-      )}
+      <nav className="sf-segmented" aria-label="Booking views">{[["upcoming", "Confirmed"], ["waitlist", "Waitlists"], ["history", "History"]].map(([value, label]) => <Link key={value} href={`/account/bookings?view=${value}`} aria-current={view === value ? "page" : undefined}>{label}</Link>)}</nav>
+      <section><div className="sf-section-heading"><h2>{view === "history" ? "Recent activity" : view === "waitlist" ? "Your waitlists" : "Upcoming confirmed sessions"}</h2><Link href="/schedule" className="sf-link">Find a session →</Link></div><p className="sf-muted mb-5">All times in {timeZone}. {view === "history" ? "Showing up to 20 recent records." : view === "waitlist" ? "Waitlist entries are not confirmed spaces. Check here for promotion and eligibility updates." : "Your sessions are ordered by start time."}</p>
+      {rows.length ? <div className="space-y-4">{rows.map((booking: any) => <BookingRow key={booking.id} booking={booking} canCancel={view !== "history"} timeZone={timeZone} location={location} />)}</div> : <div className="sf-empty"><h3>{view === "history" ? "No recent booking activity" : view === "waitlist" ? "You’re not on any upcoming waitlists" : "Your next class is waiting"}</h3><p>Explore the timetable for a session that fits your day.</p><Link href="/schedule" className="sf-btn-primary">Explore sessions</Link></div>}
+      {upcoming.length >= 100 && view !== "history" && <p className="sf-muted mt-4">Showing up to 100 upcoming bookings. Contact the club for additional records.</p>}</section>
     </div>
   );
 }
@@ -86,10 +67,10 @@ function BookingRow({
   const instructorName = booking.classInstance?.instructor?.user?.name ?? schedule?.instructor?.user?.name;
   const stateClass =
     booking.status === "confirmed"
-      ? "border-emerald-700/25 bg-emerald-50 text-emerald-800"
+      ? "sf-status-success"
       : booking.status === "cancelled"
         ? "border-[var(--color-rule)] bg-[var(--color-paper-2)] text-[var(--color-ink-muted)]"
-        : "border-amber-700/25 bg-amber-50 text-amber-800";
+        : "sf-status-warning";
 
   return (
     <article className="grid gap-5 border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
@@ -100,14 +81,16 @@ function BookingRow({
           {date ? `${formatOccurrenceDate(date, timeZone)} · ${formatOccurrenceTime(date, timeZone)}` : "Date unavailable"}
           {instructorName ? ` · ${instructorName}` : ""}
         </p>
-        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{location}</p>
+        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">{booking.classInstance?.location?.name || location}</p>
+        {booking.eligibilityReviewReason && <p className="sf-notice mt-3">Eligibility needs review: {booking.eligibilityReviewReason}. Contact the club for help with this booking.</p>}
+        {booking.classInstance?.cancellationReason && <p className="sf-notice mt-3">Session update: {booking.classInstance.cancellationReason}</p>}
       </div>
       <div className="flex flex-wrap items-center gap-3 md:justify-end">
         <span className={`border px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${stateClass}`}>
-          {booking.status}
+          {booking.status === "waitlist" ? `Waitlist${booking.waitlistPosition ? ` · position ${booking.waitlistPosition}` : ""}` : booking.status}
         </span>
         {canCancel && booking.status !== "cancelled" ? (
-          <CancelBookingForm bookingId={booking.id} />
+          <CancelBookingForm bookingId={booking.id} sessionName={`${schedule?.name || "Class"}${date ? `, ${formatOccurrenceDate(date, timeZone)}, ${formatOccurrenceTime(date, timeZone)}` : ""}`} waitlist={booking.status === "waitlist"} />
         ) : null}
       </div>
     </article>

@@ -14,6 +14,11 @@ import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
+function sensitiveMemberRead({ session, item }: any) {
+  return Boolean(session?.itemId && session?.data?.organization?.id === item?.organizationId &&
+    (session.data?.role?.canManageAllRecords || session.data?.role?.canManagePeople || item?.userId === session.itemId));
+}
+
 export const Member = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, userId") },
   hooks: { validateInput: validateTenantOwnership([
@@ -104,18 +109,21 @@ export const Member = list({
     }),
 
     emergencyContactName: text({
+      access: { read: sensitiveMemberRead },
       ui: {
         description: 'Emergency contact full name',
       },
     }),
 
     emergencyContactPhone: text({
+      access: { read: sensitiveMemberRead },
       ui: {
         description: 'Emergency contact phone number',
       },
     }),
 
     healthNotes: json({
+      access: { read: sensitiveMemberRead, create: denyAll, update: denyAll },
       ui: {
         views: './fields/json-view',
         description: 'Medical conditions, injuries, or health considerations (stored as JSON)',

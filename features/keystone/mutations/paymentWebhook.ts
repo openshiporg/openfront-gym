@@ -2,9 +2,14 @@ import type Stripe from "stripe";
 import type { Context } from ".keystone/types";
 import { provisionMembershipFromCheckoutSession } from "../../integrations/payment/provision-membership";
 import { mapStripeStatusToMembership } from "../../integrations/payment/lifecycle";
-import { getPaymentProviderAdapter } from "../../integrations/payment";
+import { getPaymentProviderAdapterForExecution } from "../../integrations/payment";
 import type { PaymentProviderAdapter } from "../../integrations/payment/types";
+import { createFinanceException, enqueueOperationalNotice } from "../lib/operational-notices";
+import { ensureMonthlyCreditGrant, reviewFutureMembershipBookings } from "../lib/membership-credits";
+import { currentRoleActor } from "../access/currentRoleActor";
 import { lockTransactionKey } from "./classCapacity";
+import { guardKeystonePrismaResults, requirePrismaAffectedCount, withKeystonePrismaTransaction } from "../lib/prisma-result";
+import { assertExactProviderRefund, readRefundReservation } from "../lib/refund-reservation";
 
 const PROVIDER_CODE = "pp_stripe";
 
@@ -20,25 +25,49 @@ function mapStripeStatusToSubscription(status: string, collectionPaused = false)
   return "cancelled";
 }
 
+/** Persist only replay inputs, excluding addresses, card data and provider secrets. */
+export function paymentEventReplayEvidence(event: Stripe.Event) {
+  const object = event.data.object as any;
+  let evidence: any;
+  if (event.type.startsWith("invoice.")) {
+    evidence = Object.fromEntries(["id", "subscription", "amount_paid", "amount_due", "currency", "period_start", "period_end", "billing_reason", "status_transitions", "payment_intent", "charge", "hosted_invoice_url", "subtotal", "total", "tax", "amount_remaining"].map(key => [key, object[key] ?? null]));
+    for (const key of ["subscription", "payment_intent", "charge"]) if (evidence[key] && typeof evidence[key] === "object") evidence[key] = evidence[key].id;
+    evidence.lines = { data: (object.lines?.data || []).map((line: any) => ({ id: line.id, amount: line.amount, description: line.description, period: line.period, quantity: line.quantity, type: line.type, proration: line.proration, price: line.price ? { id: line.price.id } : null })) };
+  } else {
+    evidence = Object.fromEntries(["id", "mode", "metadata", "client_reference_id", "amount", "currency", "amount_refunded", "payment_intent", "status"].map(key => [key, object[key] ?? null]));
+    if (event.type === "charge.refunded") {
+      evidence.refunds = { data: (object.refunds?.data || []).map((refund: any) => ({
+        id: refund.id, payment_intent: typeof refund.payment_intent === "string" ? refund.payment_intent : refund.payment_intent?.id,
+        amount: refund.amount, currency: refund.currency, status: refund.status,
+        metadata: refund.metadata || {},
+      })) };
+    }
+    if (evidence.payment_intent && typeof evidence.payment_intent === "object") evidence.payment_intent = evidence.payment_intent.id;
+    if (evidence.metadata) evidence.metadata = { paymentSessionKey: evidence.metadata.paymentSessionKey ?? null };
+  }
+  return { id: event.id, type: event.type, created: event.created, livemode: event.livemode, data: { object: evidence } };
+}
+
 async function claimEvent(context: Context, providerId: string, organizationId: string, event: Stripe.Event) {
   const now = new Date();
   try {
-    return await context.prisma.$transaction(async (transaction: any) => {
+    return await withKeystonePrismaTransaction(context.prisma, async (transaction: any) => {
+      await lockTransactionKey(transaction, `payment-event:${providerId}:${event.id}`);
       const existing = await transaction.paymentEvent.findUnique({
         where: { paymentProviderId_providerEventId: { paymentProviderId: providerId, providerEventId: event.id } },
       });
       if (existing?.status === "processed" || existing?.status === "ignored") return null;
-      if (existing?.status === "processing" && existing.lockedUntil && existing.lockedUntil > now) return null;
+      if (existing?.status === "processing" && existing.lockedUntil && existing.lockedUntil > now) throw new Error("Payment event is already processing; retry later");
       if (existing) {
-        return transaction.paymentEvent.update({ where: { id: existing.id }, data: { status: "processing", attempts: { increment: 1 }, lockedUntil: new Date(now.getTime() + 5 * 60 * 1000), lastError: "" }, select: { id: true, status: true } });
+        return transaction.paymentEvent.update({ where: { id: existing.id }, data: { status: "processing", attempts: { increment: 1 }, lockedUntil: new Date(now.getTime() + 5 * 60 * 1000), lastError: "" }, select: { id: true, status: true, attempts: true } });
       }
       return transaction.paymentEvent.create({
-        data: { providerEventId: event.id, eventType: event.type, status: "processing", attempts: 1, lockedUntil: new Date(now.getTime() + 5 * 60 * 1000), organizationId, paymentProviderId: providerId, data: { created: event.created, livemode: event.livemode } },
-        select: { id: true, status: true },
+        data: { providerEventId: event.id, eventType: event.type, status: "processing", attempts: 1, lockedUntil: new Date(now.getTime() + 5 * 60 * 1000), organizationId, paymentProviderId: providerId, data: { event: paymentEventReplayEvidence(event) } },
+        select: { id: true, status: true, attempts: true },
       });
     });
   } catch (error: any) {
-    if (error?.code === "P2002") return null;
+    if (error?.code === "P2002") throw new Error("Payment event claim conflicted; retry later");
     throw error;
   }
 }
@@ -73,6 +102,7 @@ async function findUserForSubscription(transaction: any, subscription: Stripe.Su
       where: { id: subscription.metadata.userId, organizationId },
       select,
     });
+    if (user?.stripeCustomerId && user.stripeCustomerId !== customerId) throw new Error("Subscription customer does not match the existing user");
     if (user) return { user, customerId };
   }
   const user = await transaction.user.findFirst({
@@ -92,7 +122,7 @@ function assertRetrievedSubscription(
   return subscription;
 }
 
-async function syncSubscription(
+export async function syncSubscription(
   context: Context,
   adapter: PaymentProviderAdapter,
   incomingSubscription: Stripe.Subscription,
@@ -111,7 +141,7 @@ async function syncSubscription(
     await adapter.retrieveSubscription(incomingSubscription.id),
   );
 
-  return context.prisma.$transaction(async (transaction: any) => {
+  return withKeystonePrismaTransaction(context.prisma, async (transaction: any) => {
     await lockTransactionKey(
       transaction,
       `stripe-subscription:${organizationId}:${incomingSubscription.id}`,
@@ -148,21 +178,36 @@ async function syncSubscription(
     }
 
     const owner = await findUserForSubscription(transaction, subscription, organizationId);
-    if (!owner) return { applied: false, missingOwner: true };
+    if (!owner) throw new Error("Subscription owner prerequisite missing; retry reconciliation");
     const { user, customerId } = owner;
     const member = await transaction.member.findFirst({
       where: { userId: user.id, organizationId },
       select: { id: true },
     });
+    if (!member) throw new Error("Subscription member prerequisite missing; retry reconciliation");
+    const checkout = await transaction.paymentSession.findFirst({ where: { organizationId, userId: user.id, idempotencyKey: subscription.metadata?.paymentSessionKey || "__missing__" } });
+    const agreement = checkout?.data?.agreementSnapshot;
     const tier = await resolveTier(transaction, subscription, organizationId);
     const membership = await transaction.membership.findFirst({
       where: { memberId: user.id, organizationId },
-      select: { id: true },
     });
-    const membershipStatus = mapStripeStatusToMembership(
+    if (membership && membership.stripeSubscriptionId !== subscription.id) throw new Error("Another subscription owns this membership; checkout reconciliation required");
+    await lockTransactionKey(transaction, `member:${member.id}`);
+    const providerMembershipStatus = mapStripeStatusToMembership(
       subscription.status,
       Boolean(subscription.pause_collection),
     );
+    const now = new Date();
+    const hasCurrentPaidServicePeriod = Boolean(
+      membership?.status === "active" && membership.creditPeriodStart && membership.creditPeriodEnd &&
+      new Date(membership.creditPeriodStart) <= now && now < new Date(membership.creditPeriodEnd),
+    );
+    // Provider subscription status is not a receipt. Existing paid service may
+    // continue through an active event; a first active/trialing event cannot
+    // create entitlement before a positive paid invoice commits.
+    const membershipStatus = providerMembershipStatus === "active"
+      ? (hasCurrentPaidServicePeriod ? "active" : "past-due")
+      : providerMembershipStatus;
     const billingCycle = subscription.metadata?.billingCycle === "annual" ? "annual" : "monthly";
     const nextBillingDate = subscription.current_period_end
       ? new Date(subscription.current_period_end * 1000)
@@ -188,6 +233,7 @@ async function syncSubscription(
             : { cancelledAt: null, cancelReason: "", freezeStartDate: null, freezeEndDate: null }),
     };
 
+    if (!membership && !agreement?.version) throw new Error("Subscription checkout agreement prerequisite missing; retry reconciliation");
     if (membership) {
       await transaction.membership.update({ where: { id: membership.id }, data: membershipData });
     } else if (member && tier) {
@@ -199,7 +245,10 @@ async function syncSubscription(
           memberId: user.id,
           tierId: tier.id,
           ...membershipData,
-          classCreditsRemaining: membershipStatus === "active" ? tier.classCreditsPerMonth ?? 0 : 0,
+          agreementSnapshot: agreement,
+          creditPeriodStart: null,
+          creditPeriodEnd: null,
+          classCreditsRemaining: 0,
         },
       });
     }
@@ -243,144 +292,101 @@ async function syncSubscription(
       }
     }
 
+    const reconciled = await transaction.membership.findFirst({ where: { memberId: user.id, organizationId } });
+    if (reconciled) await reviewFutureMembershipBookings(transaction, reconciled);
     return { applied: true };
   }, { maxWait: 10_000, timeout: 30_000 });
 }
 
-async function recordInvoicePayment(
-  context: Context,
-  providerId: string,
-  organizationId: string,
-  invoice: Stripe.Invoice,
-  status: "succeeded" | "failed"
+/** One invoice lock + member lock commit receipts, service rights and status atomically. */
+export async function recordInvoicePayment(
+  context: Context, providerId: string, organizationId: string, invoice: Stripe.Invoice,
+  status: "succeeded" | "failed", eventCreated: number,
 ) {
   const subscriptionId = typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
-  if (!subscriptionId) return;
-
-  const memberships = await context.sudo().query.Membership.findMany({
-    where: { AND: [{ stripeSubscriptionId: { equals: subscriptionId } }, { organization: { id: { equals: organizationId } } }] },
-    take: 1,
-    query: "id billingCycle status member { id } tier { classCreditsPerMonth } organization { id }",
-  });
-  const membership = memberships[0] as any;
-  if (!membership) return;
-  const members = await context.sudo().query.Member.findMany({
-    where: { AND: [{ user: { id: { equals: membership.member.id } } }, { organization: { id: { equals: organizationId } } }] },
-    take: 1,
-    query: "id",
-  });
-  const member = members[0] as any;
-  if (!member) return;
-
-  const sessions = await context.sudo().query.PaymentSession.findMany({
-    where: { AND: [{ providerSubscriptionId: { equals: subscriptionId } }, { organization: { id: { equals: organizationId } } }] },
-    take: 1,
-    query: "id",
-  });
+  if (!subscriptionId) return; // Non-membership invoices do not grant Gym entitlements.
+  if (!invoice.id || !Number.isInteger(eventCreated)) throw new Error("Invoice event identity is invalid");
   const amount = status === "succeeded" ? invoice.amount_paid : invoice.amount_due;
-  const currencyCode = invoice.currency.toUpperCase();
-  const existingGymPayments = await context.sudo().query.GymPayment.findMany({
-    where: { AND: [{ stripeInvoiceId: { equals: invoice.id } }, { organization: { id: { equals: organizationId } } }] },
-    take: 1,
-    query: "id status",
-  });
-  const gymPaymentData = {
-    organization: { connect: { id: membership.organization.id } },
-    member: { connect: { id: member.id } },
-    paymentProvider: { connect: { id: providerId } },
-    ...(sessions[0] ? { paymentSession: { connect: { id: (sessions[0] as any).id } } } : {}),
-    amount,
-    currencyCode,
-    status,
-    paymentDate: new Date().toISOString(),
-    stripePaymentIntentId:
-      typeof invoice.payment_intent === "string" ? invoice.payment_intent : invoice.payment_intent?.id,
-    stripeChargeId: typeof invoice.charge === "string" ? invoice.charge : invoice.charge?.id,
-    stripeInvoiceId: invoice.id,
-    receiptNumber: `STRIPE-${invoice.id}`,
-    description: `${membership.billingCycle === "annual" ? "Annual" : "Monthly"} membership payment`,
-    metadata: { hostedInvoiceUrl: invoice.hosted_invoice_url ?? null },
-  };
-  if (existingGymPayments[0]) {
-    const existingStatus = (existingGymPayments[0] as any).status;
-    if (!["succeeded", "refunded"].includes(existingStatus) && existingStatus !== status) {
-      await context.sudo().query.GymPayment.updateOne({
-        where: { id: (existingGymPayments[0] as any).id },
-        data: gymPaymentData,
-        query: "id",
-      });
+  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("Invoice amount must use non-negative minor units");
+  if (String(invoice.currency || "").toUpperCase() !== "USD") throw new Error("Membership invoice currency is outside the supported USD contract");
+  if (status === "succeeded" && amount <= 0) throw new Error("A positive paid invoice is required to grant membership service");
+  return withKeystonePrismaTransaction(context.prisma, async (tx: any) => {
+    await lockTransactionKey(tx, `stripe-subscription:${organizationId}:${subscriptionId}`);
+    await lockTransactionKey(tx, `invoice:${organizationId}:${invoice.id}`);
+    let membership = await tx.membership.findFirst({ where: { organizationId, stripeSubscriptionId: subscriptionId } });
+    if (!membership) throw new Error("Invoice membership prerequisite missing; retry reconciliation");
+    const member = await tx.member.findFirst({ where: { organizationId, userId: membership.memberId } });
+    if (!member) throw new Error("Invoice member prerequisite missing; retry reconciliation");
+    await lockTransactionKey(tx, `member:${member.id}`);
+    membership = await tx.membership.findFirst({ where: { id: membership.id, organizationId, stripeSubscriptionId: subscriptionId } });
+    if (!membership) throw new Error("Invoice membership changed while acquiring member lock");
+    const existingGym = await tx.gymPayment.findUnique({ where: { stripeInvoiceId: invoice.id } });
+    const existingMember = await tx.membershipPayment.findUnique({ where: { stripeInvoiceId: invoice.id } });
+    if ([existingGym, existingMember].some(p => p && p.organizationId !== organizationId)) throw new Error("Invoice belongs to another organization");
+    const settled = ["succeeded", "refunded"].includes(existingGym?.status) || ["completed", "disputed", "refunded"].includes(existingMember?.status);
+    const session = await tx.paymentSession.findFirst({ where: { organizationId, providerSubscriptionId: subscriptionId } });
+    const effectiveAt = status === "succeeded" ? invoice.status_transitions?.paid_at || eventCreated : eventCreated;
+    const paymentDate = new Date(effectiveAt * 1000);
+    const common = {
+      organizationId, amount, currencyCode: invoice.currency.toUpperCase(), paymentDate,
+      stripeInvoiceId: invoice.id,
+      stripePaymentIntentId: typeof invoice.payment_intent === "string" ? invoice.payment_intent : invoice.payment_intent?.id,
+      stripeChargeId: typeof invoice.charge === "string" ? invoice.charge : invoice.charge?.id,
+      receiptNumber: `STRIPE-${invoice.id}`,
+      description: `${membership.billingCycle === "annual" ? "Annual" : "Monthly"} membership payment`,
+    };
+    const gymData = { ...common, memberId: member.id, paymentProviderId: providerId, paymentSessionId: session?.id,
+      status, metadata: { hostedInvoiceUrl: invoice.hosted_invoice_url ?? null, billingReason: invoice.billing_reason,
+        subtotal: invoice.subtotal, total: invoice.total, tax: invoice.tax, amountPaid: invoice.amount_paid,
+        amountRemaining: invoice.amount_remaining, lines: invoice.lines?.data.map(line => ({ id: line.id, amount: line.amount, description: line.description, period: line.period, quantity: line.quantity, priceId: line.price?.id })) || [] } };
+    const memberData = { ...common, memberId: membership.memberId, membershipId: membership.id,
+      paymentType: "membership", status: status === "succeeded" ? "completed" : "failed", paymentMethod: "credit-card",
+      receiptUrl: invoice.hosted_invoice_url || "", isRecurring: true };
+    // Do not regress settled evidence on a late failure. Missing twin rows from
+    // the former split implementation are repaired from the settled receipt.
+    if (!settled) {
+      if (existingGym) await tx.gymPayment.update({ where: { id: existingGym.id }, data: gymData });
+      else await tx.gymPayment.create({ data: gymData });
+      if (existingMember) await tx.membershipPayment.update({ where: { id: existingMember.id }, data: memberData });
+      else await tx.membershipPayment.create({ data: memberData });
+    } else if (status === "succeeded") {
+      const refundAmount = Math.max(existingGym?.refundAmount || 0, existingMember?.refundAmount || 0);
+      const refundEvidence = refundAmount ? { refundAmount, refundedAt: existingGym?.refundedAt || existingMember?.refundedAt } : {};
+      const repairedGym = { ...gymData, ...refundEvidence, status: refundAmount >= amount && refundAmount > 0 ? "refunded" : "succeeded" };
+      const repairedMember = { ...memberData, ...refundEvidence, status: refundAmount >= amount && refundAmount > 0 ? "refunded" : "completed" };
+      if (!existingGym) await tx.gymPayment.create({ data: repairedGym });
+      else if (!["succeeded", "refunded"].includes(existingGym.status)) await tx.gymPayment.update({ where: { id: existingGym.id }, data: repairedGym });
+      if (!existingMember) await tx.membershipPayment.create({ data: repairedMember });
+      else if (!["completed", "disputed", "refunded"].includes(existingMember.status)) await tx.membershipPayment.update({ where: { id: existingMember.id }, data: repairedMember });
     }
-  } else {
-    await context.sudo().query.GymPayment.createOne({ data: gymPaymentData, query: "id" });
-  }
-
-  const existingMembershipPayments = await context.sudo().query.MembershipPayment.findMany({
-    where: { AND: [{ stripeInvoiceId: { equals: invoice.id } }, { organization: { id: { equals: organizationId } } }] },
-    take: 1,
-    query: "id status",
-  });
-  const existingMembershipPaymentStatus = (existingMembershipPayments[0] as any)?.status as string | undefined;
-  const existingPaymentIsSettled = ["completed", "refunded"].includes(existingMembershipPaymentStatus || "");
-  // Checkout provisioning grants the first period's allowance. Only a true
-  // recurring cycle may replenish it; subscription-create or proration
-  // invoices must never erase usage that occurred after checkout.
-  const shouldReplenishCredits =
-    status === "succeeded" &&
-    !existingPaymentIsSettled &&
-    invoice.billing_reason === "subscription_cycle";
-  const effectiveMembershipPaymentSucceeded = status === "succeeded" || existingPaymentIsSettled;
-  const membershipPaymentData = {
-    organization: { connect: { id: membership.organization.id } },
-    member: { connect: { id: membership.member.id } },
-    membership: { connect: { id: membership.id } },
-    amount,
-    currencyCode,
-    paymentType: "membership",
-    status: status === "succeeded" ? "completed" : "failed",
-    paymentMethod: "credit-card",
-    paymentDate: new Date().toISOString(),
-    stripePaymentIntentId:
-      typeof invoice.payment_intent === "string" ? invoice.payment_intent : invoice.payment_intent?.id,
-    stripeChargeId: typeof invoice.charge === "string" ? invoice.charge : invoice.charge?.id,
-    stripeInvoiceId: invoice.id,
-    receiptNumber: `STRIPE-${invoice.id}`,
-    receiptUrl: invoice.hosted_invoice_url ?? undefined,
-    description: `${membership.billingCycle === "annual" ? "Annual" : "Monthly"} membership payment`,
-    isRecurring: true,
-  };
-  if (existingMembershipPayments[0]) {
-    const existingStatus = (existingMembershipPayments[0] as any).status;
-    const expectedStatus = status === "succeeded" ? "completed" : "failed";
-    if (!["completed", "disputed", "refunded"].includes(existingStatus) && existingStatus !== expectedStatus) {
-      await context.sudo().query.MembershipPayment.updateOne({
-        where: { id: (existingMembershipPayments[0] as any).id },
-        data: membershipPaymentData,
-        query: "id",
-      });
+    const recurringLine = invoice.lines?.data.find(line => line.type === "subscription" && !line.proration);
+    const periodStart = recurringLine?.period?.start ?? invoice.period_start;
+    const periodEnd = recurringLine?.period?.end ?? invoice.period_end;
+    const eventAt = new Date(eventCreated * 1000);
+    const isOlderPeriod = membership.creditPeriodEnd && periodEnd * 1000 < new Date(membership.creditPeriodEnd).getTime();
+    const isOlderEvent = membership.billingEventAt && eventAt < new Date(membership.billingEventAt);
+    if (isOlderPeriod || isOlderEvent || (settled && status === "failed")) return { applied: false, stale: true };
+    const data: any = { billingEventAt: eventAt };
+    if (!["cancelled", "frozen"].includes(membership.status) &&
+        (membership.status !== "expired" || (membership.autoRenew && status === "succeeded" && periodEnd * 1000 > Date.now()))) data.status = status === "succeeded" ? "active" : "past-due";
+    if (status === "succeeded" && ["subscription_create", "subscription_cycle"].includes(invoice.billing_reason || "")) {
+      if (!Number.isInteger(periodStart) || !Number.isInteger(periodEnd) || periodEnd <= periodStart) throw new Error("Invoice service period is invalid");
+      data.creditPeriodStart = new Date(periodStart * 1000);
+      data.creditPeriodEnd = new Date(periodEnd * 1000);
+      // Monthly grant rows are authoritative, including within annual billing.
+      // Never reset a scalar balance on replay, tier change or a proration.
     }
-  } else {
-    await context.sudo().query.MembershipPayment.createOne({ data: membershipPaymentData, query: "id" });
-  }
-
-  await context.prisma.$transaction(async (transaction: any) => {
-    await lockTransactionKey(transaction, `membership:${membership.id}`);
-    await lockTransactionKey(transaction, `member:${member.id}`);
-    const currentMembership = await transaction.membership.findFirst({
-      where: { id: membership.id, organizationId },
-      include: { tier: { select: { classCreditsPerMonth: true } } },
-    });
-    if (!currentMembership || ["cancelled", "expired"].includes(currentMembership.status)) return;
-    await transaction.membership.update({
-      where: { id: currentMembership.id },
-      data: {
-        status: currentMembership.status === "frozen"
-          ? "frozen"
-          : effectiveMembershipPaymentSucceeded ? "active" : "past-due",
-        ...(shouldReplenishCredits && currentMembership.tier
-          ? { classCreditsRemaining: currentMembership.tier.classCreditsPerMonth }
-          : {}),
-      },
-    });
+    const updated = await tx.membership.update({ where: { id: membership.id }, data });
+    if (updated.status === "active" && updated.creditPeriodStart && new Date(updated.creditPeriodStart) <= new Date() && new Date(updated.creditPeriodEnd) > new Date()) {
+      const grant = await ensureMonthlyCreditGrant(tx, updated, new Date());
+      await tx.membership.update({ where: { id: updated.id }, data: { classCreditsRemaining: grant.remaining } });
+    }
+    await reviewFutureMembershipBookings(tx, updated);
+    if (status === "failed") {
+      await createFinanceException(tx, { organizationId, key: `invoice:${invoice.id}`, kind: "failed-payment", reference: invoice.id, summary: "Membership invoice collection failed; reconcile payment and contact member." });
+      await enqueueOperationalNotice(tx, { organizationId, memberId: member.id, key: `invoice:${invoice.id}:${eventCreated}`, kind: "billing", message: "Membership payment needs attention. Open your billing portal or contact the front desk." });
+    }
+    return { applied: true };
   });
 }
 
@@ -393,11 +399,11 @@ export function monotonicRefundAmount(paymentAmount: number, currentRefundAmount
   return Math.max(current, incoming);
 }
 
-export async function recordRefund(context: Context, charge: Stripe.Charge, organizationId: string) {
+export async function recordRefund(context: Context, charge: Stripe.Charge, organizationId: string, effectiveAt = new Date()) {
   const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
   if (!paymentIntentId || charge.amount_refunded <= 0) return;
 
-  await context.prisma.$transaction(async (transaction: any) => {
+  await withKeystonePrismaTransaction(context.prisma, async (transaction: any) => {
     // Serialize all webhook observations for the provider payment, then join the
     // operator-refund lock so webhook and front-desk finalization cannot race.
     await lockTransactionKey(transaction, `payment-refund:${organizationId}:${paymentIntentId}`);
@@ -413,7 +419,8 @@ export async function recordRefund(context: Context, charge: Stripe.Charge, orga
     const membershipPayment = await transaction.membershipPayment.findFirst({
       where: { organizationId, stripePaymentIntentId: paymentIntentId },
     });
-    const refundedAt = new Date();
+    if (!gymPayment || (!membershipPayment && gymPayment.stripeInvoiceId)) throw new Error("Refund receipt prerequisite missing; retry reconciliation after invoice processing");
+    const refundedAt = effectiveAt;
 
     if (gymPayment) {
       const refundAmount = monotonicRefundAmount(gymPayment.amount, gymPayment.refundAmount, charge.amount_refunded);
@@ -432,12 +439,44 @@ export async function recordRefund(context: Context, charge: Stripe.Charge, orga
         membershipPayment.refundAmount,
         charge.amount_refunded,
       );
-      const status = refundAmount >= membershipPayment.amount ? "refunded" : "completed";
+      const status = refundAmount >= membershipPayment.amount ? "refunded" : membershipPayment.status === "disputed" ? "disputed" : "completed";
       if (refundAmount !== (membershipPayment.refundAmount ?? 0) || status !== membershipPayment.status) {
         await transaction.membershipPayment.update({
           where: { id: membershipPayment.id },
           data: { status, refundAmount, refundedAt },
         });
+      }
+    }
+
+    if (gymPayment) {
+      const attempts = await transaction.gymRefundAttempt.findMany({ where: { organizationId, paymentId: gymPayment.id, status: "processing" } });
+      const providerRefunds = (charge as any).refunds?.data || [];
+      for (const refund of providerRefunds) {
+        const operationKey = refund.metadata?.gymRefundOperationKey;
+        if (typeof operationKey !== "string" || !operationKey) continue;
+        const attempt = attempts.find((candidate: any) => readRefundReservation(candidate)?.reservation.providerRequestKey === operationKey);
+        if (!attempt) continue;
+        const saved = readRefundReservation(attempt);
+        if (!saved) throw new Error("Refund webhook matched an attempt without frozen reservation evidence");
+        assertExactProviderRefund(refund, saved.reservation);
+        const succeeded = refund.status === "succeeded";
+        const failed = refund.status === "failed" || refund.status === "canceled";
+        const update = await transaction.gymRefundAttempt.updateMany({
+          where: { id: attempt.id, status: "processing" },
+          data: {
+            status: succeeded ? "succeeded" : failed ? "failed" : "processing",
+            providerRefundId: refund.id,
+            ...(succeeded ? { completedAt: refundedAt } : {}),
+            reservation: saved.reservation,
+            lastError: succeeded ? "" : `Provider refund status: ${refund.status || "unknown"}`,
+          },
+        });
+        if (update.count > 1) requirePrismaAffectedCount(update, 1, "refund webhook reconciliation fence");
+        if (succeeded) {
+          await transaction.gymPayment.updateMany({ where: { id: gymPayment.id, refundLockToken: attempt.claimToken }, data: { refundLockUntil: null, refundLockToken: "" } });
+        } else if (failed) {
+          await transaction.gymPayment.updateMany({ where: { id: gymPayment.id, refundLockToken: attempt.claimToken }, data: { refundLockUntil: null, refundLockToken: "" } });
+        }
       }
     }
   });
@@ -469,7 +508,7 @@ export async function resolveStripeWebhookProvider(context: Context, payload: st
   if (!providers.length) throw new Error("Payment provider is not installed.");
   const adapterKeys = new Set(providers.map((entry: any) => entry.adapterKey));
   if (adapterKeys.size !== 1) throw new Error("Webhook provider adapters are ambiguously configured.");
-  const adapter = await getPaymentProviderAdapter(providers[0].adapterKey);
+  const adapter = await getPaymentProviderAdapterForExecution(providers[0].adapterKey);
   const event = adapter.constructWebhookEvent(payload, signature);
   const accountId = typeof (event as any).account === "string" ? (event as any).account : null;
   const matchingProviders = accountId ? providers.filter((entry: any) => entry.providerAccountId === accountId) : providers;
@@ -481,12 +520,30 @@ export async function resolveStripeWebhookProvider(context: Context, payload: st
   return { provider, adapter, event, organizationId };
 }
 
-export async function handleStripeWebhook(
-  context: Context,
-  payload: string,
-  signature: string
-) {
-  const { provider, adapter, event, organizationId } = await resolveStripeWebhookProvider(context, payload, signature);
+export async function handleStripeWebhook(context: Context, payload: string, signature: string) {
+  const resolved = await resolveStripeWebhookProvider(context, payload, signature);
+  return processVerifiedPaymentEvent(context, resolved.provider, resolved.adapter, resolved.organizationId, resolved.event);
+}
+
+/** Replays only an already signature-verified durable event; never accepts a client payload. */
+export async function replayPaymentEvent(_root: unknown, { eventId }: { eventId: string }, context: Context) {
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  const actor = await currentRoleActor(context);
+  if (!actor.canManageAllRecords) throw new Error("Payment reconciliation management permission required");
+  const organizationId = actor.organizationId;
+  const record = await prisma.paymentEvent.findFirst({ where: { id: eventId, organizationId } });
+  if (!record || !record.data?.event || !["failed", "processing"].includes(record.status)) throw new Error("Replayable payment event not found");
+  if (record.status === "processing" && record.lockedUntil > new Date()) throw new Error("Payment event is currently processing");
+  const provider = await context.sudo().query.PaymentProvider.findOne({ where: { id: record.paymentProviderId }, query: "id adapterKey organization { id }" });
+  if (!provider || provider.organization?.id !== organizationId) throw new Error("Payment event provider organization mismatch");
+  const event = record.data.event as Stripe.Event;
+  if (event.id !== record.providerEventId || event.type !== record.eventType) throw new Error("Stored payment event evidence mismatch");
+  const adapter = await getPaymentProviderAdapterForExecution(provider.adapterKey);
+  return processVerifiedPaymentEvent(context, provider, adapter, organizationId, event);
+}
+
+async function processVerifiedPaymentEvent(context: Context, provider: any, adapter: PaymentProviderAdapter, organizationId: string, event: Stripe.Event) {
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
   const eventRecord = await claimEvent(context, provider.id, organizationId, event);
   if (!eventRecord) return { received: true, duplicate: true };
 
@@ -512,38 +569,58 @@ export async function handleStripeWebhook(
         );
         break;
       case "invoice.paid":
-        await recordInvoicePayment(context, provider.id, organizationId, event.data.object as Stripe.Invoice, "succeeded");
+        await recordInvoicePayment(context, provider.id, organizationId, event.data.object as Stripe.Invoice, "succeeded", event.created);
         break;
       case "invoice.payment_failed":
-        await recordInvoicePayment(context, provider.id, organizationId, event.data.object as Stripe.Invoice, "failed");
+        await recordInvoicePayment(context, provider.id, organizationId, event.data.object as Stripe.Invoice, "failed", event.created);
         break;
+      case "invoice.payment_action_required":
+      case "charge.dispute.created":
+      case "charge.dispute.updated":
+      case "charge.dispute.closed":
+      case "payout.failed":
+      case "payout.paid": {
+        const object = event.data.object as any;
+        await withKeystonePrismaTransaction(context.prisma, async (tx: any) => {
+          await createFinanceException(tx, { organizationId, key: event.id, kind: event.type,
+            reference: object.id, summary: `Provider event ${event.type}; amount ${object.amount ?? object.amount_due ?? "unknown"} ${object.currency ?? ""}. Review provider evidence and record reconciliation.` });
+          if (event.type.startsWith("charge.dispute.")) {
+            const paymentIntentId = typeof object.payment_intent === "string" ? object.payment_intent : object.payment_intent?.id;
+            if (paymentIntentId) {
+              await lockTransactionKey(tx, `payment-refund:${organizationId}:${paymentIntentId}`);
+              const payment = await tx.membershipPayment.findFirst({ where: { organizationId, stripePaymentIntentId: paymentIntentId } });
+              if (payment && ["completed", "disputed"].includes(payment.status)) await tx.membershipPayment.update({ where: { id: payment.id }, data: { status: object.status === "won" ? "completed" : "disputed" } });
+            }
+          }
+        });
+        break;
+      }
       case "charge.refunded":
-        await recordRefund(context, event.data.object as Stripe.Charge, organizationId);
+        await recordRefund(context, event.data.object as Stripe.Charge, organizationId, new Date(event.created * 1000));
         break;
       default:
-        await context.sudo().query.PaymentEvent.updateOne({
-          where: { id: (eventRecord as any).id },
-          data: { status: "ignored", processedAt: new Date().toISOString(), lockedUntil: null },
-          query: "id",
+        const ignored = await prisma.paymentEvent.updateMany({
+          where: { id: (eventRecord as any).id, status: "processing", attempts: (eventRecord as any).attempts },
+          data: { status: "ignored", processedAt: new Date(), lockedUntil: null },
         });
+        requirePrismaAffectedCount(ignored, 1, "payment event ignore fence");
         return { received: true, ignored: true };
     }
 
-    await context.sudo().query.PaymentEvent.updateOne({
-      where: { id: (eventRecord as any).id },
-      data: { status: "processed", processedAt: new Date().toISOString(), lockedUntil: null },
-      query: "id",
+    const processed = await prisma.paymentEvent.updateMany({
+      where: { id: (eventRecord as any).id, status: "processing", attempts: (eventRecord as any).attempts },
+      data: { status: "processed", processedAt: new Date(), lockedUntil: null },
     });
+    requirePrismaAffectedCount(processed, 1, "payment event completion fence");
     return { received: true };
   } catch (error) {
-    await context.sudo().query.PaymentEvent.updateOne({
-      where: { id: (eventRecord as any).id },
+    await prisma.paymentEvent.updateMany({
+      where: { id: (eventRecord as any).id, status: "processing", attempts: (eventRecord as any).attempts },
       data: {
         status: "failed",
         lockedUntil: null,
         lastError: error instanceof Error ? error.message : "Webhook processing failed",
       },
-      query: "id",
     });
     throw error;
   }

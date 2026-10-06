@@ -5,6 +5,7 @@ import { keystoneClient } from '@/features/dashboard/lib/keystoneClient';
 import { redirect } from 'next/navigation';
 import { removeAuthToken } from '@/features/dashboard/lib/cookies';
 import { revalidatePath } from 'next/cache';
+import { normalizeAuthIdentity } from '@/lib/authRateLimit';
 
 // Define types for GraphQL responses
 interface RedeemTokenResponse {
@@ -18,8 +19,26 @@ interface SendLinkResponse {
   sendUserPasswordResetLink?: boolean | null;
 }
 
+interface CreateInitialUserResponse {
+  authenticate?: {
+    sessionToken?: string | null;
+    item?: { id: string } | null;
+  } | null;
+}
+
+async function persistSessionToken(sessionToken: string) {
+  const cookieStore = await cookies();
+  cookieStore.set('keystonejs-session', sessionToken, {
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 30,
+  });
+}
+
 export async function signIn(prevState: { message: string | null, formData: { email: string, password: string } }, formData: FormData) {
-  const email = formData.get('email') as string;
+  const email = normalizeAuthIdentity(formData.get('email'));
   const password = formData.get('password') as string;
   const from = formData.get('from') as string || '/dashboard';
 
@@ -67,15 +86,7 @@ export async function signIn(prevState: { message: string | null, formData: { em
       };
     }
 
-    // Set the auth token cookie
-    const cookieStore = await cookies();
-    cookieStore.set('keystonejs-session', response.data.authenticate.sessionToken, {
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      httpOnly: true,
-      maxAge: 60 * 60 * 24 * 30, // 30 days
-    });
+    await persistSessionToken(response.data.authenticate.sessionToken);
   } catch (error) {
     return {
       message: error instanceof Error ? error.message : 'Failed to authenticate',
@@ -89,34 +100,15 @@ export async function signIn(prevState: { message: string | null, formData: { em
   redirect(from);
 }
 
-export async function signUp(prevState: { message: string | null, formData: { email: string, password: string } }, formData: FormData) {
-  try {
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
-    const name = (formData.get('name') as string) || email.split('@')[0];
-    const response = await keystoneClient(`
-      mutation($data: RegisterMemberInput!) {
-        registerMember(data: $data) { id email name }
-      }
-    `, { data: { email, name, password } });
-
-    if (!response.success) {
-      return {
-        message: `Failed to create member: ${response.error}`,
-        formData: { email, password }
-      };
-    }
-
-    return signIn({ message: null, formData: { email, password } }, formData);
-  } catch (error) {
-    return {
-      message: error instanceof Error ? error.message : 'An error occurred',
-      formData: {
-        email: formData.get('email') as string,
-        password: formData.get('password') as string
-      }
-    };
-  }
+export async function signUp(_prevState: { message: string | null, formData: { email: string, password: string } }, formData: FormData) {
+  // Dashboard users are provisioned by the first-admin setup or an authorized manager.
+  return {
+    message: 'Unable to create account.',
+    formData: {
+      email: String(formData.get('email') ?? ''),
+      password: '',
+    },
+  };
 }
 
 export async function signOut() {
@@ -152,46 +144,53 @@ export async function signOut() {
   redirect("/dashboard/signin");
 }
 
-export async function createInitialUser(prevState: { message: string | null, formData: { name: string, email: string, password: string } }, formData: FormData) {
-  const name = formData.get('name') as string;
-  const email = formData.get('email') as string;
-  const password = formData.get('password') as string;
-  const listKey = "User";
-
+export async function createInitialUser(_prevState: { message: string | null, formData: { name: string, email: string, password: string } }, formData: FormData) {
+  const name = String(formData.get('name') ?? '').trim();
+  const email = normalizeAuthIdentity(formData.get('email'));
+  const password = String(formData.get('password') ?? '');
+  const formState = { name, email, password: '' };
   const query = `
-    mutation($data: CreateInitial${listKey}Input!) {
-      authenticate: createInitial${listKey}(data: $data) {
-        ... on ${listKey}AuthenticationWithPasswordSuccess {
-          item {
-            id
-          }
+    mutation($data: CreateInitialUserInput!) {
+      authenticate: createInitialUser(data: $data) {
+        sessionToken
+        item {
+          id
         }
       }
     }
   `;
 
   try {
-    const response = await keystoneClient(query, {
+    const response = await keystoneClient<CreateInitialUserResponse>(query, {
       data: { name, email, password }
     });
 
     if (!response.success) {
       return {
-        message: `Failed to create initial user: ${response.error}`,
-        formData: { name, email, password }
+        message: "We couldn't confirm admin setup. It may have completed; try signing in with this email before attempting setup again.",
+        formData: formState,
       };
     }
 
+    const authentication = response.data?.authenticate;
+    if (!authentication?.item?.id || !authentication.sessionToken) {
+      return {
+        message: "Admin setup may have completed, but a session wasn't returned. Try signing in before attempting setup again.",
+        formData: formState,
+      };
+    }
+
+    // Keystone creates the tenant-bound admin and returns its session in this mutation.
+    // Persist that session directly instead of re-authenticating with raw form input.
+    await persistSessionToken(authentication.sessionToken);
+  } catch {
     return {
-      data: response.data,
-      formData: { name, email, password }
-    };
-  } catch (error) {
-    return {
-      message: error instanceof Error ? error.message : 'Failed to create initial user',
-      formData: { name, email, password }
+      message: "We couldn't confirm admin setup. It may have completed; try signing in with this email before attempting setup again.",
+      formData: formState,
     };
   }
+
+  redirect('/dashboard');
 }
 
 export async function resetPassword(prevState: { message: string | null, success: string | null, formData: { email: string, password: string } }, formData: FormData, mode: 'reset' | 'request') {
@@ -261,7 +260,7 @@ export async function resetPassword(prevState: { message: string | null, success
 
       if (response.data?.sendUserPasswordResetLink === true) {
         return {
-          success: 'Password reset link has been sent to your email.',
+          success: 'If an eligible account exists and email delivery is available, reset instructions may be sent.',
           formData: { email, password: '' }
         };
       } else {

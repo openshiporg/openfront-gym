@@ -25,6 +25,7 @@ type ClassBookingModalProps = {
     isBookable?: boolean;
   };
   onBookingSuccess?: () => void;
+  onReturnFocus?: () => void;
 };
 
 export default function ClassBookingModal({
@@ -32,6 +33,7 @@ export default function ClassBookingModal({
   onClose,
   classData,
   onBookingSuccess,
+  onReturnFocus,
 }: ClassBookingModalProps) {
   const [result, setResult] = useState<{
     success: boolean;
@@ -48,7 +50,7 @@ export default function ClassBookingModal({
       if (res.success) {
         const message =
           res.status === "waitlist"
-            ? `Joined the waitlist${res.waitlistPosition ? ` at position #${res.waitlistPosition}` : ""}. No class credit was used.`
+            ? `Joined the waitlist${res.waitlistPosition ? ` at position #${res.waitlistPosition}` : ""}. This is not a confirmed space. Check your bookings for promotion; an eligible credit is used when your place is confirmed.`
             : `Booked. You have ${res.creditsRemaining === -1 ? "unlimited" : res.creditsRemaining} class credit(s) remaining.`;
         setResult({ success: true, message });
         router.refresh();
@@ -70,22 +72,22 @@ export default function ClassBookingModal({
   };
 
   const spotsLeft = classData.spots;
-  const isFull = spotsLeft === 0;
+  const isFull = spotsLeft <= 0;
   const isBookable = classData.isBookable !== false;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="max-w-md">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isPending) handleClose(); }}>
+      <DialogContent onCloseAutoFocus={event => { if (onReturnFocus) { event.preventDefault(); onReturnFocus(); } }} className="sf-booking-dialog max-w-md border-[var(--sf-border)] bg-[var(--sf-surface)] text-[var(--sf-foreground)] shadow-none">
         <DialogHeader>
-          <DialogTitle>Book class</DialogTitle>
+          <DialogTitle>{isFull ? "Join this session’s waitlist" : "Review your class booking"}</DialogTitle>
           <DialogDescription>
-            Review the dated class occurrence, capacity, coach, and location before confirming.
+            Check the session details below. Your membership and eligibility are confirmed when you submit.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Class info */}
-          <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+          <div className="space-y-2 border border-[var(--sf-border)] bg-[var(--sf-secondary)] p-4">
             <p className="font-semibold">{classData.name}</p>
             {classData.date ? (
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -96,14 +98,14 @@ export default function ClassBookingModal({
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Clock className="h-3.5 w-3.5" />
-                {classData.time} · {classData.duration} min
+                {classData.time} · typically {classData.duration} min
               </span>
               <span className="flex items-center gap-1">
                 <Users className="h-3.5 w-3.5" />
                 {isFull ? (
-                  <span className="text-red-600 font-medium">Full</span>
+                  <span className="text-[var(--sf-warning)] font-medium">Full</span>
                 ) : (
-                  <span className={spotsLeft <= 3 ? "text-amber-600 font-medium" : ""}>
+                  <span className={spotsLeft <= 3 ? "text-[var(--sf-warning)] font-medium" : ""}>
                     {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left
                   </span>
                 )}
@@ -122,11 +124,7 @@ export default function ClassBookingModal({
 
           {/* Result feedback */}
           {result && (
-            <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${
-              result.success
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                : "bg-red-50 text-red-700 border border-red-200"
-            }`}>
+            <div role={result.success ? "status" : "alert"} className={`flex items-start gap-2 p-3 text-sm ${result.success ? "sf-status-success" : "sf-status-error"}`}>
               {result.success
                 ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
                 : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
@@ -146,7 +144,7 @@ export default function ClassBookingModal({
           {/* Actions */}
           {!result?.success && !result?.actionHref && (
             <div className="flex gap-3">
-              <Button variant="outline" onClick={handleClose} className="flex-1">
+              <Button variant="outline" onClick={handleClose} disabled={isPending} className="flex-1">
                 Cancel
               </Button>
               <Button

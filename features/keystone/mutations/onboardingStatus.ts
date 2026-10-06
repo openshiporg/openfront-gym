@@ -1,3 +1,5 @@
+import { guardKeystonePrismaResults, requirePrismaAffectedCount } from "../lib/prisma-result";
+
 const allowed: Record<string, Set<string>> = {
   not_started: new Set(["in_progress", "dismissed"]),
   in_progress: new Set(["in_progress", "dismissed"]),
@@ -19,10 +21,11 @@ export async function transitionOnboardingStatus(
   if (!allowed[session.data.onboardingStatus]?.has(status)) {
     throw new Error(`Onboarding transition ${session.data.onboardingStatus} -> ${status} is not allowed`);
   }
-  const updated = await context.prisma.user.updateMany({
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  const updated = await prisma.user.updateMany({
     where: { id: session.itemId, organizationId },
     data: { onboardingStatus: status },
   });
-  if (updated.count !== 1) throw new Error("Onboarding actor was not found in the session organization");
+  requirePrismaAffectedCount(updated, 1, "onboarding status transition");
   return { id: session.itemId, onboardingStatus: status };
 }

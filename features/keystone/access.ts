@@ -20,6 +20,7 @@ export type Session = {
       canManageOnboarding: boolean
       canManageSettings: boolean
       canManageAppointments?: boolean
+      canManageCheckIns?: boolean
       canManageFacilities?: boolean
       canManagePrograms?: boolean
       canManageCommunications?: boolean
@@ -60,6 +61,7 @@ export const permissions = {
   canManageOnboarding: ({ session }: AccessArgs) => session?.data.role?.canManageOnboarding ?? false,
   canManageSettings: ({ session }: AccessArgs) => session?.data.role?.canManageSettings ?? false,
   canManageAppointments: ({ session }: AccessArgs) => session?.data.role?.canManageAppointments ?? false,
+  canManageCheckIns: ({ session }: AccessArgs) => session?.data.role?.canManageCheckIns ?? false,
   canManageFacilities: ({ session }: AccessArgs) => session?.data.role?.canManageFacilities ?? false,
   canManagePrograms: ({ session }: AccessArgs) => session?.data.role?.canManagePrograms ?? false,
   canManageCommunications: ({ session }: AccessArgs) => session?.data.role?.canManageCommunications ?? false,
@@ -113,18 +115,12 @@ export const rules = {
     const memberFilter = { member: { user: { id: { equals: session.itemId } } } }
     if (isOperatorSession(session)) return tenantFilter({ session })
     if (!session.data.role?.isInstructor) return tenantFilter({ session }, memberFilter)
-
-    return tenantFilter({ session }, {
+    return tenantFilter({ session }, { OR: [memberFilter, { classInstance: {
       OR: [
-        memberFilter,
-        { classInstance: { instructor: { user: { id: { equals: session.itemId } } } } },
-        {
-          classInstance: {
-            classSchedule: { instructor: { user: { id: { equals: session.itemId } } } },
-          },
-        },
+        { instructor: { user: { id: { equals: session.itemId } } } },
+        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } } } } }] },
       ],
-    })
+    } }] })
   },
 
   canReadOwnAttendance: ({ session }: AccessArgs) => {
@@ -132,28 +128,16 @@ export const rules = {
     const memberFilter = { member: { user: { id: { equals: session.itemId } } } }
     if (isOperatorSession(session)) return tenantFilter({ session })
     if (!session.data.role?.isInstructor) return tenantFilter({ session }, memberFilter)
-
-    return tenantFilter({ session }, {
+    return tenantFilter({ session }, { OR: [memberFilter, { booking: { classInstance: {
       OR: [
-        memberFilter,
-        { classSchedule: { instructor: { user: { id: { equals: session.itemId } } } } },
+        { instructor: { user: { id: { equals: session.itemId } } } },
+        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } } } } }] },
       ],
-    })
+    } } }] })
   },
 
-  canReadOwnWaitlist: ({ session }: AccessArgs) => {
-    if (!session) return false
-    const memberFilter = { member: { user: { id: { equals: session.itemId } } } }
-    if (isOperatorSession(session)) return tenantFilter({ session })
-    if (!session.data.role?.isInstructor) return tenantFilter({ session }, memberFilter)
-
-    return tenantFilter({ session }, {
-      OR: [
-        memberFilter,
-        { classSchedule: { instructor: { user: { id: { equals: session.itemId } } } } },
-      ],
-    })
-  },
+  canReadOwnWaitlist: ({ session }: AccessArgs) =>
+    ownerFilter(session, { member: { user: { id: { equals: session?.itemId } } } }),
 
   canReadOwnRole: ({ session }: AccessArgs) => {
     if (!session) return false

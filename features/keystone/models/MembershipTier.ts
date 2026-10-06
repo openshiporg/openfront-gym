@@ -16,6 +16,9 @@ import { tenantFilter } from "../access/tenantPolicy";
 import { trackingFields } from "./trackingFields";
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 
+import { decimalToMinor } from "../../integrations/payment/commercial-agreement";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
+
 const validateMembershipTierTenant = validateTenantOwnership([]);
 
 export async function validateMembershipTierInput(args: any) {
@@ -27,6 +30,8 @@ export async function validateMembershipTierInput(args: any) {
   if (!Number.isFinite(monthlyPrice) || monthlyPrice < 0 || !Number.isFinite(annualPrice) || annualPrice < 0) {
     args.addValidationError("Membership prices must be non-negative numbers");
   }
+  try { decimalToMinor(value("monthlyPrice")); decimalToMinor(value("annualPrice")); }
+  catch (error) { args.addValidationError((error as Error).message); }
   const credits = Number(value("classCreditsPerMonth"));
   if (!Number.isInteger(credits) || credits < -1) {
     args.addValidationError("Class credits must be -1 for unlimited or a non-negative whole number");
@@ -50,7 +55,26 @@ export async function validateMembershipTierInput(args: any) {
 
 export const MembershipTier = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
-  hooks: { validateInput: validateMembershipTierInput },
+  hooks: {
+    validateInput: validateMembershipTierInput,
+    async validateDelete({ context, item, addValidationError }: any) {
+      const prisma = guardKeystonePrismaResults(context.prisma as any);
+      const [memberships, sessions] = await Promise.all([
+        prisma.membership.count({ where: { tierId: item.id } }),
+        prisma.paymentSession.count({ where: { membershipTierId: item.id } }),
+      ]);
+      if (memberships || sessions) addValidationError("A membership plan referenced by commercial records cannot be deleted");
+    },
+    resolveInput({ resolvedData, item }: any) {
+      for (const [display, minor] of [["monthlyPrice", "monthlyPriceMinor"], ["annualPrice", "annualPriceMinor"]]) {
+        const value = resolvedData[display] ?? item?.[display];
+        if (value !== undefined) {
+          try { resolvedData[minor] = decimalToMinor(value); } catch { /* validation reports error */ }
+        }
+      }
+      return resolvedData;
+    },
+  },
   access: {
     operation: {
       query: isSignedIn,
@@ -83,6 +107,9 @@ export const MembershipTier = list({
       formatting: true,
       links: true,
     }),
+
+    monthlyPriceMinor: integer({ access: { create: denyAll, update: denyAll }, db: { isNullable: true } }),
+    annualPriceMinor: integer({ access: { create: denyAll, update: denyAll }, db: { isNullable: true } }),
 
     monthlyPrice: float({
       validation: { isRequired: true },

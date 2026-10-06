@@ -27,6 +27,13 @@ export const Organization = list({
     filter: { query: ownOrganizationFilter },
     item: { update: ownOrganization },
   },
+  hooks: {
+    validateInput({ resolvedData }: any) {
+      if (resolvedData.defaultCurrency !== undefined && resolvedData.defaultCurrency !== "USD") {
+        throw new Error("Organization currency is fixed to USD until multi-currency membership contracts are supported");
+      }
+    },
+  },
   ui: {
     labelField: "name",
     hideDelete: true,

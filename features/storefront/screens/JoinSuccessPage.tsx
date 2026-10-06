@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { getUser } from "@/features/storefront/lib/data/user";
 import { cookies } from "next/headers";
 import { CheckCircle2 } from "lucide-react";
 import {
@@ -13,14 +15,16 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
   let result: { ok: true; tierName: string; billingCycle: string } | { ok: false; message: string };
 
   if (!sessionId) {
-    result = { ok: false, message: "Missing Stripe checkout session ID." };
+    result = { ok: false, message: "This link does not contain a checkout confirmation. Check your membership, or return using the confirmation link from your checkout." };
   } else {
     try {
       const provisioned = await completeMembershipCheckoutAction(sessionId);
+      const currentUser = await getUser();
+      if (currentUser?.membership?.status !== "active") throw new Error("Membership not active");
       result = {
         ok: true,
-        tierName: provisioned.tierName,
-        billingCycle: provisioned.billingCycle,
+        tierName: currentUser.membership.agreementSnapshot?.tierName || currentUser.membership.tier?.name || provisioned.tierName,
+        billingCycle: currentUser.membership.billingCycle || provisioned.billingCycle,
       };
     } catch {
       result = {
@@ -36,7 +40,7 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
         {result.ok ? (
           <>
             <CheckCircle2 className="h-10 w-10 text-[var(--color-accent)]" />
-            <p className="sf-eyebrow mt-5">Membership activated</p>
+            <p className="sf-eyebrow mt-5">Membership confirmed</p>
             <h1 className="sf-display mt-3 text-[var(--text-display-s)]">Welcome to the club</h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-[var(--color-ink-muted)]">
               Your <span className="font-medium text-[var(--color-ink)]">{result.tierName}</span> plan is now active on a{" "}
@@ -56,16 +60,13 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
           </>
         ) : (
           <>
-            <p className="sf-eyebrow">Checkout complete</p>
+            <p className="sf-eyebrow">Payment verification</p>
             <h1 className="sf-display mt-3 text-[var(--text-display-s)]">Verification still needed</h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-[var(--color-ink-muted)]">{result.message}</p>
             <div className="mt-10 flex flex-wrap gap-3">
-              <CheckoutReturnButton destination="/account" className="sf-btn-primary px-6">
-                Go to account
-              </CheckoutReturnButton>
-              <CheckoutReturnButton destination="/contact" className="sf-btn-outline px-6">
-                Contact the front desk
-              </CheckoutReturnButton>
+              <Link href="/account/membership" className="sf-btn-primary">Check membership</Link>
+              {sessionId && <Link href={`/join/success?session_id=${encodeURIComponent(sessionId)}`} className="sf-btn-secondary">Check confirmation again</Link>}
+              <Link href="/contact" className="sf-btn-secondary">Contact the front desk</Link>
             </div>
           </>
         )}

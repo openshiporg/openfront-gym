@@ -35,6 +35,9 @@ export async function getSchedulingWorkspaceData(
     events: CalendarEvent[];
     schedules: any[];
     instructors: any[];
+    classTypes: any[];
+    locations: any[];
+    resources: any[];
     upcomingInstances: any[];
     timeZone: string;
   };
@@ -55,55 +58,19 @@ export async function cancelClassInstanceAction(classInstanceId: string, reason:
 }
 
 export async function saveClassSchedule(data: Record<string, unknown>, id?: string | null) {
-  if (id) {
-    const { maxCapacity, ...scheduleData } = data;
-    if (maxCapacity !== undefined) {
-      const capacity = await keystoneClient<{ updateClassScheduleCapacity: { id: string } }>(`
-        mutation UpdateClassScheduleCapacity($id: ID!, $maxCapacity: Int!) {
-          updateClassScheduleCapacity(classScheduleId: $id, maxCapacity: $maxCapacity) { id }
-        }
-      `, { id, maxCapacity });
-      if (!capacity.success) throw new Error(capacity.error);
-    }
-    const response = await keystoneClient<{ updateClassSchedule: { id: string } }>(`
-      mutation UpdateClassSchedule($id: ID!, $data: ClassScheduleUpdateInput!) {
-        updateClassSchedule(where: { id: $id }, data: $data) { id }
-      }
-    `, { id, data: scheduleData });
-    if (!response.success) throw new Error(response.error);
-    return response.data.updateClassSchedule;
-  }
-  const response = await keystoneClient<{ createClassSchedule: { id: string } }>(`
-    mutation CreateClassSchedule($data: ClassScheduleCreateInput!) { createClassSchedule(data: $data) { id } }
-  `, { data });
-  if (!response.success) throw new Error(response.error);
-  return response.data.createClassSchedule;
+  const result = await keystoneClient<{ saveGymClassSchedule: { id: string } }>(`
+    mutation SaveGymClassSchedule($id: ID, $data: JSON!) { saveGymClassSchedule(id: $id, data: $data) { id } }
+  `, { id: id || null, data });
+  if (!result.success) throw new Error(result.error);
+  return result.data.saveGymClassSchedule;
 }
 
 export async function saveClassInstance(data: Record<string, unknown>, id?: string | null) {
-  if (id) {
-    const { maxCapacity, ...instanceData } = data;
-    if (maxCapacity !== undefined) {
-      const capacity = await keystoneClient<{ updateClassInstanceCapacity: { id: string } }>(`
-        mutation UpdateClassInstanceCapacity($id: ID!, $maxCapacity: Int) {
-          updateClassInstanceCapacity(classInstanceId: $id, maxCapacity: $maxCapacity) { id }
-        }
-      `, { id, maxCapacity });
-      if (!capacity.success) throw new Error(capacity.error);
-    }
-    const response = await keystoneClient<{ updateClassInstance: { id: string } }>(`
-      mutation UpdateClassInstance($id: ID!, $data: ClassInstanceUpdateInput!) {
-        updateClassInstance(where: { id: $id }, data: $data) { id }
-      }
-    `, { id, data: instanceData });
-    if (!response.success) throw new Error(response.error);
-    return response.data.updateClassInstance;
-  }
-  const response = await keystoneClient<{ createClassInstance: { id: string } }>(`
-    mutation CreateClassInstance($data: ClassInstanceCreateInput!) { createClassInstance(data: $data) { id } }
-  `, { data });
-  if (!response.success) throw new Error(response.error);
-  return response.data.createClassInstance;
+  const result = await keystoneClient<{ saveGymClassInstance: { id: string } }>(`
+    mutation SaveGymClassInstance($id: ID, $data: JSON!) { saveGymClassInstance(id: $id, data: $data) { id } }
+  `, { id: id || null, data });
+  if (!result.success) throw new Error(result.error);
+  return result.data.saveGymClassInstance;
 }
 
 export async function generateUpcomingInstances(weeks: number = 4) {

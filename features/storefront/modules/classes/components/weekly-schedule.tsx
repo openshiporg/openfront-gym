@@ -1,169 +1,62 @@
 "use client";
 
-import { useState } from "react";
+import { useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { discoveryHref, matchesSession } from "@/features/storefront/lib/discovery";
 import ClassBookingModal from "./class-booking-modal";
 
-const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const DAYS_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
 type ScheduleItem = {
-  day: number;
-  time: string;
-  name: string;
-  instructor: string;
-  duration: number;
-  spots: number;
-  capacity: number;
-  id: string;
-  isBookable?: boolean;
-  difficulty?: string;
-  date: string;
-  dateLabel: string;
-  shortDateLabel: string;
-  location: string;
+  time: string; name: string; instructor: string; instructorId?: string;
+  classTypeId?: string; duration: number; spots: number; capacity: number;
+  id: string; isBookable?: boolean; difficulty?: string; date: string;
+  dateKey: string; dateLabel: string; location: string;
 };
+type Day = { key: string; label: string; short: string; full: string };
 
-export default function WeeklySchedule({
-  scheduleData = [],
-  initialBookingId,
-}: {
-  scheduleData?: ScheduleItem[];
-  initialBookingId?: string;
+export default function WeeklySchedule({ scheduleData, days, timeZone }: {
+  scheduleData: ScheduleItem[]; days: Day[]; timeZone: string; initialBookingId?: string;
 }) {
-  const today = new Date().getDay();
-  const initialClass = scheduleData.find(
-    (item) => item.id === initialBookingId && item.isBookable !== false,
-  ) ?? null;
-  const [selectedDay, setSelectedDay] = useState(
-    () => initialClass?.day ?? scheduleData.find((item) => item.day === today)?.day ?? scheduleData[0]?.day ?? today,
-  );
-  const [bookingModalOpen, setBookingModalOpen] = useState(Boolean(initialClass));
-  const [selectedClass, setSelectedClass] = useState<ScheduleItem | null>(initialClass);
-
-  const dayClasses = scheduleData
-    .filter((c) => c.day === selectedDay)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  return (
-    <div>
-      <div className="flex gap-1 overflow-x-auto border-b border-[var(--color-rule)] pb-px">
-        {DAYS_SHORT.map((label, i) => {
-          const active = i === selectedDay;
-          const count = scheduleData.filter((c) => c.day === i).length;
-          const isToday = i === today;
-          return (
-            <button
-              key={label}
-              type="button"
-              onClick={() => setSelectedDay(i)}
-              className={`relative flex min-w-[5.5rem] shrink-0 flex-col items-center justify-center gap-1 border-b-2 px-3 py-4 transition ${
-                active
-                  ? "border-[var(--color-accent)] bg-[var(--color-paper-2)] text-[var(--color-ink)]"
-                  : "border-transparent text-[var(--color-ink-muted)] hover:bg-[var(--color-paper-2)]"
-              }`}
-            >
-              {isToday ? (
-                <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[var(--color-accent)]" aria-hidden />
-              ) : null}
-              <span className="text-[10px] font-semibold uppercase tracking-[0.12em]">{label}</span>
-              <span className="text-sm font-semibold">{scheduleData.find((item) => item.day === i)?.shortDateLabel ?? "—"}</span>
-              <span className="text-[10px] text-[var(--color-ink-muted)]">{count} session{count === 1 ? "" : "s"}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-10 mb-6">
-        <h2 className="text-2xl font-semibold text-[var(--color-ink)]">
-          {dayClasses[0]?.dateLabel ?? DAYS_FULL[selectedDay]}
-        </h2>
-        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-          {dayClasses.length === 0
-            ? "No sessions scheduled"
-            : `${dayClasses.length} session${dayClasses.length > 1 ? "s" : ""} available`}
-        </p>
-      </div>
-
-      {dayClasses.length === 0 ? (
-        <div className="border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-16 text-center text-sm text-[var(--color-ink-muted)]">
-          No classes scheduled for this day.
-        </div>
-      ) : (
-        <div className="divide-y divide-[var(--color-rule)] border-y border-[var(--color-rule)]">
-          {dayClasses.map((cls) => {
-            const isFull = cls.spots <= 0;
-            const isBookable = cls.isBookable !== false;
-            const fillPct = cls.capacity > 0 ? Math.round(((cls.capacity - cls.spots) / cls.capacity) * 100) : 0;
-            return (
-              <div
-                key={`${cls.id}-${cls.time}`}
-                className="grid gap-4 py-6 md:grid-cols-[7rem_minmax(0,1fr)_auto] md:items-center"
-              >
-                <div>
-                  <p className="text-2xl font-medium text-[var(--color-accent)]">{cls.time}</p>
-                  <p className="mt-1 text-xs text-[var(--color-ink-muted)]">{cls.duration} min</p>
-                </div>
-
-                <div className="min-w-0">
-                  <h3 className="text-lg font-semibold text-[var(--color-ink)]">{cls.name}</h3>
-                  <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-                    {cls.instructor} · {cls.location}
-                  </p>
-                  <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-                    {!isBookable ? "Next date pending" : isFull ? "Waitlist only" : `${cls.spots} spots left`}
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <div className="h-1 w-24 overflow-hidden bg-[var(--color-paper-3)]">
-                      <div className="h-full bg-[var(--color-accent)]" style={{ width: `${Math.min(fillPct, 100)}%` }} />
-                    </div>
-                    <span className="text-xs text-[var(--color-ink-faint)]">{fillPct}% full</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isBookable) return;
-                    setSelectedClass(cls);
-                    setBookingModalOpen(true);
-                  }}
-                  disabled={!isBookable}
-                  className={`shrink-0 px-5 py-3 text-xs font-semibold uppercase tracking-[0.1em] transition ${
-                    !isBookable
-                      ? "cursor-not-allowed border border-[var(--color-rule)] text-[var(--color-ink-faint)]"
-                      : isFull
-                        ? "border border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
-                        : "bg-[var(--color-accent)] text-[var(--color-accent-on)] hover:brightness-110"
-                  }`}
-                >
-                  {!isBookable ? "Date pending" : isFull ? "Waitlist" : "Book"}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {selectedClass ? (
-        <ClassBookingModal
-          isOpen={bookingModalOpen}
-          onClose={() => setBookingModalOpen(false)}
-          classData={{
-            id: selectedClass.id,
-            name: selectedClass.name,
-            instructor: selectedClass.instructor,
-            time: selectedClass.time,
-            duration: selectedClass.duration,
-            spots: selectedClass.spots,
-            capacity: selectedClass.capacity,
-            difficulty: selectedClass.difficulty,
-            date: selectedClass.dateLabel,
-            location: selectedClass.location,
-            isBookable: selectedClass.isBookable,
-          }}
-          onBookingSuccess={() => {}}
-        />
-      ) : null}
-    </div>
-  );
+  const router = useRouter();
+  const bookingTrigger = useRef<HTMLButtonElement | null>(null);
+  const params = useSearchParams() ?? new URLSearchParams();
+  const navigate = (changes: Record<string, string | null>) => router.push(discoveryHref("/schedule", params.toString(), changes), { scroll: false });
+  const bookingId = params.get("book");
+  const selectedClass = scheduleData.find(item => item.id === bookingId);
+  if (selectedClass && !days.some(day => day.key === selectedClass.dateKey)) {
+    days = [...days, { key: selectedClass.dateKey, label: "Selected", short: selectedClass.dateLabel, full: selectedClass.dateLabel }];
+  }
+  const requestedDay = params.get("date") || selectedClass?.dateKey;
+  const day = days.find(item => item.key === requestedDay) || days[0];
+  const week = params.get("view") === "week";
+  const filters = { q: params.get("q") || "", coach: params.get("coach") || "", format: params.get("format") || "", availability: params.get("availability") || "" };
+  const matched = scheduleData.filter(item => matchesSession(item, filters));
+  const weekStart = Math.floor(Math.max(0, days.findIndex(item => item.key === day.key)) / 7) * 7;
+  const visibleDays = week ? days.slice(weekStart, weekStart + 7) : [day];
+  const coaches = [...new Map(scheduleData.filter(item => item.instructorId).map(item => [item.instructorId!, item.instructor])).entries()];
+  const formats = [...new Map(scheduleData.filter(item => item.classTypeId).map(item => [item.classTypeId!, item.name])).entries()];
+  return <section aria-label="Find a class" className="sf-timetable">
+    <form className="sf-discovery-filters" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); navigate({ q: String(data.get("q") || ""), coach: String(data.get("coach") || ""), format: String(data.get("format") || ""), availability: String(data.get("availability") || ""), book: null }); }}>
+      <label>Search sessions<input key={filters.q} name="q" type="search" defaultValue={filters.q} placeholder="Class, coach or level" /></label>
+      <label>Coach<select key={filters.coach} name="coach" defaultValue={filters.coach}><option value="">All coaches</option>{coaches.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+      <label>Class format<select key={filters.format} name="format" defaultValue={filters.format}><option value="">All formats</option>{formats.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+      <label>Availability<select key={filters.availability} name="availability" defaultValue={filters.availability}><option value="">Include waitlists</option><option value="open">Spaces available</option></select></label>
+      <button className="sf-btn-primary" type="submit">Find sessions</button>
+    </form>
+    <div className="sf-toolbar"><p>All times in <strong>{timeZone}</strong>. Next 14 dates, plus any session opened from a booking link.</p><div className="sf-segmented" aria-label="Schedule view"><button type="button" aria-pressed={!week} onClick={() => navigate({ view: null })}>Day</button><button type="button" aria-pressed={week} onClick={() => navigate({ view: "week" })}>Week</button></div></div>
+    <nav className="sf-date-strip" aria-label="Choose a date">{days.map(item => <button type="button" key={item.key} aria-current={item.key === day.key ? "date" : undefined} onClick={() => navigate({ date: item.key, book: null })}><span>{item.label}</span><strong>{item.short}</strong><small>{matched.filter(session => session.dateKey === item.key).length} sessions</small></button>)}</nav>
+    {bookingId && !selectedClass && <div className="sf-notice" role="status"><strong>This session is no longer in the published timetable.</strong><p>Choose another session below, or check your bookings for an existing reservation.</p><a className="sf-link" href="/account/bookings">Your bookings →</a></div>}
+    {visibleDays.map(item => {
+      const sessions = matched.filter(session => session.dateKey === item.key).sort((a,b) => a.date.localeCompare(b.date));
+      return <section key={item.key} className="sf-day-section" aria-label={item.full}><div className="sf-section-heading"><h2>{item.full}</h2><span>{sessions.length} sessions</span></div>
+        {sessions.length ? <div className="sf-session-list">{sessions.map(session => <article className="sf-session-row" key={session.id}>
+          <div className="sf-session-time"><time dateTime={session.date}>{session.time}</time><span>Typically {session.duration} min</span></div>
+          <div><h3>{session.name}</h3><p>{session.instructor} {session.difficulty ? `· ${session.difficulty}` : ""}</p><p className="sf-session-location">{session.location}</p></div>
+          <div className="sf-session-availability"><span className={`sf-badge ${session.spots > 0 ? "sf-badge-positive" : ""}`}>{session.spots > 0 ? `${session.spots} spaces` : "Waitlist available"}</span><button type="button" className={session.spots > 0 ? "sf-btn-primary" : "sf-btn-secondary"} onClick={event => { bookingTrigger.current = event.currentTarget; navigate({ book: session.id, date: session.dateKey }); }} aria-label={`${session.spots > 0 ? "Book" : "Join waitlist for"} ${session.name}, ${session.dateLabel}, ${session.time}`}>{session.spots > 0 ? "Book session" : "Join waitlist"}</button></div>
+        </article>)}</div> : <div className="sf-empty"><h3>{scheduleData.some(session => session.dateKey === item.key) ? "No sessions match these filters" : "No sessions published for this date"}</h3><p>Try another date or explore the full timetable.</p><button className="sf-btn-secondary" onClick={() => navigate({ q: null, coach: null, format: null, availability: null, view: "week", book: null })}>Show all sessions this week</button></div>}
+      </section>;
+    })}
+    {scheduleData.length >= 100 && <p className="sf-muted">Showing up to 100 published sessions. Contact the club if you cannot find a session.</p>}
+    <p className="sf-muted mt-6">Spaces and eligibility are checked when you book. Joining a waitlist does not reserve a space. Check your bookings for promotion or changes.</p>
+    {selectedClass && <ClassBookingModal key={selectedClass.id} isOpen onClose={() => navigate({ book: null })} classData={{ ...selectedClass, date: selectedClass.dateLabel }} onBookingSuccess={() => router.refresh()} onReturnFocus={() => { (bookingTrigger.current || document.querySelector<HTMLButtonElement>(".sf-date-strip button[aria-current]"))?.focus(); }} />}
+  </section>;
 }

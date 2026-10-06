@@ -9,6 +9,7 @@ export const roleCapabilityFields = [
   "canManageOnboarding",
   "canManageSettings",
   "canManageAppointments",
+  "canManageCheckIns",
   "canManageFacilities",
   "canManagePrograms",
   "canManageCommunications",

@@ -11,7 +11,6 @@ export interface OnboardingStep {
   description: string;
 }
 
-// Base InfoCard components
 interface CommonCardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
 }
@@ -55,7 +54,7 @@ InfoCardContent.displayName = "InfoCardContent";
 const InfoCardFooter = ({ children, className }: CommonCardProps) => (
   <div
     className={cn(
-      "mt-2 flex justify-between overflow-hidden text-xs text-muted-foreground",
+      "mt-2 flex justify-between text-xs text-muted-foreground",
       className,
     )}
   >
@@ -139,13 +138,13 @@ function OnboardingCard({
       {/* Full sidebar view */}
       <div
         className={cn(
-          "group relative rounded-lg border bg-white dark:bg-black transition-all duration-300 ease-spring group-has-[[data-collapsible=icon]]/sidebar-wrapper:hidden",
+          "relative rounded-lg border bg-white dark:bg-black transition-all duration-300 ease-spring group-has-[[data-collapsible=icon]]/sidebar-wrapper:hidden motion-reduce:transition-none",
           "opacity-100 translate-y-0",
           "hover:shadow-sm"
         )}
       >
         <div className="absolute -top-1 -right-1.5 z-10">
-          <div className="h-3 w-3 rounded-full bg-blue-700 dark:bg-blue-400 border-blue-200 dark:border-blue-800/50 border-3 animate-pulse" />
+          <div className="h-3 w-3 rounded-full bg-blue-700 dark:bg-blue-400 border-blue-200 dark:border-blue-800/50 border-3 animate-pulse motion-reduce:animate-none" />
         </div>
         <div className="flex items-start">
           <InfoCardContent className="pt-2 px-2">
@@ -179,13 +178,13 @@ function OnboardingCard({
         )}
       >
         <div className="absolute -top-1 -right-1.5 z-10">
-          <div className="h-3 w-3 rounded-full bg-blue-700 dark:bg-blue-400 border-blue-200 dark:border-blue-800/50 border-3 animate-pulse" />
+          <div className="h-3 w-3 rounded-full bg-blue-700 dark:bg-blue-400 border-blue-200 dark:border-blue-800/50 border-3 animate-pulse motion-reduce:animate-none" />
         </div>
         <Button
           variant="outline"
           size="icon"
           className="size-8"
-          // className="w-full h-9 hover:bg-accent hover:text-accent-foreground"
+          aria-label="Open gym onboarding"
           onClick={onOpenDialog}
         >
           <Rocket className="size-3" />

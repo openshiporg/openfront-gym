@@ -1,7 +1,8 @@
 import { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, Calendar, ChevronLeft, Clock, MapPin } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarX, Medal } from "lucide-react";
 import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
 import { getInstructorById } from "@/features/storefront/lib/data/instructors";
 import { getUpcomingClassOccurrences } from "@/features/storefront/lib/data/classes";
@@ -13,29 +14,16 @@ function getDocumentText(value: unknown, fallback = "") {
   if (!value) return fallback;
   if (typeof value === "string") return value;
   if (typeof value !== "object") return fallback;
-
   const document = (value as { document?: Array<{ children?: Array<{ text?: string }> }> }).document;
-  const text = document
-    ?.flatMap((node) => node.children || [])
-    .map((child) => child.text || "")
-    .join(" ")
-    .trim();
-
-  return text || fallback;
+  return document?.flatMap((node) => node.children || []).map((child) => child.text || "").join(" ").trim() || fallback;
 }
 
 export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const params = await props.params;
-  const [instructor, config] = await Promise.all([
-    getInstructorById(params.id),
-    getStorefrontConfig(),
-  ]);
+  const [instructor, config] = await Promise.all([getInstructorById(params.id), getStorefrontConfig()]);
   const brand = getStorefrontBrandName(config);
   if (!instructor) return { title: `Instructor not found — ${brand}` };
-  return {
-    title: `${instructor.user.name} — Instructor — ${brand}`,
-    description: getDocumentText(instructor.bio, `Coach ${instructor.user.name}.`),
-  };
+  return { title: `${instructor.user.name} — Instructor — ${brand}`, description: getDocumentText(instructor.bio, `Coach ${instructor.user.name}.`) };
 }
 
 export async function InstructorDetailPage(props: { params: Promise<{ id: string }> }) {
@@ -47,145 +35,36 @@ export async function InstructorDetailPage(props: { params: Promise<{ id: string
   ]);
   if (!instructor) notFound();
 
-  const bio = getDocumentText(instructor.bio, "");
+  const bio = getDocumentText(instructor.bio);
   const specialties = Array.isArray(instructor.specialties) ? instructor.specialties : [];
+  const certifications = Array.isArray(instructor.certifications) ? instructor.certifications : [];
   const firstName = instructor.user.name.split(" ")[0];
-  const brand = getStorefrontBrandName(config);
   const timeZone = config?.timezone || "UTC";
-  const location = config?.address || config?.locationName || "Main studio";
-
-  const initials = instructor.user.name
-    .split(" ")
-    .map((n: string) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
 
   return (
-    <div className="sf-page">
-      <div className="sf-container">
-        <Link
-          href="/instructors"
-          className="inline-flex items-center gap-2 text-sm font-medium text-[var(--sf-ink-muted)] transition hover:text-[var(--sf-accent)]"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          Coaching team
-        </Link>
-
-        <div className="mt-10 grid gap-12 lg:mt-14 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          {/* Main */}
-          <div className="min-w-0">
-            {/* Header */}
-            <div className="flex flex-col gap-8 sm:flex-row sm:items-start">
-              <div className="flex h-32 w-32 shrink-0 items-center justify-center bg-[var(--sf-paper-3)] text-5xl font-semibold text-[var(--sf-ink-faint)]">
-                {instructor.photo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={instructor.photo}
-                    alt={instructor.user.name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  initials
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="sf-eyebrow">Instructor</p>
-                <h1 className="sf-display mt-2 text-5xl sm:text-6xl">{instructor.user.name}</h1>
-                {bio ? (
-                  <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[var(--sf-ink-muted)]">{bio}</p>
-                ) : (
-                  <p className="mt-6 max-w-2xl text-lg leading-relaxed text-[var(--sf-ink-muted)]">
-                    Coach {firstName} leads sessions on the {brand} floor.
-                  </p>
-                )}
-
-                {specialties.length > 0 ? (
-                  <div className="mt-6 flex flex-wrap gap-2">
-                    {specialties.map((specialty: string) => (
-                      <span key={specialty} className="sf-tag">{specialty}</span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            {/* Weekly schedule */}
-            <section className="mt-12 border-t border-[var(--sf-rule)] pt-10">
-              <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="sf-eyebrow mb-2">This week</p>
-                  <h2 className="sf-display text-3xl sm:text-4xl">Sessions with {firstName}</h2>
-                </div>
-                <Link href="/schedule" className="sf-btn-ghost inline-flex items-center gap-2">
-                  Full schedule <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-
-              {occurrences.length === 0 ? (
-                <p className="border border-[var(--sf-rule)] bg-[var(--sf-paper-2)] px-6 py-8 text-sm text-[var(--sf-ink-muted)]">
-                  No dated sessions are listed for {firstName} right now. Check the full schedule for newly published occurrences.
-                </p>
-              ) : (
-                <div className="divide-y divide-[var(--sf-rule)] border-y border-[var(--sf-rule)]">
-                  {occurrences.map((occurrence) => (
-                    <div
-                      key={occurrence.id}
-                      className="grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-[var(--sf-accent)]">
-                          <Calendar className="h-4 w-4" />
-                          {formatOccurrenceDate(occurrence.startsAt, timeZone)}
-                        </div>
-                        <p className="mt-1 font-medium">{occurrence.name || "Class"}</p>
-                        <p className="mt-1 flex items-center gap-1.5 text-sm text-[var(--sf-ink-muted)]">
-                          <Clock className="h-3.5 w-3.5" />
-                          {formatOccurrenceTime(occurrence.startsAt, timeZone)} · {occurrence.availability.spotsRemaining} spot{occurrence.availability.spotsRemaining === 1 ? "" : "s"} left
-                        </p>
-                        <p className="mt-1 flex items-center gap-1.5 text-sm text-[var(--sf-ink-muted)]">
-                          <MapPin className="h-3.5 w-3.5" /> {location}
-                        </p>
-                      </div>
-                      <Link href={bookingReturnPath(occurrence.id)} className="sf-btn-secondary w-fit shrink-0">
-                        {occurrence.availability.spotsRemaining > 0 ? "Reserve" : "Join waitlist"}
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+    <>
+      <section className="border-b border-[var(--sf-border)]">
+        <div className="sf-container py-8 lg:py-12">
+          <Link href="/instructors" className="inline-flex items-center gap-2 text-sm font-medium text-[var(--sf-muted)] transition-colors hover:text-[var(--sf-foreground)]"><ArrowLeft className="h-4 w-4" aria-hidden="true" />All coaches</Link>
+          <div className="mt-9 grid gap-9 lg:grid-cols-[minmax(0,0.88fr)_minmax(21rem,0.54fr)] lg:items-end lg:gap-14">
+            <div><p className="sf-eyebrow">Coach profile</p><h1 className="sf-display mt-5 max-w-[15ch] text-5xl sm:text-6xl lg:text-7xl">{instructor.user.name}</h1>{bio ? <p className="mt-7 max-w-2xl text-base leading-7 text-[var(--sf-muted)] sm:text-lg">{bio}</p> : <p className="mt-7 text-base text-[var(--sf-muted)]">A public biography has not been published for this coach.</p>}<div className="sf-actions"><a href="#coach-sessions" className="sf-btn-primary">Train with {firstName} ↓</a><Link href="/contact" className="sf-btn-secondary">Ask about personal training</Link></div>{specialties.length ? <div className="mt-7 flex flex-wrap gap-2">{specialties.map((specialty) => <span key={specialty} className="sf-tag bg-[var(--sf-surface)]">{specialty}</span>)}</div> : null}</div>
+            <div className="relative min-h-64 overflow-hidden border border-[var(--sf-border)] bg-[var(--sf-surface-strong)] sm:min-h-[24rem]">{instructor.photo ? <Image src={instructor.photo} alt={`${instructor.user.name} coaching portrait`} width={900} height={1100} priority sizes="(max-width: 1024px) 100vw, 38vw" className="absolute inset-0 h-full w-full object-cover grayscale-[25%]" unoptimized /> : null}</div>
           </div>
-
-          {/* Sidebar */}
-          <aside className="lg:sticky lg:top-24 lg:self-start">
-            <div className="sf-card-dark p-8">
-              <p className="sf-eyebrow text-[oklch(72%_0.08_55)]">Train with {firstName}</p>
-              <h2 className="sf-display mt-3 text-3xl italic text-white">Book a session</h2>
-              <p className="mt-4 text-sm leading-relaxed text-[oklch(78%_0.01_85)]">
-                {firstName}&apos;s classes are included with membership. Reserve a spot from the live schedule.
-              </p>
-              <Link
-                href="/schedule"
-                className="sf-btn mt-6 w-full border border-[oklch(94%_0.01_85)] bg-[oklch(94%_0.01_85)] text-[var(--sf-ink)] hover:bg-white"
-              >
-                View schedule
-              </Link>
-            </div>
-
-            <div className="sf-card mt-4 p-6">
-              <h3 className="sf-label">Not a member yet?</h3>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--sf-ink-muted)]">
-                Membership unlocks booked classes and open floor access.
-              </p>
-              <Link href="/memberships" className="sf-btn-ghost mt-4 inline-flex">
-                See membership plans
-              </Link>
-            </div>
-          </aside>
         </div>
-      </div>
-    </div>
+      </section>
+
+      {certifications.length ? <section className="border-b border-[var(--sf-border)] bg-[var(--sf-surface)]"><div className="sf-container flex flex-col gap-4 py-7 sm:flex-row sm:items-center sm:gap-8"><div className="flex items-center gap-3 text-sm font-semibold"><Medal className="h-5 w-5 text-[var(--sf-primary)]" aria-hidden="true" />Published certifications</div><p className="text-sm text-[var(--sf-muted)]">{certifications.join(" / ")}</p></div></section> : null}
+
+      <section className="py-16 lg:py-24">
+        <div className="sf-container grid gap-10 lg:grid-cols-[minmax(15rem,0.42fr)_minmax(0,1fr)] lg:gap-16">
+          <div><h2 className="sf-display text-4xl sm:text-5xl"id="coach-sessions">Upcoming with {firstName}</h2><p className="mt-5 max-w-md leading-7 text-[var(--sf-muted)]">{timeZone}. See up to eight upcoming sessions in the next 14 days. All times are shown in the club’s timezone.</p><div className="mt-8 flex flex-wrap gap-3"><Link href={`/schedule?coach=${encodeURIComponent(instructor.id)}`} className="sf-btn-secondary">All sessions with {firstName}</Link><Link href="/memberships" className="sf-btn-ghost">Memberships</Link><Link href="/contact" className="sf-btn-ghost">Contact</Link></div></div>
+          {occurrences.length ? (
+            <div className="border-t border-[var(--sf-border)]">{occurrences.map((occurrence) => <article key={occurrence.id} className="grid gap-5 border-b border-[var(--sf-border)] py-6 sm:grid-cols-[8rem_minmax(0,1fr)_auto] sm:items-center"><div><p className="font-bold tabular-nums text-[var(--sf-primary)]">{formatOccurrenceTime(occurrence.startsAt, timeZone)}</p><p className="mt-1 text-xs text-[var(--sf-muted)]">{formatOccurrenceDate(occurrence.startsAt, timeZone)}</p></div><div><h3 className="font-semibold">{occurrence.name || occurrence.classType?.name || "Class"}</h3><p className="mt-1 text-sm text-[var(--sf-muted)]">{occurrence.classType?.name || "Class format not published"}</p></div><div className="sm:text-right"><p className="text-sm font-semibold">{occurrence.availability.spotsRemaining > 0 ? `${occurrence.availability.spotsRemaining} spots open` : "Waitlist"}</p><Link href={bookingReturnPath(occurrence.id)} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[var(--sf-primary)] underline underline-offset-4">{occurrence.availability.spotsRemaining > 0 ? "Reserve" : "Join waitlist"}<ArrowRight className="h-3 w-3" aria-hidden="true" /></Link></div></article>)}</div>
+          ) : (
+            <div className="border border-[var(--sf-border)] bg-[var(--sf-surface)] p-8 sm:p-10"><CalendarX className="h-8 w-8 text-[var(--sf-primary)]" aria-hidden="true" /><h2 className="mt-7 text-xl font-bold">No dated sessions are listed.</h2><p className="mt-3 max-w-lg text-sm leading-6 text-[var(--sf-muted)]">No upcoming sessions are published for this coach in the next 14 days. Ask the club about their next classes.</p></div>
+          )}
+        </div>
+      </section>
+    </>
   );
 }

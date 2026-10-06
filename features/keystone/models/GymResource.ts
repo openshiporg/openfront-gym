@@ -10,16 +10,26 @@ const tenantItem = (args: any) => tenantItemAccess(args);
 
 export const GymResource = list({
   hooks: {
-    validateInput: validateTenantOwnership([
-      { field: "location", list: "location", required: true },
-    ]),
+    async validateInput(args: any) {
+      await validateTenantOwnership([{ field: "location", list: "location", required: true }])(args);
+      if (!args.item) return;
+      const protectedFields = ["location", "capacity", "isExclusive", "isActive", "setupBufferMinutes", "cleanupBufferMinutes"];
+      if (!protectedFields.some(field => args.resolvedData[field] !== undefined)) return;
+      // Resource changes need the same serialization as class/PT allocation.
+      // Raw manager updates cannot hold a lock through Keystone's later write,
+      // so immutable allocation settings prevent this bypass completely.
+      for (const field of protectedFields) if (args.resolvedData[field] !== undefined) {
+        const current = field === "location" ? args.item.locationId : args.item[field];
+        if (args.resolvedData[field] !== current) args.addValidationError("Resource allocation settings are immutable; create a replacement resource and explicitly reassign future services");
+      }
+    },
   },
   access: {
     operation: {
       query: canManageFacilities,
       create: canManageFacilities,
       update: canManageFacilities,
-      delete: canManageFacilities,
+      delete: denyAll,
     },
     filter: { query: tenantFilter },
     item: { update: tenantItem, delete: tenantItem },

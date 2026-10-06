@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { NextRequest } from "next/server";
 import { getGraphQLEndpoint } from "@/features/dashboard/lib/getBaseUrl";
 import { GraphQLClient, ClientError } from 'graphql-request';
+import { internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
 
 const basePath = "/dashboard";
 
@@ -11,6 +12,7 @@ async function createMiddlewareGraphQLClient(headers: Record<string, string>): P
   return new GraphQLClient(endpoint, {
     credentials: 'include',
     headers,
+    fetch: internalGraphqlFetch,
   });
 }
 

@@ -69,7 +69,7 @@ export async function ReportsOverviewPage() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Current month</CardDescription>
-              <CardTitle className="text-sm font-medium">Revenue</CardTitle>
+              <CardTitle className="text-sm font-medium">Net originating payments</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{formatMinorUnits(data.revenue.monthlyRevenue, data.revenue.currencyCode)}</div>
@@ -103,7 +103,7 @@ export async function ReportsOverviewPage() {
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border p-4">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Active members</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Members with current paid-through access</div>
                   <div className="mt-2 text-2xl font-bold">{data.operator.activeMembers}</div>
                 </div>
                 <div className="rounded-lg border p-4">
@@ -207,7 +207,7 @@ export async function ReportsOverviewPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-lg border p-4">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Total revenue</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Lifetime net originating payments</div>
                   <div className="mt-2 text-2xl font-bold">{formatMinorUnits(data.revenue.totalRevenue, data.revenue.currencyCode)}</div>
                 </div>
                 <div className="rounded-lg border p-4">

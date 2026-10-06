@@ -4,9 +4,10 @@ import { getAuthHeaders } from "./cookies";
 
 const BOOKING_FIELDS = gql`
   fragment StorefrontBooking on ClassBooking {
-    id status waitlistPosition bookedAt cancelledAt
+    id status waitlistPosition bookedAt cancelledAt eligibilityReviewReason
     classInstance {
-      id date
+      id date cancellationReason
+      location { name }
       classSchedule { name startTime endTime }
       instructor { user { name } }
     }
@@ -38,6 +39,7 @@ export async function getBookingHistory(userId: string, organizationId: string) 
     member: { user: { id: { equals: userId } } },
     OR: [
       { status: { equals: "cancelled" } },
+      { classInstance: { isCancelled: { equals: true } } },
       { classInstance: { date: { lt: new Date().toISOString() } } },
     ],
   }, [{ bookedAt: "desc" }], 20);

@@ -17,8 +17,11 @@ export function mapStripeStatusToMembership(status: string, collectionPaused = f
   if (collectionPaused) return "frozen";
   switch (status) {
     case "active":
-    case "trialing":
       return "active";
+    // This Gym checkout flow has no contracted free-trial entitlement. Stripe's
+    // display status alone must not grant service or credits.
+    case "trialing":
+      return "past-due";
     case "past_due":
     case "unpaid":
     case "incomplete":

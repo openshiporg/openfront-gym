@@ -9,6 +9,7 @@ const BOUNDED_MEMBER_PERMISSIONS = {
   canManageOnboarding: false,
   canManageSettings: false,
   canManageAppointments: false,
+  canManageCheckIns: false,
   canManageFacilities: false,
   canManagePrograms: false,
   canManageCommunications: false,

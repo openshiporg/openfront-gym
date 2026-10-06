@@ -1,15 +1,15 @@
 import Link from "next/link";
 
 const difficulties = [
-  { id: "all", name: "All levels" },
+  { id: "all", name: "All formats" },
   { id: "beginner", name: "Beginner" },
   { id: "intermediate", name: "Intermediate" },
   { id: "advanced", name: "Advanced" },
-  { id: "all-levels", name: "Mixed" },
+  { id: "all-levels", name: "All levels" },
 ];
 
 const durations = [
-  { id: "all", name: "Any" },
+  { id: "all", name: "Any length" },
   { id: "30", name: "30 min" },
   { id: "45", name: "45 min" },
   { id: "60", name: "60 min" },
@@ -19,71 +19,58 @@ const durations = [
 export default function ClassFilters({
   selectedDifficulty = "all",
   selectedDuration = "all",
+  q,
 }: {
   selectedDifficulty?: string;
   selectedDuration?: string;
+  q?: string;
 }) {
   const buildHref = (next: { difficulty?: string; duration?: string }) => {
     const params = new URLSearchParams();
+    if (q) params.set("q", q);
     const difficulty = next.difficulty ?? selectedDifficulty;
     const duration = next.duration ?? selectedDuration;
-
     if (difficulty && difficulty !== "all") params.set("difficulty", difficulty);
     if (duration && duration !== "all") params.set("duration", duration);
-
     const search = params.toString();
     return search ? `/classes?${search}` : "/classes";
   };
 
   return (
-    <aside className="space-y-10 lg:sticky lg:top-24 lg:self-start">
-      <div>
-        <h3 className="sf-label mb-4">Difficulty</h3>
-        <div className="space-y-2">
-          {difficulties.map((item) => {
-            const active = selectedDifficulty === item.id || (!selectedDifficulty && item.id === "all");
-            return (
-              <Link
-                key={item.id}
-                href={buildHref({ difficulty: item.id })}
-                className={`block border px-3 py-2 text-sm transition ${
-                  active
-                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] font-medium text-[var(--color-ink)]"
-                    : "border-transparent text-[var(--color-ink-muted)] hover:border-[var(--color-rule)] hover:bg-[var(--color-paper-2)]"
-                }`}
-              >
-                {item.name}
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        <h3 className="sf-label mb-4">Duration</h3>
-        <div className="flex flex-wrap gap-2">
-          {durations.map((item) => {
-            const active = selectedDuration === item.id || (!selectedDuration && item.id === "all");
-            return (
-              <Link
-                key={item.id}
-                href={buildHref({ duration: item.id })}
-                className={`px-3 py-2 text-xs font-medium transition ${
-                  active
-                    ? "bg-[var(--color-accent)] text-[var(--color-accent-on)]"
-                    : "border border-[var(--color-rule)] text-[var(--color-ink-muted)] hover:border-[var(--color-ink)]"
-                }`}
-              >
-                {item.name}
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
-      <Link href="/classes" className="inline-block text-sm font-medium text-[var(--color-accent)] hover:underline">
-        Reset filters
-      </Link>
-    </aside>
+    <div className="grid gap-3 border-y border-[var(--sf-border)] py-5">
+      <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Filter classes by difficulty">
+        {difficulties.map((item) => {
+          const active = selectedDifficulty === item.id || (!selectedDifficulty && item.id === "all");
+          return (
+            <Link
+              key={item.id}
+              href={buildHref({ difficulty: item.id })}
+              aria-current={active ? "page" : undefined}
+              className={`sf-btn shrink-0 px-4 ${active ? "border-[var(--sf-foreground)] bg-[var(--sf-foreground)] text-[var(--sf-background)]" : "border-[var(--sf-border)] bg-[var(--sf-surface)] text-[var(--sf-muted)] hover:border-[var(--sf-border-strong)] hover:text-[var(--sf-foreground)]"}`}
+            >
+              {item.name}
+            </Link>
+          );
+        })}
+      </nav>
+      <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Filter classes by duration">
+        {durations.map((item) => {
+          const active = selectedDuration === item.id || (!selectedDuration && item.id === "all");
+          return (
+            <Link
+              key={item.id}
+              href={buildHref({ duration: item.id })}
+              aria-current={active ? "page" : undefined}
+              className={`sf-btn shrink-0 px-4 ${active ? "border-[var(--sf-foreground)] bg-[var(--sf-foreground)] text-[var(--sf-background)]" : "border-[var(--sf-border)] bg-[var(--sf-surface)] text-[var(--sf-muted)] hover:border-[var(--sf-border-strong)] hover:text-[var(--sf-foreground)]"}`}
+            >
+              {item.name}
+            </Link>
+          );
+        })}
+        {selectedDifficulty !== "all" || selectedDuration !== "all" ? (
+          <Link href="/classes" className="sf-btn-ghost ml-2 shrink-0">Clear filters</Link>
+        ) : null}
+      </nav>
+    </div>
   );
 }

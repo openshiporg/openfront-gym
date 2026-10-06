@@ -10,6 +10,7 @@ import {
   CircleCheck,
   ArrowUpRight,
   Eye,
+  Pencil,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -37,6 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge-button';
+import { CustomSetupSteps } from './CustomSetupSteps';
 import { SectionRenderer } from './SectionRenderer';
 import { useOnboardingState } from '../hooks/useOnboardingState';
 import { useOnboardingApi } from '../hooks/useOnboardingApi';
@@ -77,11 +79,13 @@ function ActionButtons({
   step,
   isLoading,
   runOnboarding,
+  confirmDisabled = false,
   fullWidth = false,
 }: {
   step: 'template' | 'progress' | 'done';
   isLoading: boolean;
   runOnboarding: () => void;
+  confirmDisabled?: boolean;
   fullWidth?: boolean;
 }) {
   return (
@@ -113,7 +117,7 @@ function ActionButtons({
               Creating...
             </Button>
           ) : (
-            <Button onClick={runOnboarding} className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
+            <Button disabled={confirmDisabled} onClick={runOnboarding} className={fullWidth ? 'flex-1' : 'w-full sm:w-auto'}>
               Confirm
             </Button>
           )}
@@ -129,6 +133,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
     step,
     selectedTemplate,
     currentJsonData,
+    customJsonApplied,
     progressMessage,
     loadingItems,
     completedItems,
@@ -137,6 +142,8 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
     isLoading,
     setStep,
     setSelectedTemplate,
+    setCurrentJsonData,
+    setCustomJsonApplied,
     setProgress,
     setItemLoading,
     setItemCompleted,
@@ -162,6 +169,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
 
   if (!isOpen) return null;
 
+  const customNeedsConfiguration = selectedTemplate === 'custom' && !customJsonApplied;
   const displayNames = currentJsonData
     ? {
         gymSettings: getItemsFromJsonData(currentJsonData, 'gymSettings'),
@@ -175,7 +183,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
     : GYM_TEMPLATES[selectedTemplate].displayNames;
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && !isLoading && onClose()}>
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-[95vw] flex-col overflow-hidden p-0 gap-0 sm:max-w-4xl">
         <DialogHeader className="border-b px-4 sm:px-6 py-4 mb-0 shrink-0">
           <DialogTitle>Gym Setup</DialogTitle>
@@ -274,7 +282,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                     <div className="block lg:hidden">
                       <Select
                         value={selectedTemplate}
-                        onValueChange={(value) => setSelectedTemplate(value as 'minimal' | 'full')}
+                        onValueChange={(value) => setSelectedTemplate(value as 'minimal' | 'full' | 'custom')}
                       >
                         <SelectTrigger className="w-full h-auto py-3">
                           <SelectValue />
@@ -292,6 +300,12 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                               <span className="text-xs text-muted-foreground">Sample plans, classes, instructors, and schedules; no member or financial records</span>
                             </div>
                           </SelectItem>
+                          <SelectItem value="custom">
+                            <div className="flex flex-col items-start text-left">
+                              <span className="font-medium">Custom Setup</span>
+                              <span className="text-xs text-muted-foreground">Validate your own supported Gym configuration</span>
+                            </div>
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -300,7 +314,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                     <div className="hidden lg:block">
                       <RadioGroup
                         value={selectedTemplate}
-                        onValueChange={(value) => setSelectedTemplate(value as 'minimal' | 'full')}
+                        onValueChange={(value) => setSelectedTemplate(value as 'minimal' | 'full' | 'custom')}
                         className="space-y-4"
                       >
                         {[
@@ -315,6 +329,12 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                             icon: Building2,
                             label: 'Complete Starter Setup',
                             desc: 'Sample plans, classes, instructors, and schedules; no member or financial records',
+                          },
+                          {
+                            value: 'custom' as const,
+                            icon: Pencil,
+                            label: 'Custom Setup',
+                            desc: 'Validate your own supported Gym configuration',
                           },
                         ].map(({ value, icon: Icon, label, desc }) => (
                           <div
@@ -352,7 +372,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                 ) : (
                   <>
                     <h4 className="text-sm font-medium text-foreground">
-                      Creating {selectedTemplate === 'minimal' ? 'Basic' : 'Complete'} Setup
+                      Creating {selectedTemplate === 'minimal' ? 'Basic' : selectedTemplate === 'full' ? 'Complete' : 'Custom'} Setup
                     </h4>
                     <p className="mt-1 text-sm leading-6 text-muted-foreground">{progressMessage}</p>
                   </>
@@ -369,24 +389,42 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
                 </Badge>
               )}
               <div className="flex items-center justify-between p-4">
-                <ActionButtons step={step} isLoading={isLoading} runOnboarding={runOnboarding} />
+                <ActionButtons step={step} isLoading={isLoading} runOnboarding={runOnboarding} confirmDisabled={customNeedsConfiguration} />
               </div>
             </div>
           </div>
 
           {/* Right panel — section renderer */}
           <div className="order-2 min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:order-none">
-            <SectionRenderer
-              sections={SECTION_DEFINITIONS}
-              selectedTemplate={selectedTemplate}
-              isLoading={isLoading}
-              loadingItems={loadingItems}
-              completedItems={completedItems}
-              itemErrors={itemErrors}
-              error={error}
-              step={step}
-              currentJsonData={currentJsonData}
-            />
+            {customNeedsConfiguration && step === 'template' ? (
+              <CustomSetupSteps
+                currentJson={currentJsonData}
+                onJsonUpdate={(data) => {
+                  setCurrentJsonData(data);
+                  setCustomJsonApplied(true);
+                }}
+              />
+            ) : (
+              <>
+                {selectedTemplate === 'custom' && step === 'template' && customJsonApplied && (
+                  <Button type="button" variant="ghost" size="sm" className="mb-4" onClick={() => setCustomJsonApplied(false)}>
+                    <Pencil className="mr-2 size-4" />
+                    Edit custom setup
+                  </Button>
+                )}
+                <SectionRenderer
+                  sections={SECTION_DEFINITIONS}
+                  selectedTemplate={selectedTemplate}
+                  isLoading={isLoading}
+                  loadingItems={loadingItems}
+                  completedItems={completedItems}
+                  itemErrors={itemErrors}
+                  error={error}
+                  step={step}
+                  currentJsonData={currentJsonData}
+                />
+              </>
+            )}
           </div>
         </div>
 
@@ -399,7 +437,7 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
             </Badge>
           )}
           <div className="flex items-center justify-between p-4">
-            <ActionButtons step={step} isLoading={isLoading} runOnboarding={runOnboarding} fullWidth />
+            <ActionButtons step={step} isLoading={isLoading} runOnboarding={runOnboarding} confirmDisabled={customNeedsConfiguration} fullWidth />
           </div>
         </div>
       </DialogContent>

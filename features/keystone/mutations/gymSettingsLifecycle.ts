@@ -4,7 +4,7 @@ import type { Context } from ".keystone/types";
 import { getTenantId } from "../access/tenantPolicy";
 import { normalizeTimeZone } from "../../../lib/timezone";
 import { sanitizeGymLogoSvg } from "../utils/gymLogo";
-import { normalizeStorefrontHue } from "../../platform/store-settings/lib/storefront-branding";
+import { normalizeStorefrontHue } from "../lib/storefront-branding";
 
 const STRING_LIMITS = {
   name: 200,
@@ -86,7 +86,7 @@ export function normalizeGymSettingsInput(input: Record<string, unknown>) {
   }
   if ("currencyCode" in input && input.currencyCode != null) {
     const value = String(input.currencyCode).trim().toUpperCase();
-    if (!/^[A-Z]{3}$/.test(value)) throw new Error("currencyCode must be a three-letter code");
+    if (value !== "USD") throw new Error("Gym billing, retail and training currently support USD only");
     output.currencyCode = value;
   }
   if ("countryCode" in input && input.countryCode != null) {

@@ -6,9 +6,14 @@ import { statelessSessions } from "@keystone-6/core/session";
 import { extendGraphqlSchema } from "./mutations";
 import { sendPasswordResetEmail } from "./lib/mail";
 import { permissions } from "./access";
+import { withGraphqlListMaxTake } from "./security/graphql-limits";
 
 const isNextBuild = process.env.NEXT_PHASE === "phase-production-build";
 const strictConfig = (!isNextBuild && process.env.NODE_ENV === "production") || process.env.GYM_STRICT_CONFIG === "true";
+
+if (process.env.PUBLIC_SIGNUPS_ALLOWED === "true") {
+  throw new Error("PUBLIC_SIGNUPS_ALLOWED is reserved for dashboard User signup, which is not supported for Gym.");
+}
 
 if (strictConfig && process.env.PAYMENT_TEST_MODE === "true") {
   throw new Error("PAYMENT_TEST_MODE must be disabled in strict/production mode.");
@@ -73,8 +78,8 @@ if (strictConfig) {
     requiredValue("SMTP_FROM");
     requiredUrl("SMTP_STORE_LINK");
   }
-  if (process.env.PUBLIC_SIGNUPS_ALLOWED === "true") {
-    requiredValue("PUBLIC_SIGNUP_ORGANIZATION_ID");
+  if (process.env.PUBLIC_MEMBER_SIGNUPS_ALLOWED === "true") {
+    requiredValue("PUBLIC_MEMBER_SIGNUP_ORGANIZATION_ID");
     requiredValue("STOREFRONT_ORGANIZATION_ID");
   }
   const kioskConfigured = Boolean(process.env.KIOSK_API_TOKEN || process.env.KIOSK_ORGANIZATION_ID);
@@ -166,6 +171,7 @@ const { withAuth } = createAuth({
       canManageOnboarding
       canManageSettings
       canManageAppointments
+      canManageCheckIns
       canManageFacilities
       canManagePrograms
       canManageCommunications
@@ -183,7 +189,7 @@ export default withAuth(
       provider: "postgresql",
       url: databaseURL,
     },
-    lists: models,
+    lists: withGraphqlListMaxTake(models),
     storage: {
       my_images: {
         kind: "s3",

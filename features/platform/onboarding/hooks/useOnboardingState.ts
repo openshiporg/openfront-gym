@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { GYM_TEMPLATES } from '../config/templates';
 import { getSeedForTemplate, getItemsFromJsonData } from '../utils/dataUtils';
-import seedData from '../lib/seed.json';
+import seedData from '../../../keystone/onboarding/seed.json';
 
 export type OnboardingStep = 'template' | 'progress' | 'done';
-export type TemplateType = 'full' | 'minimal';
+export type TemplateType = 'full' | 'minimal' | 'custom';
 
 export interface OnboardingState {
   step: OnboardingStep;
   selectedTemplate: TemplateType;
   currentJsonData: any;
+  customJsonApplied: boolean;
   progressMessage: string;
   loadingItems: Record<string, string[]>;
   completedItems: Record<string, string[]>;
@@ -33,6 +34,7 @@ export function useOnboardingState() {
     step: 'template',
     selectedTemplate: 'minimal',
     currentJsonData: getSeedForTemplate('minimal', seedData),
+    customJsonApplied: false,
     progressMessage: '',
     loadingItems: { ...initialItemsState },
     completedItems: { ...initialItemsState },
@@ -51,11 +53,17 @@ export function useOnboardingState() {
       ...prev,
       selectedTemplate: template,
       currentJsonData: templateData,
+      customJsonApplied: false,
+      error: null,
     }));
   };
 
   const setCurrentJsonData = (data: any) => {
     setState((prev) => ({ ...prev, currentJsonData: data }));
+  };
+
+  const setCustomJsonApplied = (applied: boolean) => {
+    setState((prev) => ({ ...prev, customJsonApplied: applied }));
   };
 
   const setIsLoading = (loading: boolean) => {
@@ -189,6 +197,7 @@ export function useOnboardingState() {
     setStep,
     setSelectedTemplate,
     setCurrentJsonData,
+    setCustomJsonApplied,
     setIsLoading,
     setError,
     setProgress,

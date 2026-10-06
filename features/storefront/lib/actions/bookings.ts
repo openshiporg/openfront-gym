@@ -8,11 +8,11 @@ import { getAuthHeaders } from "@/features/storefront/lib/data/cookies";
 
 export async function cancelBookingAction(formData: FormData): Promise<void> {
   const bookingId = formData.get("bookingId")?.toString();
-  if (!bookingId) throw new Error("Missing booking id.");
+  if (!bookingId) redirect("/account/bookings?error=Choose%20a%20booking%20to%20cancel");
 
   const headers = await getAuthHeaders();
   if (!Object.keys(headers).length) {
-    throw new Error("Please sign in to cancel a booking.");
+    redirect("/account?returnTo=%2Faccount%2Fbookings");
   }
   try {
     await gymClient.request(
@@ -32,6 +32,7 @@ export async function cancelBookingAction(formData: FormData): Promise<void> {
     redirect("/account/bookings?error=Unable%20to%20cancel%20this%20booking");
   }
 
+  revalidatePath("/schedule");
   revalidatePath("/account/bookings");
   revalidatePath("/account");
   revalidatePath("/dashboard/platform/rosters");

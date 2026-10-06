@@ -67,7 +67,7 @@ export const ClassType = list({
     }),
 
     duration: integer({
-      validation: { isRequired: true },
+      validation: { isRequired: true, min: 1, max: 1440 },
       defaultValue: 60,
       ui: {
         description: "Typical duration in minutes",
@@ -91,6 +91,7 @@ export const ClassType = list({
     }),
 
     caloriesBurn: integer({
+      validation: { min: 0 },
       ui: {
         description: "Estimated calories burned per session",
       },

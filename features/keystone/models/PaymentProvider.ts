@@ -50,8 +50,14 @@ export const PaymentProvider = list({
       },
     }),
     adapterKey: text({
-      validation: { isRequired: true },
-      ui: { description: "Registered server-side adapter key, such as stripe or manual." },
+      validation: {
+        isRequired: true,
+        match: {
+          regex: /^stripe$/,
+          explanation: "Gym production payments support only the registered Stripe adapter.",
+        },
+      },
+      ui: { description: "Registered production adapter key. Synthetic test adapters are never persisted." },
     }),
     providerAccountId: text({
       isIndexed: true,

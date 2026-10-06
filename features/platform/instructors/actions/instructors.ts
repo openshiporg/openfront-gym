@@ -1,7 +1,10 @@
 "use server";
 import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
 
-export async function prepareInstructorClaim(instructorId: string, email: string) {
+export async function prepareInstructorClaim(instructorId: string, email: string): Promise<
+  | { success: true; data: { email: string } }
+  | { success: false; error: string }
+> {
   const prepared = await keystoneClient<{
     prepareInstructorAccount: { email: string };
   }>(`
@@ -9,7 +12,9 @@ export async function prepareInstructorClaim(instructorId: string, email: string
       prepareInstructorAccount(instructorId: $instructorId, email: $email) { userId email }
     }
   `, { instructorId, email });
-  if (!prepared.success) throw new Error(prepared.error);
+  if (!prepared.success) {
+    return { success: false, error: "The instructor account could not be prepared. Verify the coach email and try again." };
+  }
 
   const normalizedEmail = prepared.data.prepareInstructorAccount.email;
   const reset = await keystoneClient(`
@@ -18,9 +23,9 @@ export async function prepareInstructorClaim(instructorId: string, email: string
     }
   `, { email: normalizedEmail });
   if (!reset.success) {
-    throw new Error("The coach email was saved, but the claim link could not be sent. Retry this action.");
+    return { success: false, error: "The coach email was saved, but the claim link could not be sent. Retry after email delivery is configured." };
   }
-  return prepared.data.prepareInstructorAccount;
+  return { success: true, data: prepared.data.prepareInstructorAccount };
 }
 
 export async function saveInstructor(data: Record<string, unknown>, id?: string | null) {

@@ -58,10 +58,10 @@ export default function ProfileForm({ user }: ProfileFormProps) {
       </div>
 
       {state?.error ? (
-        <p className="border border-red-700/25 bg-red-50 px-4 py-3 text-sm text-red-900">{state.error}</p>
+        <p role="alert" className="sf-status-error px-4 py-3 text-sm">{state.error}</p>
       ) : null}
       {state?.success ? (
-        <p className="flex items-center gap-2 border border-emerald-700/25 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        <p role="status" className="sf-status-success flex items-center gap-2 px-4 py-3 text-sm">
           <CheckCircle2 className="h-4 w-4" /> Profile updated
         </p>
       ) : null}

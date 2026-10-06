@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react"
 import { useForm } from "react-hook-form"
 import { User, Phone, Mail, Calendar, Shield, Heart, Save, X, Edit2 } from "lucide-react"
@@ -10,7 +11,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Textarea } from "@/components/ui/textarea"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
-import { formatMajorUnits } from "@/features/platform/lib/currency"
 import { getMemberProfileAction, updateMemberProfileAction } from "../actions/member-experience"
 
 interface MemberProfile {
@@ -48,9 +48,10 @@ export default function MemberProfilePage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<ProfileFormData>()
+  const { register, handleSubmit, reset, formState: { errors, dirtyFields } } = useForm<ProfileFormData>()
 
   const fetchProfile = useCallback(async () => {
     setIsLoading(true)
@@ -83,25 +84,28 @@ export default function MemberProfilePage() {
 
   const onSubmit = async (formData: ProfileFormData) => {
     setIsSaving(true)
+    setSaveMessage("")
     try {
       await updateMemberProfileAction({
         name: formData.name,
         phone: formData.phone,
-        dateOfBirth: formData.dateOfBirth,
-        emergencyContactName: formData.emergencyContactName,
-        emergencyContactPhone: formData.emergencyContactPhone,
-        healthNotes: {
+        ...(dirtyFields.dateOfBirth ? { dateOfBirth: formData.dateOfBirth } : {}),
+        ...(dirtyFields.emergencyContactName ? { emergencyContactName: formData.emergencyContactName } : {}),
+        ...(dirtyFields.emergencyContactPhone ? { emergencyContactPhone: formData.emergencyContactPhone } : {}),
+        ...(dirtyFields.healthConditions || dirtyFields.healthInjuries || dirtyFields.healthNotes ? { healthNotes: {
           conditions: formData.healthConditions.split(",").map(s => s.trim()).filter(Boolean),
           injuries: formData.healthInjuries.split(",").map(s => s.trim()).filter(Boolean),
           notes: formData.healthNotes,
-        },
+        } } : {}),
       })
 
       toast.success("Profile updated successfully")
+      setSaveMessage("Your profile has been updated.")
       setIsEditing(false)
       fetchProfile()
     } catch (err: any) {
       toast.error(err.message)
+      setSaveMessage(err.message || "Your changes could not be saved. Please try again.")
     } finally {
       setIsSaving(false)
     }
@@ -109,8 +113,8 @@ export default function MemberProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background p-4 md:p-8">
-        <div className="max-w-4xl mx-auto space-y-6">
+      <div className="sf-page" aria-label="Loading member profile">
+        <div className="sf-container max-w-4xl space-y-6">
           <Skeleton className="h-8 w-48" />
           <div className="grid gap-6 md:grid-cols-2">
             <Skeleton className="h-64" />
@@ -123,8 +127,8 @@ export default function MemberProfilePage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="max-w-md">
+      <div className="sf-page">
+        <Card className="sf-container max-w-md">
           <CardContent className="pt-6 text-center">
             <p className="text-destructive mb-4">{error}</p>
             <Button onClick={fetchProfile}>Try Again</Button>
@@ -141,10 +145,10 @@ export default function MemberProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">My Profile</h1>
+    <div className="sf-page">
+      <div className="sf-container max-w-4xl space-y-8"><Link href="/account/profile" className="sf-link">← Account profile</Link>{saveMessage && <p role="status" className="sf-notice">{saveMessage}</p>}
+        <div className="flex flex-col gap-5 border-b border-[var(--sf-border)] pb-8 sm:flex-row sm:items-end sm:justify-between">
+          <div><p className="sf-eyebrow mb-3">Member details</p><h1 className="sf-display text-5xl sm:text-6xl">My profile</h1></div>
           {!isEditing ? (
             <Button onClick={() => setIsEditing(true)} variant="outline" className="gap-2">
               <Edit2 className="w-4 h-4" />
@@ -152,7 +156,7 @@ export default function MemberProfilePage() {
             </Button>
           ) : (
             <div className="flex gap-2">
-              <Button onClick={() => { setIsEditing(false); fetchProfile() }} variant="outline" className="gap-2">
+              <Button disabled={isSaving} onClick={() => { setIsEditing(false); fetchProfile() }} variant="outline" className="gap-2">
                 <X className="w-4 h-4" />
                 Cancel
               </Button>
@@ -165,7 +169,7 @@ export default function MemberProfilePage() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <Card>
+          <Card className="border-[var(--sf-border)] bg-[var(--sf-surface)] shadow-none">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-6">
                 <div className="relative">
@@ -211,10 +215,10 @@ export default function MemberProfilePage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground">Full Name</label>
+                  <label htmlFor="profile-name" className="text-sm font-medium text-muted-foreground">Full Name</label>
                   {isEditing ? (
                     <Input
-                      {...register("name", { required: "Name is required" })}
+                      id="profile-name" {...register("name", { required: "Name is required" })}
                       className="mt-1"
                     />
                   ) : (
@@ -229,20 +233,19 @@ export default function MemberProfilePage() {
                     Email
                   </label>
                   <p className="mt-1">{profile.email}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Contact support to change email</p>
+                  <p className="text-xs text-muted-foreground mt-1">Manage your email in Account → Profile</p>
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <label htmlFor="profile-phone" className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <Phone className="w-4 h-4" />
                     Phone
                   </label>
                   {isEditing ? (
                     <Input
-                      {...register("phone")}
+                      id="profile-phone" {...register("phone")}
                       type="tel"
                       className="mt-1"
-                      placeholder="(555) 123-4567"
                     />
                   ) : (
                     <p className="mt-1">{profile.phone || "Not provided"}</p>
@@ -250,13 +253,13 @@ export default function MemberProfilePage() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <label htmlFor="profile-dateOfBirth" className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
                     Date of Birth
                   </label>
                   {isEditing ? (
                     <Input
-                      {...register("dateOfBirth")}
+                      id="profile-dateOfBirth" {...register("dateOfBirth")}
                       type="date"
                       className="mt-1"
                     />
@@ -283,10 +286,10 @@ export default function MemberProfilePage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground">Contact Name</label>
+                  <label htmlFor="profile-emergencyContactName" className="text-sm font-medium text-muted-foreground">Contact Name</label>
                   {isEditing ? (
                     <Input
-                      {...register("emergencyContactName")}
+                      id="profile-emergencyContactName" {...register("emergencyContactName")}
                       className="mt-1"
                       placeholder="Jane Doe"
                     />
@@ -296,13 +299,12 @@ export default function MemberProfilePage() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-medium text-muted-foreground">Contact Phone</label>
+                  <label htmlFor="profile-emergencyContactPhone" className="text-sm font-medium text-muted-foreground">Contact Phone</label>
                   {isEditing ? (
                     <Input
-                      {...register("emergencyContactPhone")}
+                      id="profile-emergencyContactPhone" {...register("emergencyContactPhone")}
                       type="tel"
                       className="mt-1"
-                      placeholder="(555) 123-4567"
                     />
                   ) : (
                     <p className="mt-1">{profile.emergencyContactPhone || "Not provided"}</p>
@@ -319,17 +321,17 @@ export default function MemberProfilePage() {
                 Health Information
               </CardTitle>
               <CardDescription>
-                Help us provide better service by sharing relevant health information
+                Optional. Review the club’s purpose and record health consent before sharing information.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4"><Link href="/account/participation" className="sf-link">Review health consent and privacy →</Link>
               <div>
-                <label className="text-sm font-medium text-muted-foreground">
+                <label htmlFor="profile-healthConditions" className="text-sm font-medium text-muted-foreground">
                   Medical Conditions (comma-separated)
                 </label>
                 {isEditing ? (
                   <Input
-                    {...register("healthConditions")}
+                    id="profile-healthConditions" {...register("healthConditions")}
                     className="mt-1"
                     placeholder="e.g., Asthma, Diabetes"
                   />
@@ -343,12 +345,12 @@ export default function MemberProfilePage() {
               </div>
 
               <div>
-                <label className="text-sm font-medium text-muted-foreground">
+                <label htmlFor="profile-healthInjuries" className="text-sm font-medium text-muted-foreground">
                   Current Injuries (comma-separated)
                 </label>
                 {isEditing ? (
                   <Input
-                    {...register("healthInjuries")}
+                    id="profile-healthInjuries" {...register("healthInjuries")}
                     className="mt-1"
                     placeholder="e.g., Lower back pain, Knee injury"
                   />
@@ -362,12 +364,12 @@ export default function MemberProfilePage() {
               </div>
 
               <div>
-                <label className="text-sm font-medium text-muted-foreground">
+                <label htmlFor="profile-healthNotes" className="text-sm font-medium text-muted-foreground">
                   Additional Notes
                 </label>
                 {isEditing ? (
                   <Textarea
-                    {...register("healthNotes")}
+                    id="profile-healthNotes" {...register("healthNotes")}
                     className="mt-1"
                     rows={3}
                     placeholder="Any other health information trainers should know..."
@@ -394,7 +396,7 @@ export default function MemberProfilePage() {
                   </p>
                   {profile.membershipTier && (
                     <p className="text-sm text-muted-foreground">
-                      {formatMajorUnits(profile.membershipTier.monthlyPrice, "USD")}/month
+                      <Link href="/account/membership" className="sf-link">View accepted price and terms</Link>
                     </p>
                   )}
                 </div>

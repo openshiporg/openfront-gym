@@ -39,6 +39,7 @@ type ScheduleTemplate = {
   maxCapacity: number
   isActive: boolean
   instructor?: { id: string; user?: { id: string; name?: string | null; email?: string | null } | null } | null
+  classType?: { id: string; name?: string | null } | null
 }
 
 type InstructorOption = {
@@ -60,6 +61,7 @@ type UpcomingInstance = {
     startTime: string
     endTime: string
     maxCapacity: number
+    instructor?: { id: string; user?: { name?: string | null } | null } | null
   } | null
   instructor?: { id: string; user?: { name?: string | null } | null } | null
 }
@@ -68,6 +70,9 @@ interface SchedulingClientProps {
   initialEvents: Event[]
   schedules: ScheduleTemplate[]
   instructors: InstructorOption[]
+  locations: any[]
+  resources: any[]
+  classTypes: Array<{ id: string; name?: string | null }>
   upcomingInstances: UpcomingInstance[]
   timeZone: string
   isInstructor?: boolean
@@ -78,6 +83,9 @@ export function SchedulingClient({
   initialEvents,
   schedules,
   instructors,
+  classTypes,
+  locations,
+  resources,
   upcomingInstances,
   timeZone,
   isInstructor = false,
@@ -199,7 +207,7 @@ export function SchedulingClient({
                     <div>
                       <p className="text-sm font-semibold">{schedule.name}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {schedule.dayOfWeek} · {schedule.startTime}–{schedule.endTime}
+                        {schedule.classType?.name || 'Class type not assigned'} · {schedule.dayOfWeek} · {schedule.startTime}–{schedule.endTime}
                       </p>
                     </div>
                     <Badge variant="outline">{schedule.maxCapacity} cap</Badge>
@@ -249,7 +257,7 @@ export function SchedulingClient({
                     </Link>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-4 text-xs text-muted-foreground">
-                    <span>{instance.instructor?.user?.name || 'TBA'}</span>
+                    <span>{instance.instructor?.user?.name || instance.classSchedule?.instructor?.user?.name || 'TBA'}</span>
                     <span>{instance.bookingsCount || 0}/{instance.maxCapacity || instance.classSchedule?.maxCapacity || 0}</span>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-3">
@@ -299,10 +307,15 @@ export function SchedulingClient({
           setIsCreateScheduleOpen(open)
         }}
         instructors={instructors}
+        classTypes={classTypes}
+        locations={locations}
+        resources={resources}
         schedule={editingSchedule}
           />
 
           <InstanceEditorDialog
+            locations={locations}
+            resources={resources}
             open={isCreateInstanceOpen}
             onOpenChange={(open) => {
               setIsCreateInstanceOpen(open)
@@ -312,6 +325,7 @@ export function SchedulingClient({
             instructors={instructors}
             defaultSchedule={defaultScheduleForInstance}
             instance={editingInstance as any}
+            timeZone={timeZone}
           />
         </>
       ) : null}

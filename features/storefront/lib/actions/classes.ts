@@ -65,7 +65,7 @@ function bookingFailure(message: string, classInstanceId: string): BookClassResu
     return {
       success: false,
       code: "CREDITS_REQUIRED",
-      error: "Your current plan has no class credits remaining.",
+      error: "No eligible class credits are available for this session’s date.",
       actionHref: "/account/membership",
       actionLabel: "Review membership",
     };
@@ -99,13 +99,34 @@ export async function bookClass(classInstanceId: string): Promise<BookClassResul
 
     // Resolve User.id from session
     const { authenticatedItem } = await gymClient.request<any>(
-      gql`query { authenticatedItem { ... on User { id organization { id } } } }`,
+      gql`query {
+        authenticatedItem {
+          ... on User {
+            id
+            organization { id }
+            membership {
+              status
+              classCreditsRemaining
+              tier { classCreditsPerMonth }
+            }
+          }
+        }
+      }`,
       {},
       headers
     );
     const userId: string | undefined = authenticatedItem?.id;
     const organizationId: string | undefined = authenticatedItem?.organization?.id;
     if (!userId || !organizationId) return bookingFailure("Session expired", classInstanceId);
+    const membership = authenticatedItem?.membership;
+    if (!membership || membership.status !== "active") {
+      if (membership && ["frozen", "past-due"].includes(membership.status)) {
+        return { success: false, code: "MEMBERSHIP_REQUIRED", error: "Your membership needs attention before this session can be booked.", actionHref: "/account/membership", actionLabel: "Review your membership" };
+      }
+      return bookingFailure("No active membership found", classInstanceId);
+    }
+    // The domain mutation refreshes service-month credits for the session date.
+    // A cached balance or today’s tier must not reject a valid booking here.
 
     // Look up Member record for this user
     const memberResult = await gymClient.request<{ members: Array<{ id: string }> }>(

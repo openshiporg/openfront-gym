@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { GraduationCap, Plus, Save, UserRound } from 'lucide-react'
 import { prepareInstructorClaim, saveInstructor as saveInstructorRecord } from '../actions/instructors'
+import { isConfiguredPublicEmail } from '@/features/storefront/lib/contact-config'
 
 type InstructorRecord = {
   id?: string
@@ -128,9 +129,18 @@ export function InstructorsPage({
     if (!form.id) return
     setError(null)
     setClaimNotice(null)
+    if (!isConfiguredPublicEmail(form.accountEmail)) {
+      setError("Enter the coach's real email address before sending a claim link.")
+      return
+    }
     setIsInviting(true)
     try {
-      const claimed = await prepareInstructorClaim(form.id, form.accountEmail)
+      const result = await prepareInstructorClaim(form.id, form.accountEmail)
+      if (!result.success) {
+        setError(result.error)
+        return
+      }
+      const claimed = result.data
       setForm((current) => ({ ...current, accountEmail: claimed.email }))
       setInstructors((current) => current.map((instructor) =>
         instructor.id === form.id
@@ -316,7 +326,7 @@ export function InstructorsPage({
                     {isInviting ? 'Sending…' : 'Save email & send claim link'}
                   </Button>
                 </div>
-                {claimNotice ? <p className="mt-2 text-xs text-emerald-600">{claimNotice}</p> : null}
+                {claimNotice ? <p role="status" className="mt-2 text-xs text-emerald-600">{claimNotice}</p> : null}
               </div>
             ) : null}
             <div className="px-5 py-3">
@@ -355,7 +365,7 @@ export function InstructorsPage({
           </div>
 
           {error && (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}

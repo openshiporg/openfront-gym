@@ -1,7 +1,10 @@
 import crypto from "node:crypto";
-import seed from "../../platform/onboarding/lib/seed.json";
+import seed from "../onboarding/seed.json";
+import { parseGymOnboardingSeed, type GymOnboardingSeed } from "../onboarding/onboardingSchema";
 import { upsertGymSettings } from "./gymSettingsLifecycle";
+import { updateCapacityControlledClassScheduleInTransaction } from "./classCapacity";
 import { futureLocalOccurrence, localWeekdayAtOffset, normalizeTimeZone } from "../../../lib/timezone";
+import { guardKeystonePrismaResults, requirePrismaAffectedCount } from "../lib/prisma-result";
 
 const dayNumbers: Record<string, number> = {
   sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
@@ -44,35 +47,62 @@ function dateForSchedule(dayOfWeek: string, startTime: string, offset: number, n
   return futureLocalOccurrence(now, timeZone, offset, hours || 0, minutes || 0);
 }
 
+export function resolveOnboardingSeed(template: string, customData?: unknown): GymOnboardingSeed {
+  if (!['minimal', 'full', 'custom'].includes(template)) throw new Error('Unknown onboarding template');
+  if (template === 'custom') {
+    if (customData == null) throw new Error('Custom onboarding requires a configuration');
+    return parseGymOnboardingSeed(customData);
+  }
+
+  const canonical = parseGymOnboardingSeed(seed);
+  if (template === 'full') return canonical;
+  const classTypes = canonical.classTypes.filter((item) => item.handle === 'yoga');
+  const classTypeHandles = new Set(classTypes.map((item) => item.handle));
+  const instructors = canonical.instructors
+    .filter((item) => item.handle === 'sarah-johnson')
+    .map((item) => ({
+      ...item,
+      teachesClassTypes: item.teachesClassTypes.filter((classTypeHandle) => classTypeHandles.has(classTypeHandle)),
+    }));
+  const instructorHandles = new Set(instructors.map((item) => item.handle));
+  return {
+    ...canonical,
+    membershipTiers: canonical.membershipTiers.filter((item) => item.handle === 'basic-monthly'),
+    classTypes,
+    instructors,
+    schedules: canonical.schedules.filter(
+      (item) => classTypeHandles.has(item.classTypeHandle) && instructorHandles.has(item.instructorHandle),
+    ),
+  };
+}
+
 export async function runDeterministicOnboarding(
   _root: unknown,
-  args: { template?: string | null },
+  args: { template: string; data?: unknown },
   context: any,
 ) {
-  const template = args.template === "full" ? "full" : "minimal";
-  const membershipTiers = (seed.membershipTiers as any[]).filter(
-    (tier) => template === "full" || tier.handle === "basic-monthly",
-  );
-  const classTypesSeed = (seed.classTypes as any[]).filter(
-    (classType) => template === "full" || classType.handle === "yoga",
-  );
-  const instructorsSeed = (seed.instructors as any[]).filter(
-    (instructor) => template === "full" || instructor.handle === "sarah-johnson",
-  );
-  const classTypeHandles = new Set(classTypesSeed.map((classType) => classType.handle));
-  const instructorHandles = new Set(instructorsSeed.map((instructor) => instructor.handle));
-  const schedulesSeed = (seed.schedules as any[]).filter(
-    (schedule) => classTypeHandles.has(schedule.classTypeHandle) && instructorHandles.has(schedule.instructorHandle),
-  );
+  const template = args.template;
+  const onboardingSeed = resolveOnboardingSeed(template, args.data);
+  const membershipTiers = onboardingSeed.membershipTiers;
+  const classTypesSeed = onboardingSeed.classTypes;
+  const instructorsSeed = onboardingSeed.instructors;
+  const schedulesSeed = onboardingSeed.schedules;
   const { userId, organizationId } = actorOrganization(context);
-  const prisma = context.prisma;
+  // Stateless sessions retain role snapshots; revalidate the current relationship before sudo or writes.
+  const actorUser = await context.query.User.findOne({
+    where: { id: userId },
+    query: "id onboardingStatus organization { id } role { id canManageOnboarding organization { id } }",
+  });
+  if (!actorUser || actorUser.organization?.id !== organizationId) throw new Error("Onboarding actor organization mismatch");
+  if (actorUser.role?.organization?.id !== organizationId || !actorUser.role?.canManageOnboarding) {
+    throw new Error("Onboarding management permission required");
+  }
+  if (actorUser.onboardingStatus === "dismissed") throw new Error("Dismissed onboarding must be restarted from the dashboard");
+
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
   const sudo = context.sudo();
   const now = new Date();
-  const timeZone = normalizeTimeZone((seed.gymSettings as any).timezone || "UTC");
-
-  const actorUser = await prisma.user.findUnique({ where: { id: userId }, select: { onboardingStatus: true, organizationId: true } });
-  if (!actorUser || actorUser.organizationId !== organizationId) throw new Error("Onboarding actor organization mismatch");
-  if (actorUser.onboardingStatus === "dismissed") throw new Error("Dismissed onboarding must be restarted from the dashboard");
+  const timeZone = normalizeTimeZone(onboardingSeed.gymSettings.timezone || "UTC");
   if (actorUser.onboardingStatus !== "in_progress" && actorUser.onboardingStatus !== "completed") {
     await prisma.user.update({ where: { id: userId }, data: { onboardingStatus: "in_progress" } });
   }
@@ -97,6 +127,7 @@ export async function runDeterministicOnboarding(
   const runState = await prisma.onboardingRun.findUnique({ where: { organizationId }, select: { id: true, status: true, completedAt: true } });
   const stateRunId = requiredSeedId(runState?.id, "onboarding run state id");
   if (runState?.status === "completed" && runState.completedAt) {
+    await prisma.user.update({ where: { id: userId }, data: { onboardingStatus: "completed" } });
     const instanceCount = await sudo.query.ClassInstance.count({ where: tenantWhere(organizationId) });
     return { success: true, organizationId, runId: stateRunId, instanceCount };
   }
@@ -121,6 +152,7 @@ export async function runDeterministicOnboarding(
       const current = await prisma.onboardingRun.findUnique({ where: { organizationId }, select: { id: true, status: true, completedAt: true, leaseUntil: true } });
       if (current?.status === "completed" && current.completedAt) {
         const currentRunId = requiredSeedId(current.id, "completed onboarding run id");
+        await prisma.user.update({ where: { id: userId }, data: { onboardingStatus: "completed" } });
         const completedInstances = await sudo.query.ClassInstance.count({ where: tenantWhere(organizationId) });
         return { success: true, organizationId, runId: currentRunId, instanceCount: completedInstances };
       }
@@ -134,9 +166,9 @@ export async function runDeterministicOnboarding(
     const org = await sudo.query.Organization.findOne({ where: { id: organizationId }, query: "id" });
     if (!org) throw new Error("Onboarding organization not found");
 
-    await upsertGymSettings(null, { data: seed.gymSettings as any }, context);
+    await upsertGymSettings(null, { data: onboardingSeed.gymSettings as any }, context);
 
-    const locationSeed = seed.location as any;
+    const locationSeed = onboardingSeed.location as any;
     let location = await one(sudo.query.Location, tenantWhere(organizationId, { name: { equals: locationSeed.name } }), "id name");
     const locationData = { ...locationSeed, organization: { connect: { id: organizationId } } };
     if (location) location = await sudo.query.Location.updateOne({ where: { id: location.id }, data: locationData, query: "id name" });
@@ -144,24 +176,24 @@ export async function runDeterministicOnboarding(
 
     const tiers: Record<string, string> = {};
     for (const tier of membershipTiers) {
-      const data = { ...tier, description: documentValue(tier.description), organization: { connect: { id: organizationId } } };
-      delete data.handle;
+      const { handle: tierHandle, ...tierInput } = tier;
+      const data = { ...tierInput, description: documentValue(tier.description), organization: { connect: { id: organizationId } } };
       let row = await one(sudo.query.MembershipTier, tenantWhere(organizationId, { name: { equals: tier.name } }), "id name");
       row = row
         ? await sudo.query.MembershipTier.updateOne({ where: { id: row.id }, data, query: "id name" })
         : await sudo.query.MembershipTier.createOne({ data, query: "id name" });
-      tiers[tier.handle] = row.id;
+      tiers[tierHandle] = row.id;
     }
 
     const classTypes: Record<string, string> = {};
     for (const classType of classTypesSeed) {
-      const data = { ...classType, description: documentValue(classType.description), organization: { connect: { id: organizationId } } };
-      delete data.handle;
+      const { handle: classTypeHandle, ...classTypeInput } = classType;
+      const data = { ...classTypeInput, description: documentValue(classType.description), organization: { connect: { id: organizationId } } };
       let row = await one(sudo.query.ClassType, tenantWhere(organizationId, { name: { equals: classType.name } }), "id name");
       row = row
         ? await sudo.query.ClassType.updateOne({ where: { id: row.id }, data, query: "id name" })
         : await sudo.query.ClassType.createOne({ data, query: "id name" });
-      classTypes[classType.handle] = row.id;
+      classTypes[classTypeHandle] = row.id;
     }
 
     if (
@@ -175,7 +207,7 @@ export async function runDeterministicOnboarding(
       name: "Instructor", canCreateRecords: false, canManageAllRecords: false,
       canSeeOtherPeople: false, canEditOtherPeople: false, canManagePeople: false,
       canManageRoles: false, canAccessDashboard: true, canManageOnboarding: false,
-      canManageSettings: false, canManageAppointments: false, canManageFacilities: false,
+      canManageSettings: false, canManageAppointments: false, canManageCheckIns: false, canManageFacilities: false,
       canManagePrograms: false, canManageCommunications: false, canManageRetail: false,
       canManagePayroll: false, canViewReports: false, isInstructor: true,
       organization: { connect: { id: organizationId } },
@@ -223,17 +255,33 @@ export async function runDeterministicOnboarding(
     for (const schedule of schedulesSeed) {
       const instructorId = requiredSeedId(instructors[schedule.instructorHandle], `instructor ${schedule.instructorHandle}`);
       const classTypeId = requiredSeedId(classTypes[schedule.classTypeHandle], `class type ${schedule.classTypeHandle}`);
+      const { instructorHandle: _instructorHandle, classTypeHandle: _classTypeHandle, ...scheduleInput } = schedule;
       const data = {
-        ...schedule,
+        ...scheduleInput,
         organization: { connect: { id: organizationId } },
         instructor: { connect: { id: instructorId } },
         classType: { connect: { id: classTypeId } },
       };
-      delete data.instructorHandle; delete data.classTypeHandle;
       let row = await one(sudo.query.ClassSchedule, tenantWhere(organizationId, { name: { equals: schedule.name }, dayOfWeek: { equals: schedule.dayOfWeek }, startTime: { equals: schedule.startTime }, instructor: { id: { equals: instructorId } } }), "id");
-      row = row
-        ? await sudo.query.ClassSchedule.updateOne({ where: { id: row.id }, data, query: "id" })
-        : await sudo.query.ClassSchedule.createOne({ data, query: "id" });
+      if (row) {
+        const { maxCapacity, ...scheduleData } = data;
+        await context.transaction(async (txContext: any) => {
+          const transactionPrisma = guardKeystonePrismaResults(txContext.prisma as any);
+          await updateCapacityControlledClassScheduleInTransaction(transactionPrisma, {
+            classScheduleId: row.id,
+            maxCapacity,
+            organizationId,
+          }, async () => {
+            await txContext.sudo().query.ClassSchedule.updateOne({
+              where: { id: row.id },
+              data: scheduleData,
+              query: "id",
+            });
+          });
+        });
+      } else {
+        row = await sudo.query.ClassSchedule.createOne({ data, query: "id" });
+      }
       schedules.push({ id: row.id, dayOfWeek: schedule.dayOfWeek, startTime: schedule.startTime, maxCapacity: schedule.maxCapacity });
     }
 
@@ -276,7 +324,8 @@ export async function runDeterministicOnboarding(
       ? await sudo.query.PaymentProvider.updateOne({ where: { id: existingProviderId }, data: providerData, query: "id" })
       : await sudo.query.PaymentProvider.createOne({ data: providerData, query: "id" });
 
-    await prisma.onboardingRun.updateMany({ where: { organizationId, leaseToken }, data: { status: "completed", completedAt: new Date(), lastError: "", leaseUntil: null, leaseToken: "" } });
+    const completed = await prisma.onboardingRun.updateMany({ where: { organizationId, leaseToken }, data: { status: "completed", completedAt: new Date(), lastError: "", leaseUntil: null, leaseToken: "" } });
+    requirePrismaAffectedCount(completed, 1, "onboarding completion fence");
     await prisma.user.update({ where: { id: userId }, data: { onboardingStatus: "completed" } });
     return { success: true, organizationId, runId, instanceCount: instanceIds.length };
   } catch (error) {

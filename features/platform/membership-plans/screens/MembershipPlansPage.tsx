@@ -18,6 +18,7 @@ import { CreditCard, Plus, Save, ShieldCheck, Ticket, Users } from 'lucide-react
 import { formatMajorUnits } from '@/features/platform/lib/currency'
 import { saveMembershipPlan } from '../actions/membership-plans'
 import { membershipCheckoutReadiness } from '../actions/membership-plan-policy'
+import { validateMembershipPlanDraft } from '@/features/platform/lib/form-validation'
 
 type MembershipPlan = {
   id?: string
@@ -137,11 +138,16 @@ export function MembershipPlansPage({
 
   const savePlan = async () => {
     setError(null)
+    const validationError = validateMembershipPlanDraft(form)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
     setIsSaving(true)
 
     try {
       const data: any = {
-        name: form.name,
+        name: form.name.trim(),
         description: toDocument(form.description),
         monthlyPrice: Number(form.monthlyPrice || 0),
         annualPrice: Number(form.annualPrice || 0),
@@ -277,13 +283,13 @@ export function MembershipPlansPage({
             </div>
             <div className="grid grid-cols-2 divide-x divide-border">
               <div className="px-5 py-3">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Plan name</p>
-                <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Premium Monthly" className="mt-1.5" />
+                <label htmlFor="plan-name" className="text-[11px] uppercase tracking-wider text-muted-foreground">Plan name</label>
+                <Input id="plan-name" required aria-invalid={Boolean(error && !form.name.trim())} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Premium Monthly" className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Billing interval</p>
                 <Select value={form.billingInterval} onValueChange={(value) => setForm((f) => ({ ...f, billingInterval: value }))}>
-                  <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                  <SelectTrigger aria-label="Billing interval" className="mt-1.5"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="monthly">Monthly</SelectItem>
                     <SelectItem value="quarterly">Quarterly</SelectItem>
@@ -294,11 +300,11 @@ export function MembershipPlansPage({
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Public description</p>
-              <Textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Describe who this plan is for and what it includes." className="mt-1.5 min-h-[110px]" />
+              <Textarea aria-label="Public description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Describe who this plan is for and what it includes." className="mt-1.5 min-h-[110px]" />
             </div>
             <div className="px-5 py-3">
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Feature bullets</p>
-              <Textarea value={form.features} onChange={(e) => setForm((f) => ({ ...f, features: e.target.value }))} placeholder="One feature per line" className="mt-1.5 min-h-[120px]" />
+              <Textarea aria-label="Feature bullets" value={form.features} onChange={(e) => setForm((f) => ({ ...f, features: e.target.value }))} placeholder="One feature per line" className="mt-1.5 min-h-[120px]" />
             </div>
           </div>
 
@@ -310,19 +316,19 @@ export function MembershipPlansPage({
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-border">
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Monthly price</p>
-                <Input type="number" step="0.01" value={form.monthlyPrice} onChange={(e) => setForm((f) => ({ ...f, monthlyPrice: Number(e.target.value) }))} className="mt-1.5" />
+                <Input aria-label="Monthly price" type="number" min={0} step="0.01" value={form.monthlyPrice} onChange={(e) => setForm((f) => ({ ...f, monthlyPrice: Number(e.target.value) }))} className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Annual price</p>
-                <Input type="number" step="0.01" value={form.annualPrice} onChange={(e) => setForm((f) => ({ ...f, annualPrice: Number(e.target.value) }))} className="mt-1.5" />
+                <Input aria-label="Annual price" type="number" min={0} step="0.01" value={form.annualPrice} onChange={(e) => setForm((f) => ({ ...f, annualPrice: Number(e.target.value) }))} className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Class credits</p>
-                <Input type="number" value={form.classCreditsPerMonth} onChange={(e) => setForm((f) => ({ ...f, classCreditsPerMonth: Number(e.target.value) }))} className="mt-1.5" />
+                <Input aria-label="Class credits per month" type="number" min={-1} value={form.classCreditsPerMonth} onChange={(e) => setForm((f) => ({ ...f, classCreditsPerMonth: Number(e.target.value) }))} className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Access hours</p>
-                <Input value={form.accessHours} onChange={(e) => setForm((f) => ({ ...f, accessHours: e.target.value }))} placeholder="24/7 or 6am-10pm" className="mt-1.5" />
+                <Input aria-label="Access hours" value={form.accessHours} onChange={(e) => setForm((f) => ({ ...f, accessHours: e.target.value }))} placeholder="24/7 or 6am-10pm" className="mt-1.5" />
               </div>
             </div>
           </div>
@@ -338,19 +344,19 @@ export function MembershipPlansPage({
             <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-border">
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Guest passes</p>
-                <Input type="number" value={form.guestPasses} onChange={(e) => setForm((f) => ({ ...f, guestPasses: Number(e.target.value) }))} className="mt-1.5" />
+                <Input aria-label="Guest passes" type="number" min={0} value={form.guestPasses} onChange={(e) => setForm((f) => ({ ...f, guestPasses: Number(e.target.value) }))} className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">PT sessions</p>
-                <Input type="number" value={form.personalTrainingSessions} onChange={(e) => setForm((f) => ({ ...f, personalTrainingSessions: Number(e.target.value) }))} className="mt-1.5" />
+                <Input aria-label="Personal training sessions" type="number" min={0} value={form.personalTrainingSessions} onChange={(e) => setForm((f) => ({ ...f, personalTrainingSessions: Number(e.target.value) }))} className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Contract length</p>
-                <Input type="number" value={form.contractLength} onChange={(e) => setForm((f) => ({ ...f, contractLength: Number(e.target.value) }))} className="mt-1.5" />
+                <Input aria-label="Contract length in months" type="number" min={0} value={form.contractLength} onChange={(e) => setForm((f) => ({ ...f, contractLength: Number(e.target.value) }))} className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Max active bookings</p>
-                <Input type="number" value={form.maxClassBookings} onChange={(e) => setForm((f) => ({ ...f, maxClassBookings: Number(e.target.value) }))} className="mt-1.5" />
+                <Input aria-label="Maximum active bookings" type="number" min={0} value={form.maxClassBookings} onChange={(e) => setForm((f) => ({ ...f, maxClassBookings: Number(e.target.value) }))} className="mt-1.5" />
               </div>
             </div>
             <div className="grid grid-cols-2 divide-x divide-border">
@@ -359,14 +365,14 @@ export function MembershipPlansPage({
                   <p className="text-sm font-medium">Freeze allowed</p>
                   <p className="text-xs text-muted-foreground">Allow members to temporarily freeze the membership.</p>
                 </div>
-                <Switch checked={form.freezeAllowed} onCheckedChange={(checked) => setForm((f) => ({ ...f, freezeAllowed: checked }))} />
+                <Switch aria-label="Freeze allowed" checked={form.freezeAllowed} onCheckedChange={(checked) => setForm((f) => ({ ...f, freezeAllowed: checked }))} />
               </div>
               <div className="px-5 py-4 flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium">Guest privileges</p>
                   <p className="text-xs text-muted-foreground">Expose guest access behavior as part of the plan.</p>
                 </div>
-                <Switch checked={form.hasGuestPrivileges} onCheckedChange={(checked) => setForm((f) => ({ ...f, hasGuestPrivileges: checked }))} />
+                <Switch aria-label="Guest privileges" checked={form.hasGuestPrivileges} onCheckedChange={(checked) => setForm((f) => ({ ...f, hasGuestPrivileges: checked }))} />
               </div>
             </div>
           </div>
@@ -380,21 +386,21 @@ export function MembershipPlansPage({
             <div className="grid grid-cols-1 md:grid-cols-3 divide-x divide-border">
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Stripe product ID</p>
-                <Input value={form.stripeProductId} onChange={(e) => setForm((f) => ({ ...f, stripeProductId: e.target.value }))} placeholder="prod_..." className="mt-1.5" />
+                <Input aria-label="Stripe product ID" value={form.stripeProductId} onChange={(e) => setForm((f) => ({ ...f, stripeProductId: e.target.value }))} placeholder="prod_..." className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Monthly price ID</p>
-                <Input value={form.stripeMonthlyPriceId} onChange={(e) => setForm((f) => ({ ...f, stripeMonthlyPriceId: e.target.value }))} placeholder="price_..." className="mt-1.5" />
+                <Input aria-label="Monthly Stripe price ID" value={form.stripeMonthlyPriceId} onChange={(e) => setForm((f) => ({ ...f, stripeMonthlyPriceId: e.target.value }))} placeholder="price_..." className="mt-1.5" />
               </div>
               <div className="px-5 py-3">
                 <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Annual price ID</p>
-                <Input value={form.stripeAnnualPriceId} onChange={(e) => setForm((f) => ({ ...f, stripeAnnualPriceId: e.target.value }))} placeholder="price_..." className="mt-1.5" />
+                <Input aria-label="Annual Stripe price ID" value={form.stripeAnnualPriceId} onChange={(e) => setForm((f) => ({ ...f, stripeAnnualPriceId: e.target.value }))} placeholder="price_..." className="mt-1.5" />
               </div>
             </div>
           </div>
 
           {error && (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
