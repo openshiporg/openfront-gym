@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AlertCircle,
   Dumbbell,
@@ -42,8 +42,8 @@ import { CustomSetupSteps } from './CustomSetupSteps';
 import { SectionRenderer } from './SectionRenderer';
 import { useOnboardingState } from '../hooks/useOnboardingState';
 import { useOnboardingApi } from '../hooks/useOnboardingApi';
-import { getItemsFromJsonData } from '../utils/dataUtils';
-import { GYM_TEMPLATES, SECTION_DEFINITIONS } from '../config/templates';
+import type { OnboardingReadiness } from '../actions/onboarding';
+import { SECTION_DEFINITIONS } from '../config/templates';
 
 // Stripe env var hint for gym membership payments
 const PAYMENT_ENV_VARS = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'];
@@ -127,6 +127,11 @@ function ActionButtons({
   );
 }
 
+const recordLabels: Record<string, string> = {
+  settings: 'Store Settings', location: 'Locations', membershipTier: 'Membership plans', classType: 'Class types',
+  instructor: 'Coaches', classSchedule: 'Weekly schedules', role: 'Coach role', paymentProvider: 'Stripe provider record',
+}
+
 const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) => {
   const onboardingState = useOnboardingState();
   const {
@@ -153,7 +158,9 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
     resetOnboardingState,
   } = onboardingState;
 
+  const [readiness, setReadiness] = useState<OnboardingReadiness | null>(null);
   const { runOnboarding } = useOnboardingApi({
+    setReadiness,
     selectedTemplate,
     currentJsonData,
     completedItems,
@@ -170,18 +177,6 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
   if (!isOpen) return null;
 
   const customNeedsConfiguration = selectedTemplate === 'custom' && !customJsonApplied;
-  const displayNames = currentJsonData
-    ? {
-        gymSettings: getItemsFromJsonData(currentJsonData, 'gymSettings'),
-        location: getItemsFromJsonData(currentJsonData, 'location'),
-        membershipTiers: getItemsFromJsonData(currentJsonData, 'membershipTiers'),
-        classTypes: getItemsFromJsonData(currentJsonData, 'classTypes'),
-        instructors: getItemsFromJsonData(currentJsonData, 'instructors'),
-        schedules: getItemsFromJsonData(currentJsonData, 'schedules'),
-        paymentProviders: getItemsFromJsonData(currentJsonData, 'paymentProviders'),
-      }
-    : GYM_TEMPLATES[selectedTemplate].displayNames;
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && !isLoading && onClose()}>
       <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-[95vw] flex-col overflow-hidden p-0 gap-0 sm:max-w-4xl">
@@ -215,64 +210,35 @@ const OnboardingDialog: React.FC<OnboardingDialogProps> = ({ isOpen, onClose }) 
 
                 {step === 'done' ? (
                   <>
-                    <h4 className="text-sm font-medium text-foreground mb-2">Setup Complete</h4>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Your {selectedTemplate === 'minimal' ? 'basic' : 'complete'} starter setup is ready to review. Replace sample business details before publishing.
-                    </p>
-                    <div className="flex items-center space-x-2 text-sm text-emerald-600 dark:text-emerald-500 mb-4">
-                      <CircleCheck className="h-4 w-4 fill-emerald-500 text-background" />
-                      <span>Setup complete</span>
-                    </div>
-                    <div className="space-y-3 text-sm">
-                      <div className="flex items-center space-x-2 text-muted-foreground">
-                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">
-                          {displayNames.gymSettings.length} gym profile{displayNames.gymSettings.length === 1 ? '' : 's'} configured
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-muted-foreground">
-                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">
-                          {displayNames.location.length} location{displayNames.location.length === 1 ? '' : 's'} created
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-muted-foreground">
-                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">
-                          {displayNames.membershipTiers.length} membership plan{displayNames.membershipTiers.length === 1 ? '' : 's'} created
-                        </span>
+                    <h4 className="text-sm font-medium text-foreground mb-2">{readiness?.ready ? 'Setup complete' : 'Starter records created'}</h4>
+                    {readiness && !readiness.ready ? <p className="mb-3 text-sm text-muted-foreground">Finish the required steps below before taking members.</p> : null}
+                    {readiness ? (
+                      <ul className="mb-4 space-y-1.5 text-sm" aria-label="Setup checklist">
+                        {readiness.steps.map((item) => (
+                          <li key={item.key} className="flex items-start gap-2">
+                            <CircleCheck className={item.done ? 'mt-0.5 h-4 w-4 shrink-0 fill-emerald-500 text-background' : 'mt-0.5 h-4 w-4 shrink-0 fill-muted text-muted-foreground'} aria-hidden />
+                            <span className={item.done ? 'text-muted-foreground' : 'text-foreground'}>
+                              {item.done ? item.label : <a href={item.href} className="underline underline-offset-2">{item.label}</a>}
+                              {!item.done && item.kind === 'optional' ? ' (optional)' : ''}
+                              {!item.done && item.kind === 'first-use' ? ' (starts with real use)' : ''}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {readiness?.records ? (
+                      <div className="space-y-1.5 text-sm text-muted-foreground" aria-label="What setup did">
+                        {Object.entries(recordLabels).map(([kind, label]) => {
+                          const created = readiness.records?.created[kind] ?? 0
+                          const kept = readiness.records?.adopted[kind] ?? 0
+                          if (!created && !kept) return null
+                          return <p key={kind}>{label}: {created} created{kept ? `, ${kept} kept from your existing setup` : ''}</p>
+                        })}
+                        {readiness.records.missing.length ? <p className="text-amber-700 dark:text-amber-400">{readiness.records.missing.length} setup record{readiness.records.missing.length === 1 ? ' is' : 's are'} no longer present.</p> : null}
+                        <p>Sample coaches have reserved placeholder emails and can&apos;t sign in. Replace sample business details before publishing. No payments, subscriptions or charges were created.</p>
                         <StripeEnvHint />
                       </div>
-                      <div className="flex items-center space-x-2 text-muted-foreground">
-                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">
-                          {displayNames.classTypes.length} class type{displayNames.classTypes.length === 1 ? '' : 's'} created
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-muted-foreground">
-                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">
-                          {displayNames.instructors.length} sample instructor{displayNames.instructors.length === 1 ? '' : 's'} created with reserved emails; replace each email before inviting a coach
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-muted-foreground">
-                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">
-                          {displayNames.schedules.length} recurring schedule{displayNames.schedules.length === 1 ? '' : 's'} created
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-muted-foreground">
-                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">Upcoming class instances generated for the next 14 days</span>
-                      </div>
-                      <div className="flex items-center space-x-2 text-muted-foreground">
-                        <CircleCheck className="h-4 w-4 fill-muted-foreground text-background" />
-                        <span className="font-medium">
-                          Stripe integration status created from server credential configuration, without payment methods, subscriptions, charges, or revenue
-                        </span>
-                        <StripeEnvHint />
-                      </div>
-                    </div>
+                    ) : null}
                   </>
                 ) : !isLoading ? (
                   <>

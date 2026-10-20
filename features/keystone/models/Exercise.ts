@@ -65,7 +65,6 @@ export const Exercise = list({
     muscleGroup: json({
       defaultValue: [],
       ui: {
-        views: './fields/json-view',
         description: 'Target muscle groups (stored as JSON array)',
       },
     }),

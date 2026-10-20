@@ -23,6 +23,10 @@ function boundedDate(value: unknown, label: string) {
   return date;
 }
 
+const EVENT_BATCH = 1000;
+const EVENT_MAX = 20_000;
+const OPTION_LIMIT = 500;
+
 export async function getSchedulingWorkspace(
   _root: unknown,
   { start, end, userId }: { start: string; end: string; userId?: string | null },
@@ -68,35 +72,45 @@ export async function getSchedulingWorkspace(
     ] });
   }
 
-  const [instances, schedules, instructors, classTypes, upcomingInstances, settings, organizations, locations, resources] = await Promise.all([
-    sudo.query.ClassInstance.findMany({
-      where: eventWhere,
-      take: 1000,
-      orderBy: [{ date: "asc" }],
-      query: `
-        id date endsAt isCancelled maxCapacity bookingsCount location { id name } resource { id name }
-        classSchedule { id name startTime endTime maxCapacity instructor { user { name } } }
-        instructor { user { name } }
-      `,
-    }),
+  // Every session in the requested window is read (in batches), so an empty day is a real one;
+  // past the safety bound the result says the window is incomplete.
+  const readEvents = async () => {
+    const rows: any[] = [];
+    for (let offset = 0; offset < EVENT_MAX; offset += EVENT_BATCH) {
+      const batch = await sudo.query.ClassInstance.findMany({
+        where: eventWhere, skip: offset, take: EVENT_BATCH, orderBy: [{ date: "asc" }, { id: "asc" }],
+        query: `
+          id date endsAt isCancelled maxCapacity bookingsCount: bookingsCount(where: { status: { equals: "confirmed" } }) location { id name } resource { id name }
+          classSchedule { id name startTime endTime maxCapacity instructor { user { name } } }
+          instructor { user { name } }
+        `,
+      });
+      rows.push(...batch);
+      if (batch.length < EVENT_BATCH) return { rows, complete: true };
+    }
+    return { rows, complete: false };
+  };
+  const [eventRead, schedules, instructors, classTypes, upcomingInstances, settings, organizations, locations, resources] = await Promise.all([
+    readEvents(),
     sudo.query.ClassSchedule.findMany({
       where: schedulesWhere,
-      take: 500,
+      take: OPTION_LIMIT + 1,
       orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
       query: `
         id name description dayOfWeek startTime endTime maxCapacity isActive location { id name } resource { id name }
         instructor { id user { id name email } }
         classType { id name }
+        instancesCount
       `,
     }),
     sudo.query.Instructor.findMany({
       where: instructorsWhere,
-      take: 500,
+      take: OPTION_LIMIT + 1,
       query: "id user { id name email }",
     }),
     sudo.query.ClassType.findMany({
       where: tenant,
-      take: 500,
+      take: OPTION_LIMIT + 1,
       orderBy: [{ name: "asc" }],
       query: "id name",
     }),
@@ -105,7 +119,7 @@ export async function getSchedulingWorkspace(
       orderBy: [{ date: "asc" }],
       take: 30,
       query: `
-        id date endsAt isCancelled cancellationReason bookingsCount maxCapacity location { id name } resource { id name }
+        id date endsAt isCancelled cancellationReason bookingsCount: bookingsCount(where: { status: { equals: "confirmed" } }) maxCapacity location { id name } resource { id name }
         classSchedule { id name dayOfWeek startTime endTime maxCapacity instructor { id user { name } } }
         instructor { id user { name } }
       `,
@@ -120,9 +134,11 @@ export async function getSchedulingWorkspace(
       take: 1,
       query: "timezone",
     }),
-    sudo.query.Location.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: 200, query: "id name" }),
-    sudo.query.GymResource.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: 500, query: "id name capacity location { id }" }),
+    sudo.query.Location.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: OPTION_LIMIT + 1, orderBy: [{ name: "asc" }], query: "id name" }),
+    sudo.query.GymResource.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: OPTION_LIMIT + 1, orderBy: [{ name: "asc" }], query: "id name capacity location { id }" }),
   ]);
+  const instances = eventRead.rows;
+  const trim = (rows: any[]) => rows.slice(0, OPTION_LIMIT);
 
   const timeZone = resolveGymTimeZone((settings[0] as any)?.timezone, (organizations[0] as any)?.timezone);
   const events = (instances as any[]).map((instance) => {
@@ -144,5 +160,14 @@ export async function getSchedulingWorkspace(
     };
   });
 
-  return { events, schedules, instructors, classTypes, upcomingInstances, timeZone, locations, resources };
+  return {
+    events, eventsComplete: eventRead.complete,
+    schedules: trim(schedules), instructors: trim(instructors), classTypes: trim(classTypes), upcomingInstances, timeZone,
+    locations: trim(locations), resources: trim(resources),
+    // Which option lists stop short; the full lists are in the catalogs.
+    truncated: {
+      schedules: schedules.length > OPTION_LIMIT, instructors: instructors.length > OPTION_LIMIT, classTypes: classTypes.length > OPTION_LIMIT,
+      locations: locations.length > OPTION_LIMIT, resources: resources.length > OPTION_LIMIT,
+    },
+  };
 }

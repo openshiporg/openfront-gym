@@ -2,6 +2,13 @@ import { createHash, randomBytes } from 'node:crypto';
 import { operationKey } from '../lib/operational-notices';
 import { lockParticipationPolicy } from '../lib/operational-policy';
 import { guardKeystonePrismaResults } from '../lib/prisma-result';
+import { ACCEPTANCE_EVIDENCE, HEALTH_CONSENT_EVIDENCE, disclosedHealthPurpose, effectiveAcceptanceWhere, effectiveHealthConsentWhere, evidenceState, isEffectiveEvidence } from '../lib/participation-evidence';
+import { isParticipationTermsPlaceholder } from '../lib/participation-terms';
+import { assertActiveOrganization } from '../security/tenant-status';
+
+const EVIDENCE_PAGE = 20;
+/** A member's own withdrawals and privacy requests stay available while the club is suspended. */
+const SUSPENDED_MEMBER_COMMANDS = ['privacy.request', 'waiver.revoke'];
 
 export function operationsActor(context: any, manager = true) {
   const session = context.session;
@@ -30,42 +37,161 @@ function history(row: any, userId: string, action: string, note: string) {
   return [...(Array.isArray(row.history) ? row.history : []), { at: new Date().toISOString(), userId, action, note }];
 }
 
-export async function operationsWorkspace(_root: unknown, { caseAfterId }: { caseAfterId?: string | null }, context: any) {
+type OperationsWorkspaceArgs = {
+  caseAfterId?: string | null; noticeSkip?: number | null; eventSkip?: number | null; resourceSkip?: number | null;
+  credentialScope?: string | null; credentialSkip?: number | null; memberQuery?: string | null;
+};
+
+/**
+ * Manager queues: each list is filtered in the query, then paged with a look-ahead row, so a
+ * notice, payment event, resource or credential past the first page stays reachable. Credentials
+ * default to the active scope; expired and revoked ones are a separate, read-only history.
+ */
+export async function operationsWorkspace(_root: unknown, args: OperationsWorkspaceArgs, context: any) {
   const { organizationId } = operationsActor(context);
   const tx = guardKeystonePrismaResults(context.prisma as any);
   const where = { organizationId };
+  const page = (value: unknown) => Number.isSafeInteger(value) && (value as number) > 0 ? Math.min(value as number, 1_000_000) : 0;
+  const skips = { notices: page(args.noticeSkip), events: page(args.eventSkip), resources: page(args.resourceSkip), credentials: page(args.credentialSkip) };
+  const asOf = new Date();
+  const credentialHistory = args.credentialScope === 'history';
+  const search = String(args.memberQuery || '').trim().slice(0, 100);
   const [notices, cases, policies, credentials, members, locations, paymentEvents, resources] = await Promise.all([
-    tx.operationalNotice.findMany({ where: { ...where, status: { not: 'resolved' } }, take: 100, orderBy: { createdAt: 'asc' }, include: { member: { select: { id: true, name: true, email: true, phone: true } } } }),
-    tx.operationsCase.findMany({ where: { ...where, status: { not: 'resolved' }, ...(caseAfterId ? { id: { gt: caseAfterId } } : {}) }, take: 101, orderBy: { id: 'asc' } }),
+    tx.operationalNotice.findMany({ where: { ...where, status: { not: 'resolved' } }, skip: skips.notices, take: QUEUE_PAGE + 1, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], include: { member: { select: { id: true, name: true, email: true, phone: true } } } }),
+    tx.operationsCase.findMany({ where: { ...where, status: { not: 'resolved' }, ...(args.caseAfterId ? { id: { gt: args.caseAfterId } } : {}) }, take: 101, orderBy: { id: 'asc' } }),
     tx.participationPolicy.findMany({ where, take: 10, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
-    tx.integrationCredential.findMany({ where: { ...where, revokedAt: null, expiresAt: { gt: new Date() } }, take: 100, orderBy: { expiresAt: 'asc' }, select: { id: true, label: true, partner: true, scopes: true, expiresAt: true, revokedAt: true } }),
-    tx.member.findMany({ where, take: 200, orderBy: { name: 'asc' }, select: { id: true, name: true, email: true } }),
-    tx.location.findMany({ where, take: 100, select: { id: true, name: true } }),
-    tx.paymentEvent.findMany({ where: { ...where, OR: [{ status: 'failed' }, { status: 'processing', lockedUntil: { lt: new Date() } }] }, take: 100, orderBy: { createdAt: 'asc' }, select: { id: true, providerEventId: true, eventType: true, status: true, attempts: true } }),
-    tx.gymResource.findMany({ where, take: 100, orderBy: { name: 'asc' }, select: { id: true, name: true, capacity: true, isActive: true, isExclusive: true, setupBufferMinutes: true, cleanupBufferMinutes: true } }),
+    tx.integrationCredential.findMany({
+      where: { ...where, ...(credentialHistory ? { OR: [{ revokedAt: { not: null } }, { expiresAt: { lte: asOf } }] } : { revokedAt: null, expiresAt: { gt: asOf } }) },
+      skip: skips.credentials, take: QUEUE_PAGE + 1, orderBy: [{ expiresAt: credentialHistory ? 'desc' : 'asc' }, { id: 'asc' }],
+      select: { id: true, label: true, partner: true, scopes: true, expiresAt: true, revokedAt: true },
+    }),
+    tx.member.findMany({ where: { ...where, ...(search ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { email: { contains: search, mode: 'insensitive' } }] } : {}) }, take: 201, orderBy: [{ name: 'asc' }, { id: 'asc' }], select: { id: true, name: true, email: true } }),
+    tx.location.findMany({ where, take: 501, orderBy: [{ name: 'asc' }, { id: 'asc' }], select: { id: true, name: true } }),
+    tx.paymentEvent.findMany({ where: { ...where, OR: [{ status: 'failed' }, { status: 'processing', lockedUntil: { lt: asOf } }] }, skip: skips.events, take: QUEUE_PAGE + 1, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true, providerEventId: true, eventType: true, status: true, attempts: true } }),
+    tx.gymResource.findMany({ where, skip: skips.resources, take: QUEUE_PAGE + 1, orderBy: [{ name: 'asc' }, { id: 'asc' }], select: { id: true, name: true, capacity: true, isActive: true, isExclusive: true, setupBufferMinutes: true, cleanupBufferMinutes: true } }),
   ]);
-  return { notices, cases: cases.slice(0, 100), nextCaseAfterId: cases.length > 100 ? cases[99].id : null, policies, credentials, members, locations, paymentEvents, resources, caseRequestKey: randomBytes(24).toString('hex'), evidenceRequestKey: randomBytes(24).toString('hex'), limits: { queue: 100, memberSelector: 200 }, waiverConfigured: policies.length > 0 };
+  // Credential state is derived at one server instant: revoked, expired, or active.
+  const credentialState = (credential: any) => credential.revokedAt ? "revoked" : !credential.expiresAt || !Number.isFinite(new Date(credential.expiresAt).getTime()) || new Date(credential.expiresAt) <= asOf ? "expired" : "active";
+  const trim = (rows: any[]) => rows.slice(0, QUEUE_PAGE);
+  return {
+    notices: trim(notices), cases: cases.slice(0, 100), nextCaseAfterId: cases.length > 100 ? cases[99].id : null, policies,
+    credentials: trim(credentials).map((credential) => ({ ...credential, state: credentialState(credential) })), credentialsAsOf: asOf.toISOString(),
+    credentialScope: credentialHistory ? 'history' : 'active',
+    members: members.slice(0, 200), membersHasMore: members.length > 200, memberQuery: search,
+    locations: locations.slice(0, 500), locationsTruncated: locations.length > 500,
+    paymentEvents: trim(paymentEvents), resources: trim(resources),
+    pages: {
+      size: QUEUE_PAGE,
+      notices: { skip: skips.notices, hasMore: notices.length > QUEUE_PAGE },
+      events: { skip: skips.events, hasMore: paymentEvents.length > QUEUE_PAGE },
+      resources: { skip: skips.resources, hasMore: resources.length > QUEUE_PAGE },
+      credentials: { skip: skips.credentials, hasMore: credentials.length > QUEUE_PAGE },
+    },
+    caseRequestKey: randomBytes(24).toString('hex'), evidenceRequestKey: randomBytes(24).toString('hex'),
+    limits: { queue: QUEUE_PAGE, memberSelector: 200 }, waiverConfigured: policies.length > 0,
+  };
+}
+const QUEUE_PAGE = 100;
+
+async function openConsentWithdrawalCase(tx: any, organizationId: string, memberId: string, userId: string, now: Date) {
+  const caseKey = operationKey(organizationId, `consent-withdrawal:${memberId}:${now.toISOString()}`);
+  await tx.operationsCase.upsert({ where: { key: caseKey }, update: {}, create: {
+    organizationId, memberId, key: caseKey, kind: 'privacy', status: 'open', openedBy: userId, history: [],
+    summary: 'Member withdrew optional health consent. Review purpose and retention; clear health fields when appropriate.',
+  } });
 }
 
-export async function participationWorkspace(_root: unknown, _args: unknown, context: any) {
+/**
+ * Withdraws every live health permission of the member (all policies). A health-only grant is
+ * simply revoked. An older single record that combined acceptance with health consent is revoked
+ * too, and when it was the member's current acceptance, that same acceptance continues in a new
+ * record without health consent (same accepted time, document and expiry), so the member keeps
+ * the acceptance they actually gave and nothing new is invented.
+ */
+async function withdrawHealthConsent(tx: any, organizationId: string, memberId: string, currentPolicyId: string, userId: string, now: Date, reason: string) {
+  const healthOnly = await tx.participationEvidence.updateMany({ where: { organizationId, memberId, healthConsent: true, kind: HEALTH_CONSENT_EVIDENCE, revokedAt: null }, data: { revokedAt: now, revocationReason: reason } });
+  const combined = await tx.participationEvidence.findMany({ where: { organizationId, memberId, healthConsent: true, kind: ACCEPTANCE_EVIDENCE, revokedAt: null } });
+  for (const row of combined) {
+    await tx.participationEvidence.update({ where: { id: row.id }, data: { revokedAt: now, revocationReason: `${reason}; acceptance continues without health consent` } });
+    if (!isEffectiveEvidence(row, currentPolicyId, now.getTime())) continue;
+    const key = operationKey(organizationId, `health-consent-withdrawn:${row.id}`);
+    await tx.participationEvidence.upsert({ where: { key }, update: {}, create: {
+      organizationId, memberId, policyId: row.policyId, key, kind: ACCEPTANCE_EVIDENCE,
+      requestHash: operationKey(organizationId, JSON.stringify({ continues: row.id, healthConsent: false })),
+      documentReference: row.documentReference, verifiedBy: row.verifiedBy, acceptedAt: row.acceptedAt, expiresAt: row.expiresAt, healthConsent: false,
+    } });
+  }
+  const withdrawn = healthOnly.count + combined.length;
+  if (!withdrawn) return { reused: true };
+  await openConsentWithdrawalCase(tx, organizationId, memberId, userId, now);
+  return { withdrawn };
+}
+
+/**
+ * The member's participation standing. Current acceptance and health consent come from the
+ * complete evidence set in the database; the history list is only a page, with its own continuation.
+ */
+export async function participationWorkspace(_root: unknown, { evidenceAfterId }: { evidenceAfterId?: string | null }, context: any) {
   const { organizationId, userId } = operationsActor(context, false);
   const member = await memberInTenant(context.prisma, organizationId, null, userId);
   const prisma = guardKeystonePrismaResults(context.prisma as any);
+  const now = new Date();
+  const after = typeof evidenceAfterId === 'string' && evidenceAfterId ? await prisma.participationEvidence.findFirst({ where: { id: evidenceAfterId, organizationId, memberId: member.id }, select: { id: true } }) : null;
   const [policy, evidence, requests] = await Promise.all([
     prisma.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
-    prisma.participationEvidence.findMany({ where: { organizationId, memberId: member.id }, take: 20, orderBy: { createdAt: 'desc' } }),
+    prisma.participationEvidence.findMany({ where: { organizationId, memberId: member.id }, take: EVIDENCE_PAGE + 1, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], ...(after ? { cursor: { id: after.id }, skip: 1 } : {}) }),
     prisma.operationsCase.findMany({ where: { organizationId, memberId: member.id, kind: 'privacy' }, take: 20, orderBy: { createdAt: 'desc' }, select: { id: true, summary: true, status: true, createdAt: true, closedAt: true } }),
   ]);
-  return { policy, evidence, requests, requestKey: randomBytes(24).toString('hex') };
+  const healthPurpose = disclosedHealthPurpose(policy);
+  const [acceptances, consents] = policy ? await Promise.all([
+    prisma.participationEvidence.count({ where: effectiveAcceptanceWhere(organizationId, member.id, policy.id, now) }),
+    healthPurpose ? prisma.participationEvidence.count({ where: effectiveHealthConsentWhere(organizationId, member.id, policy.id, now) }) : 0,
+  ]) : [0, 0];
+  // The onboarding placeholder is never presented to members as terms to accept.
+  const publicPolicy = policy && isParticipationTermsPlaceholder(String(policy.documentText || ''))
+    ? { ...policy, documentText: '', enforceWaiver: false, placeholder: true }
+    : policy;
+  return {
+    policy: publicPolicy ? { ...publicPolicy, healthPurpose: healthPurpose ?? '' } : publicPolicy,
+    evidence: evidence.slice(0, EVIDENCE_PAGE).map((entry: any) => ({ ...entry, state: evidenceState(entry, now.getTime()) })),
+    evidenceNextAfterId: evidence.length > EVIDENCE_PAGE ? evidence[EVIDENCE_PAGE - 1].id : null,
+    acceptedCurrent: acceptances > 0,
+    healthConsentCurrent: consents > 0,
+    requests,
+    requestKey: randomBytes(24).toString('hex'),
+  };
 }
 
 export async function runOperationsCommand(_root: unknown, { command, data }: { command: string; data: Record<string, unknown> }, context: any) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Command data is required');
-  const memberCommand = ['privacy.request', 'waiver.accept', 'waiver.revoke'].includes(command);
+  const memberCommand = ['privacy.request', 'waiver.accept', 'waiver.revoke', 'health.consent'].includes(command);
   const { organizationId, userId } = operationsActor(context, !memberCommand);
+  // Suspension pauses new activity and staff edits; a member's own withdrawal or privacy request continues.
+  const withdrawal = SUSPENDED_MEMBER_COMMANDS.includes(command) || (command === 'health.consent' && data.grant !== true);
+  if (!withdrawal) await assertActiveOrganization(context, organizationId);
   return context.transaction(async (tc: any) => {
     const tx = guardKeystonePrismaResults(tc.prisma as any);
-    if (command.startsWith('waiver.') || command.startsWith('policy.') || command.startsWith('case.') || command.startsWith('privacy.')) await lockParticipationPolicy(tx, organizationId);
+    if (command.startsWith('waiver.') || command.startsWith('policy.') || command.startsWith('case.') || command.startsWith('privacy.') || command === 'health.consent') await lockParticipationPolicy(tx, organizationId);
+    if (command === 'health.consent') {
+      // Optional health-storage permission is its own choice: it needs the policy's disclosed
+      // purpose, not a legal acceptance, and it never counts as accepting the terms.
+      const member = await memberInTenant(tx, organizationId, null, userId);
+      const policy = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
+      if (!policy || policy.id !== data.policyId) throw new Error('Review the current participation policy first');
+      const now = new Date();
+      const requestKey = boundedText(data.requestKey, 'Request key', 200);
+      if (data.grant === true) {
+        if (!disclosedHealthPurpose(policy)) throw new Error('This club does not collect optional health information');
+        if (await tx.participationEvidence.findFirst({ where: effectiveHealthConsentWhere(organizationId, member.id, policy.id, now) })) return { reused: true };
+        const key = operationKey(organizationId, `health-consent:${member.id}:${policy.id}:${requestKey}`);
+        return tx.participationEvidence.upsert({ where: { key }, update: {}, create: {
+          organizationId, memberId: member.id, policyId: policy.id, key, kind: HEALTH_CONSENT_EVIDENCE,
+          requestHash: operationKey(organizationId, JSON.stringify({ memberId: member.id, policyId: policy.id, healthConsent: true })),
+          documentReference: policy.documentReference, verifiedBy: userId, acceptedAt: now, expiresAt: null, healthConsent: true,
+        } });
+      }
+      return withdrawHealthConsent(tx, organizationId, member.id, policy.id, userId, now, 'Member withdrew optional health consent');
+    }
     if (command === 'policy.publish') {
       if (data.adultOnly === false) throw new Error('Guardian-supported participation is not implemented; this workflow supports adults only');
       const retentionDays = Number(data.retentionDays);
@@ -83,28 +209,41 @@ export async function runOperationsCommand(_root: unknown, { command, data }: { 
       const policy = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
       if (!policy || policy.id !== data.policyId) throw new Error('Review the current participation policy before accepting');
       if (data.accepted !== true) throw new Error('Explicit acceptance or staff verification is required');
+      const healthConsent = data.healthConsent === true;
+      if (healthConsent && !disclosedHealthPurpose(policy)) throw new Error('This club does not collect optional health information');
       const expiresAt = command === 'waiver.verify' ? dateValue(data.expiresAt) : null;
       if (expiresAt && expiresAt <= new Date()) throw new Error('Verification expiry must be in the future');
       const documentReference = command === 'waiver.verify' ? boundedText(data.documentReference, 'External signed document reference', 1000) : policy.documentReference;
       const key = operationKey(organizationId, `waiver:${member.id}:${policy.id}:${boundedText(data.requestKey, 'Request key', 200)}`);
-      const requestHash = operationKey(organizationId, JSON.stringify({ memberId: member.id, policyId: policy.id, documentReference, expiresAt, healthConsent: data.healthConsent === true }));
+      const requestHash = operationKey(organizationId, JSON.stringify({ memberId: member.id, policyId: policy.id, documentReference, expiresAt, healthConsent }));
       const existing = await tx.participationEvidence.findUnique({ where: { key } });
       if (existing && existing.requestHash !== requestHash) throw new Error('This request key was already used for different waiver evidence');
-      return tx.participationEvidence.upsert({ where: { key }, update: {}, create: {
-        organizationId, memberId: member.id, policyId: policy.id, key, requestHash, documentReference,
-        verifiedBy: userId, acceptedAt: new Date(), expiresAt, healthConsent: data.healthConsent === true,
+      const acceptedAt = existing?.acceptedAt ?? new Date();
+      // The acceptance and the optional health permission are two records, so either can be
+      // withdrawn on its own without inventing a new acceptance.
+      const acceptance = await tx.participationEvidence.upsert({ where: { key }, update: {}, create: {
+        organizationId, memberId: member.id, policyId: policy.id, key, requestHash, documentReference, kind: ACCEPTANCE_EVIDENCE,
+        verifiedBy: userId, acceptedAt, expiresAt, healthConsent: false,
       } });
+      if (healthConsent) {
+        const healthKey = operationKey(organizationId, `waiver-health:${member.id}:${policy.id}:${String(data.requestKey)}`);
+        await tx.participationEvidence.upsert({ where: { key: healthKey }, update: {}, create: {
+          organizationId, memberId: member.id, policyId: policy.id, key: healthKey, requestHash, documentReference, kind: HEALTH_CONSENT_EVIDENCE,
+          verifiedBy: userId, acceptedAt, expiresAt, healthConsent: true,
+        } });
+      }
+      return acceptance;
     }
     if (command === 'waiver.revoke') {
+      // "Withdraw acceptance and consent" withdraws every live acceptance and every live health
+      // permission of this member. Rows are revoked, never deleted or rewritten otherwise.
       const member = await memberInTenant(tx, organizationId, null, userId);
-      const row = await tx.participationEvidence.findFirst({ where: { id: String(data.id), organizationId, memberId: member.id } });
-      if (!row) throw new Error('Evidence not found');
-      if (row.revokedAt) return { id: row.id, reused: true };
-      if (row.healthConsent) await tx.operationsCase.upsert({ where: { key: operationKey(organizationId, `consent-withdrawal:${row.id}`) }, update: {}, create: {
-        organizationId, memberId: member.id, key: operationKey(organizationId, `consent-withdrawal:${row.id}`), kind: 'privacy',
-        summary: 'Member withdrew optional health consent. Review purpose and retention; clear health fields when appropriate.', status: 'open', openedBy: userId, history: [],
-      } });
-      return tx.participationEvidence.update({ where: { id: row.id }, data: { revokedAt: new Date(), revocationReason: boundedText(data.reason, 'Reason', 500) } });
+      const now = new Date();
+      const reason = boundedText(data.reason, 'Reason', 500);
+      const acceptances = await tx.participationEvidence.updateMany({ where: { organizationId, memberId: member.id, kind: ACCEPTANCE_EVIDENCE, healthConsent: false, revokedAt: null }, data: { revokedAt: now, revocationReason: reason } });
+      const health = await tx.participationEvidence.updateMany({ where: { organizationId, memberId: member.id, healthConsent: true, revokedAt: null }, data: { revokedAt: now, revocationReason: reason } });
+      if (health.count) await openConsentWithdrawalCase(tx, organizationId, member.id, userId, now);
+      return { withdrawnAcceptances: acceptances.count, withdrawnHealthConsents: health.count };
     }
     if (command === 'privacy.request' || command === 'case.open') {
       const allowed = ['incident', 'inspection', 'closure', 'finance', 'integration', 'privacy'];
@@ -142,7 +281,8 @@ export async function runOperationsCommand(_root: unknown, { command, data }: { 
       const row = await tx.operationsCase.findFirst({ where: { id: String(data.id), organizationId, kind: 'privacy', status: { not: 'resolved' } } });
       if (!row?.memberId) throw new Error('Open member privacy case required');
       const note = boundedText(data.note, 'Retention review and clearing reason');
-      await tx.member.update({ where: { id: row.memberId }, data: { healthNotes: { conditions: [], injuries: [], notes: '' }, emergencyContactName: '', emergencyContactPhone: '' } });
+      const cleared = await tx.member.update({ where: { id: row.memberId }, data: { healthNotes: { conditions: [], injuries: [], notes: '' }, emergencyContactName: '', emergencyContactPhone: '' } });
+      if (cleared.userId) await tx.user.updateMany({ where: { id: cleared.userId, organizationId }, data: { emergencyContact: '' } });
       return tx.operationsCase.update({ where: { id: row.id }, data: {
         status: 'resolved', assignedTo: userId, closedAt: new Date(), history: history(row, userId, 'clear-health', note),
       } }); // Financial identity and evidence are deliberately retained.

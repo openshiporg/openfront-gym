@@ -2,9 +2,11 @@ import { currentCheckInActor } from "../access/currentCheckInActor";
 import { assertMembershipServiceEligibility } from "../lib/membership-credits";
 
 /** Tenant-bounded front-desk projection. Member self-service stays on its own list access rules. */
+const OPEN_VISIT_PAGE = 25;
+
 export async function getFrontDeskWorkspace(
   _root: unknown,
-  { query }: { query?: string | null },
+  { query, visitQuery, visitLocationId, visitOrder, visitSkip }: { query?: string | null; visitQuery?: string | null; visitLocationId?: string | null; visitOrder?: string | null; visitSkip?: number | null },
   context: any,
 ) {
   const actor = await currentCheckInActor(context);
@@ -24,7 +26,20 @@ export async function getFrontDeskWorkspace(
     ],
   };
   const tenantWhere = { organization: { id: { equals: organizationId } } };
+  // Every open visit is reachable: searchable by member, filterable by location, paged, oldest first on request.
+  const visitSearch = typeof visitQuery === "string" ? visitQuery.trim().slice(0, 100) : "";
+  const visitSite = typeof visitLocationId === "string" && visitLocationId ? visitLocationId : null;
+  const requestedSkip = Number.isSafeInteger(visitSkip) ? Math.min(Math.max(0, visitSkip as number), 1_000_000) : 0;
+  const openWhere = { AND: [
+    tenantWhere,
+    { checkOutTime: { equals: null } },
+    ...(visitSearch ? [{ member: { name: { contains: visitSearch, mode: "insensitive" } } }] : []),
+    ...(visitSite ? [{ location: { id: { equals: visitSite } } }] : []),
+  ] };
   const sudo = context.sudo();
+  // Count first, so an offset past the end shows the last page instead of a false "nobody".
+  const openVisitTotal = await sudo.query.CheckIn.count({ where: openWhere });
+  const skip = openVisitTotal > 0 ? Math.min(requestedSkip, Math.floor((openVisitTotal - 1) / OPEN_VISIT_PAGE) * OPEN_VISIT_PAGE) : 0;
   const [members, checkIns, locations, gymSettings] = await Promise.all([
     search ? sudo.query.Member.findMany({
       where: memberWhere,
@@ -36,9 +51,10 @@ export async function getFrontDeskWorkspace(
       `,
     }) : Promise.resolve([]),
     sudo.query.CheckIn.findMany({
-      where: { AND: [tenantWhere, { checkOutTime: { equals: null } }] },
-      take: 12,
-      orderBy: [{ checkInTime: "desc" }],
+      where: openWhere,
+      skip,
+      take: OPEN_VISIT_PAGE,
+      orderBy: [{ checkInTime: visitOrder === "oldest" ? "asc" : "desc" }, { id: "asc" }],
       query: "id checkInTime method membershipValidated member { name } location { id name }",
     }),
     sudo.query.Location.findMany({
@@ -86,6 +102,7 @@ export async function getFrontDeskWorkspace(
       member: checkIn.member ? { name: checkIn.member.name } : null,
       location: checkIn.location ? { id: checkIn.location.id, name: checkIn.location.name } : null,
     })),
+    openVisits: { total: openVisitTotal, skip, pageSize: OPEN_VISIT_PAGE },
     locations,
     gymSettings,
   };

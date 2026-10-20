@@ -40,6 +40,21 @@ function isOperatorSession(session?: Session) {
   return session?.data.role?.canManageAllRecords ?? false
 }
 
+/** Tenant-scoped people visibility for staff who manage, see or edit people (never cross-tenant). */
+function canSeePeople(session?: Session) {
+  const role = session?.data.role
+  return Boolean(role?.canManageAllRecords || role?.canSeeOtherPeople || role?.canEditOtherPeople || role?.canManagePeople)
+}
+
+function canEditPeople(session?: Session) {
+  const role = session?.data.role
+  return Boolean(role?.canManageAllRecords || role?.canEditOtherPeople || role?.canManagePeople)
+}
+
+function ownBookingFilter(session: Session) {
+  return { member: { user: { id: { equals: session.itemId } } } }
+}
+
 function ownerFilter(session: Session | undefined, filter: Record<string, unknown>) {
   if (!session) return false
   return tenantFilter(
@@ -74,13 +89,21 @@ export const permissions = {
 export const rules = {
   canReadOwnUser: ({ session }: AccessArgs) => {
     if (!session) return false
-    const narrower = isOperatorSession(session) ? undefined : { id: { equals: session.itemId } }
+    const narrower = canSeePeople(session) ? undefined : { id: { equals: session.itemId } }
     return tenantFilter({ session }, narrower)
   },
 
   canReadOwnMember: ({ session }: AccessArgs) => {
     if (!session) return false
-    const narrower = isOperatorSession(session)
+    const narrower = canSeePeople(session)
+      ? undefined
+      : { user: { id: { equals: session.itemId } } }
+    return tenantFilter({ session }, narrower)
+  },
+
+  canUpdateMember: ({ session }: AccessArgs) => {
+    if (!session) return false
+    const narrower = canEditPeople(session)
       ? undefined
       : { user: { id: { equals: session.itemId } } }
     return tenantFilter({ session }, narrower)
@@ -115,10 +138,11 @@ export const rules = {
     const memberFilter = { member: { user: { id: { equals: session.itemId } } } }
     if (isOperatorSession(session)) return tenantFilter({ session })
     if (!session.data.role?.isInstructor) return tenantFilter({ session }, memberFilter)
+    // A coach sees the rosters of sessions they are the current, active coach for.
     return tenantFilter({ session }, { OR: [memberFilter, { classInstance: {
       OR: [
-        { instructor: { user: { id: { equals: session.itemId } } } },
-        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } } } } }] },
+        { instructor: { user: { id: { equals: session.itemId } }, isActive: { equals: true } } },
+        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } }, isActive: { equals: true } } } }] },
       ],
     } }] })
   },
@@ -130,8 +154,8 @@ export const rules = {
     if (!session.data.role?.isInstructor) return tenantFilter({ session }, memberFilter)
     return tenantFilter({ session }, { OR: [memberFilter, { booking: { classInstance: {
       OR: [
-        { instructor: { user: { id: { equals: session.itemId } } } },
-        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } } } } }] },
+        { instructor: { user: { id: { equals: session.itemId } }, isActive: { equals: true } } },
+        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } }, isActive: { equals: true } } } }] },
       ],
     } } }] })
   },
@@ -139,18 +163,23 @@ export const rules = {
   canReadOwnWaitlist: ({ session }: AccessArgs) =>
     ownerFilter(session, { member: { user: { id: { equals: session?.itemId } } } }),
 
+  // Role managers list the tenant's roles they may assign; everyone else reads their own role.
   canReadOwnRole: ({ session }: AccessArgs) => {
     if (!session) return false
-    const narrower = isOperatorSession(session)
+    const narrower = isOperatorSession(session) || session.data.role?.canManageRoles
       ? undefined
       : { assignedTo: { some: { id: { equals: session.itemId } } } }
     return tenantFilter({ session }, narrower)
   },
 
+  // Members keep reading templates and sessions they booked after a pause or
+  // cancellation, so booking history retains the class name and date.
   canReadClassSchedule: ({ session }: AccessArgs) =>
     tenantFilter(
       { session },
-      isOperatorSession(session) ? undefined : { isActive: { equals: true } },
+      isOperatorSession(session) ? undefined : session?.itemId
+        ? { OR: [{ isActive: { equals: true } }, { instances: { some: { bookings: { some: ownBookingFilter(session) } } } }] }
+        : { isActive: { equals: true } },
     ),
 
   canReadInstructor: ({ session }: AccessArgs) =>
@@ -162,7 +191,9 @@ export const rules = {
   canReadClassInstance: ({ session }: AccessArgs) =>
     tenantFilter(
       { session },
-      isOperatorSession(session) ? undefined : { isCancelled: { equals: false } },
+      isOperatorSession(session) ? undefined : session?.itemId
+        ? { OR: [{ isCancelled: { equals: false } }, { bookings: { some: ownBookingFilter(session) } }] }
+        : { isCancelled: { equals: false } },
     ),
 
   // Backward-compatible aliases for the existing User/Member update boundaries.
@@ -170,14 +201,15 @@ export const rules = {
     if (!session) return false
     return tenantFilter(
       { session },
-      isOperatorSession(session) ? undefined : { id: { equals: session.itemId } }
+      canSeePeople(session) ? undefined : { id: { equals: session.itemId } }
     )
   },
+  // Contact details of same-tenant people; login email, password and role keep their own field rules.
   canUpdatePeople: ({ session }: AccessArgs) => {
     if (!session) return false
     return tenantFilter(
       { session },
-      isOperatorSession(session) ? undefined : { id: { equals: session.itemId } }
+      canEditPeople(session) ? undefined : { id: { equals: session.itemId } }
     )
   },
   canDeletePeople: ({ session }: AccessArgs) => {

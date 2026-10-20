@@ -3,6 +3,7 @@ import {
   startOnboarding,
   completeOnboarding,
   runDeterministicOnboardingAction,
+  type OnboardingReadiness,
 } from '../actions/onboarding';
 import { SECTION_DEFINITIONS } from '../config/templates';
 import { getItemsFromJsonData } from '../utils/dataUtils';
@@ -20,6 +21,7 @@ interface OnboardingApiProps {
   setError: (error: string | null) => void;
   setIsLoading: (loading: boolean) => void;
   resetOnboardingState: () => void;
+  setReadiness?: (readiness: OnboardingReadiness | null) => void;
 }
 
 function errorMessage(error: unknown) {
@@ -42,6 +44,7 @@ export function useOnboardingApi({
   setError,
   setIsLoading,
   resetOnboardingState,
+  setReadiness,
 }: OnboardingApiProps) {
   const router = useRouter();
 
@@ -66,11 +69,12 @@ export function useOnboardingApi({
         throw new Error(startResult?.error || 'Unable to start onboarding');
       }
 
-      setProgress('Creating the selected plans, class catalog, instructors, schedules, and future class instances…');
-      await runDeterministicOnboardingAction(
+      setProgress('Creating the selected plans, class catalog, instructors, schedules, and upcoming class sessions…');
+      const result = await runDeterministicOnboardingAction(
         selectedTemplate,
         selectedTemplate === 'custom' ? currentJsonData : undefined,
       );
+      setReadiness?.(result.readiness ?? null);
 
       const completionResult = await completeOnboarding();
       if (!completionResult?.success) {
@@ -80,7 +84,9 @@ export function useOnboardingApi({
       for (const { section, items } of sections) {
         for (const item of items) setItemCompleted(section.type, item);
       }
-      setProgress('Starter setup complete. Review business details and connect Stripe before publishing.');
+      setProgress(result.readiness && !result.readiness.ready
+        ? 'Starter records created. Finish the remaining setup steps before publishing.'
+        : 'Starter setup complete.');
       router.refresh();
       setStep('done');
     } catch (error) {

@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
+import { gymGraphql as keystoneClient } from "@/features/platform/lib/gym-graphql";
 
 /**
  * Storefront auth helper (server-side)

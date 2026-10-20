@@ -17,6 +17,13 @@ const TRANSITIONS: Record<AppointmentStatus, readonly AppointmentStatus[]> = {
   no_show: [],
 };
 
+/** Statuses this actor may move an appointment to now (the same table the server enforces). */
+export function allowedAppointmentTransitions(status: string, actor: { canManage: boolean; isOwnCoach: boolean; isOwnMember: boolean }) {
+  const next = TRANSITIONS[status as AppointmentStatus] ?? [];
+  if (actor.canManage || actor.isOwnCoach) return [...next];
+  return actor.isOwnMember && next.includes("cancelled") ? ["cancelled" as AppointmentStatus] : [];
+}
+
 export function normalizeAppointmentWindow(start: Date, durationMinutes: number) {
   if (!(start instanceof Date) || !Number.isFinite(start.getTime())) {
     throw new Error("Appointment start time is invalid");

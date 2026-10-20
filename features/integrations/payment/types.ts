@@ -25,6 +25,25 @@ export type MembershipPriceValidationInput = {
   billingCycle: BillingCycle;
 };
 
+/** One-off hosted card payment for a staffed counter sale (retail or a training package). */
+export type CounterCheckoutInput = {
+  amount: number;
+  currencyCode: string;
+  description: string;
+  metadata: Record<string, string>;
+  successUrl: string;
+  cancelUrl: string;
+  expiresAt?: Date;
+  idempotencyKey: string;
+};
+
+export type CounterCheckoutResult = {
+  providerSessionId: string;
+  checkoutUrl: string;
+  status: string;
+  expiresAt: string | null;
+};
+
 export type MembershipCheckoutResult = {
   providerSessionId: string;
   providerCustomerId: string;
@@ -37,6 +56,9 @@ export interface PaymentProviderAdapter {
   createMembershipCheckout(input: MembershipCheckoutInput): Promise<MembershipCheckoutResult>;
   retrieveMembershipCheckout(providerSessionId: string): Promise<Stripe.Checkout.Session>;
   retrieveSubscription(subscriptionId: string): Promise<Stripe.Subscription>;
+  createCounterCheckout?(input: CounterCheckoutInput): Promise<CounterCheckoutResult>;
+  retrieveCounterCheckout?(providerSessionId: string): Promise<Stripe.Checkout.Session>;
+  expireCounterCheckout?(providerSessionId: string): Promise<Stripe.Checkout.Session>;
   createSetupIntent(customerId: string): Promise<{ id: string; clientSecret: string | null }>;
   cancelSubscriptionAtPeriodEnd(subscriptionId: string, idempotencyKey?: string): Promise<Stripe.Subscription>;
   pauseSubscription(subscriptionId: string, resumeDate?: Date, idempotencyKey?: string): Promise<Stripe.Subscription>;
@@ -55,5 +77,6 @@ export interface PaymentProviderAdapter {
     evidence?: { operationKey: string; currencyCode: string; reason: string },
   ): Promise<Stripe.Refund>;
   findRefundPayment?(paymentIntentId: string, operationKey: string): Promise<Stripe.Refund | null>;
+  retrieveRefund?(refundId: string): Promise<Stripe.Refund>;
   constructWebhookEvent(payload: string, signature: string): Stripe.Event;
 }

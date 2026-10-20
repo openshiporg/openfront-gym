@@ -1,4 +1,5 @@
 import { throwOnKeystonePrismaError } from "./prisma-result";
+import { effectiveAcceptanceWhere } from "./participation-evidence";
 
 export async function lockParticipationPolicy(tx: any, organizationId: string) {
   const result = await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`participation:${organizationId}`}))`;
@@ -14,7 +15,8 @@ export function isAdult(birthDate: Date | string | null, at: Date) {
   return years >= 18;
 }
 
-export async function assertParticipationAllowed(tx: any, organizationId: string, memberId: string | null, at: Date, locationId?: string | null) {
+/** Admits participation under the current policy and returns the policy and acceptance relied on. */
+export async function assertParticipationAllowed(tx: any, organizationId: string, memberId: string | null, at: Date, locationId?: string | null): Promise<{ policyId: string | null; evidenceId: string | null }> {
   await lockParticipationPolicy(tx, organizationId);
   const closure = await tx.operationsCase.findFirst({ where: {
     organizationId, kind: 'closure', status: { not: 'resolved' },
@@ -23,18 +25,17 @@ export async function assertParticipationAllowed(tx: any, organizationId: string
   } });
   if (closure) throw new Error('Participation is unavailable during an active facility closure');
   const policy = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
-  if (!policy) return; // Explicit external-process setup remains visible in the operations workspace.
+  if (!policy) return { policyId: null, evidenceId: null }; // Explicit external-process setup remains visible in the operations workspace.
   if (!memberId) {
     if (policy.enforceWaiver || policy.adultOnly) throw new Error('Registered participant verification is required by studio policy');
-    return;
+    return { policyId: policy.id, evidenceId: null };
   }
   const member = await tx.member.findFirst({ where: { id: memberId, organizationId } });
   if (!member) throw new Error('Member not found');
   if (policy.adultOnly && !isAdult(member.dateOfBirth, at)) throw new Error('Adult age verification is required before participation');
-  if (!policy.enforceWaiver) return;
-  const evidence = await tx.participationEvidence.findFirst({ where: {
-    organizationId, memberId, policyId: policy.id, revokedAt: null, acceptedAt: { lte: at },
-    OR: [{ expiresAt: null }, { expiresAt: { gt: at } }],
-  } });
+  if (!policy.enforceWaiver) return { policyId: policy.id, evidenceId: null };
+  // Only an acceptance of the current terms admits; an optional health grant never does.
+  const evidence = await tx.participationEvidence.findFirst({ where: effectiveAcceptanceWhere(organizationId, memberId, policy.id, at) });
   if (!evidence) throw new Error('Current waiver verification is required before participation');
+  return { policyId: policy.id, evidenceId: evidence.id };
 }

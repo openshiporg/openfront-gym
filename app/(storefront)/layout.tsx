@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const description = config.heroSubheadline || config.description || config.tagline || undefined;
   return {
     metadataBase,
-    title: config.name,
+    title: { default: config.name, template: `%s · ${config.name}` },
     description,
     openGraph: {
       title: config.name,

@@ -1,5 +1,6 @@
+import { isOpenAt } from './gym-hours';
+
 type Window = { start: number; end: number } | 'all' | 'closed';
-const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 function minute(value: string) {
   const match = value.trim().match(/^(\d{1,2})(?::([0-5]\d))?\s*(am|pm)?$/i);
@@ -41,15 +42,7 @@ function includes(window: Window, current: number) {
 export function isWithinOperatingHours(hours: unknown, at: Date, timezone: string) {
   if (!hours || typeof hours !== 'object' || Array.isArray(hours)) throw new Error('Facility operating hours are not configured; staff review is required');
   const clock = localClock(at, timezone);
-  const daily = Object.fromEntries(Object.entries(hours).map(([key, value]) => [key.toLowerCase(), value]));
-  const today = parseAccessWindow(daily[clock.day]);
-  const previousDay = weekdays[(weekdays.indexOf(clock.day) + 6) % 7];
-  const previous = parseAccessWindow(daily[previousDay]);
-  // An overnight interval is attached to its opening day. Today's early
-  // morning can only be admitted by yesterday's overnight interval.
-  const todayOpen = today === 'all' || (today !== 'closed' && (today.start < today.end ? clock.minute >= today.start && clock.minute < today.end : clock.minute >= today.start));
-  const overnightCarry = previous !== 'all' && previous !== 'closed' && previous.start > previous.end && clock.minute < previous.end;
-  return todayOpen || overnightCarry;
+  return isOpenAt(hours, clock.day, clock.minute);
 }
 
 export function membershipAccessWindow(agreement: any): Window {

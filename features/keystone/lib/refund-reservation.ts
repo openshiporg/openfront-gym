@@ -85,3 +85,22 @@ export function assertExactProviderRefund(refund: any, reservation: RefundReserv
     throw new Error("Provider refund does not match the frozen payment, amount, currency, reason, and operation identity; operator reconciliation required");
   }
 }
+
+export function reconcileProviderRefundCumulative(
+  paymentAmount: number,
+  currentRefundAmount: number | null,
+  startingRefundAmount: number,
+  attemptAmount: number,
+) {
+  const intendedCumulativeRefund = startingRefundAmount + attemptAmount;
+  const totalRefunded = Math.max(currentRefundAmount ?? 0, intendedCumulativeRefund);
+  if (
+    ![paymentAmount, currentRefundAmount ?? 0, startingRefundAmount, attemptAmount, totalRefunded].every(Number.isInteger) ||
+    startingRefundAmount < 0 ||
+    attemptAmount <= 0 ||
+    totalRefunded > paymentAmount
+  ) {
+    throw new Error("Cumulative refund exceeds the payment total");
+  }
+  return totalRefunded;
+}

@@ -13,7 +13,7 @@ import {
 import { isSignedIn, permissions, rules } from "../access";
 import { trackingFields } from "./trackingFields";
 import { membershipLifecycleHooks } from "../mutations/gymLifecyclePolicy";
-import { requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
+import { requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from "./tenantRelationships";
 
 export const Membership = list({
   hooks: {
@@ -54,6 +54,7 @@ export const Membership = list({
     member: relationship({
       ref: "User.membership",
       access: { update: denyAll },
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
       },

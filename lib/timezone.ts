@@ -76,6 +76,64 @@ export function localTimeToUtc(parts: Omit<LocalDateParts, "second"> & { second?
   return candidate;
 }
 
+export class NonexistentLocalTimeError extends Error {}
+
+/**
+ * Exact conversion for a wall-clock time someone chose. Calendar components must be real, a time
+ * skipped by a daylight-saving change is rejected, and a time that happens twice resolves to its
+ * first (earlier) instant. Round-trips every candidate through the zone instead of trusting offsets.
+ */
+export function exactLocalTimeToUtc(parts: Omit<LocalDateParts, "second"> & { second?: number }, timeZone: string) {
+  const zone = normalizeTimeZone(timeZone);
+  const second = parts.second ?? 0;
+  const integers = [parts.year, parts.month, parts.day, parts.hour, parts.minute, second];
+  if (!integers.every(Number.isInteger) || parts.month < 1 || parts.month > 12 || parts.hour < 0 || parts.hour > 23 || parts.minute < 0 || parts.minute > 59 || second < 0 || second > 59) {
+    throw new NonexistentLocalTimeError("Choose a valid date and time");
+  }
+  const localEpoch = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, second);
+  const calendar = new Date(localEpoch);
+  if (calendar.getUTCFullYear() !== parts.year || calendar.getUTCMonth() !== parts.month - 1 || calendar.getUTCDate() !== parts.day) {
+    throw new NonexistentLocalTimeError("Choose a valid date and time");
+  }
+  // Offsets either side of the requested wall time cover both sides of any transition that day.
+  const offsets = new Set([-36, -12, 0, 12, 36].map((hours) => timeZoneOffsetMilliseconds(new Date(localEpoch + hours * 3_600_000), zone)));
+  const matches = [...offsets]
+    .map((offset) => new Date(localEpoch - offset))
+    .filter((candidate) => {
+      const round = localDateParts(candidate, zone);
+      return round.year === parts.year && round.month === parts.month && round.day === parts.day && round.hour === parts.hour && round.minute === parts.minute && round.second === second;
+    })
+    .sort((a, b) => a.getTime() - b.getTime());
+  if (!matches.length) throw new NonexistentLocalTimeError(`That time does not exist in ${zone} because of a daylight-saving change. Choose another time.`);
+  return matches[0];
+}
+
+/**
+ * The first instant of a local calendar date ("YYYY-MM-DD") in the zone: local midnight, or the
+ * first minute that exists when a daylight-saving change skips midnight. A date's end is the
+ * start of the next local date, never a fixed 24 hours (days run 23, 24 or 25 hours).
+ */
+export function localDateStart(dateKey: string, timeZone: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey));
+  if (!match) throw new NonexistentLocalTimeError("Choose a valid date");
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  for (let minutes = 0; minutes < 24 * 60; minutes += 1) {
+    try {
+      return exactLocalTimeToUtc({ year, month, day, hour: Math.floor(minutes / 60), minute: minutes % 60 }, timeZone);
+    } catch (error) {
+      if (!(error instanceof NonexistentLocalTimeError) || minutes === 0 && /valid date and time/.test(error.message)) throw new NonexistentLocalTimeError("Choose a valid date");
+    }
+  }
+  throw new NonexistentLocalTimeError("Choose a valid date");
+}
+
+/** The local calendar date after `dateKey` ("YYYY-MM-DD"). */
+export function nextDateKey(dateKey: string) {
+  const date = new Date(`${dateKey}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
 export function zonedStartOfDay(date: Date, timeZone: string) {
   const local = localDateParts(date, timeZone);
   return localTimeToUtc({ ...local, hour: 0, minute: 0, second: 0 }, timeZone);
@@ -104,6 +162,7 @@ export function localWeekdayAtOffset(now: Date, timeZone: string, dayOffset: num
   return new Date(Date.UTC(local.year, local.month - 1, local.day + dayOffset)).getUTCDay();
 }
 
+/** The wall time `dayOffset` local days from now; null when a daylight-saving change skips it. */
 export function futureLocalOccurrence(
   now: Date,
   timeZone: string,
@@ -113,12 +172,17 @@ export function futureLocalOccurrence(
 ) {
   const local = localDateParts(now, timeZone);
   const target = new Date(Date.UTC(local.year, local.month - 1, local.day + dayOffset));
-  return localTimeToUtc({
-    year: target.getUTCFullYear(),
-    month: target.getUTCMonth() + 1,
-    day: target.getUTCDate(),
-    hour,
-    minute,
-    second: 0,
-  }, timeZone);
+  try {
+    return exactLocalTimeToUtc({
+      year: target.getUTCFullYear(),
+      month: target.getUTCMonth() + 1,
+      day: target.getUTCDate(),
+      hour,
+      minute,
+      second: 0,
+    }, timeZone);
+  } catch (error) {
+    if (error instanceof NonexistentLocalTimeError) return null;
+    throw error;
+  }
 }

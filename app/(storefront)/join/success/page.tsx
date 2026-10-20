@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
 import JoinSuccessPage from "@/features/storefront/screens/JoinSuccessPage";
-import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
-import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const config = await getStorefrontConfig();
-  return {
-    title: `Membership confirmation — ${getStorefrontBrandName(config)}`,
-    description: "Check your membership confirmation and payment verification status.",
-  };
-}
+export const metadata: Metadata = {
+  title: "Membership confirmation",
+  robots: { index: false, follow: false },
+};
 
 export default async function Page(props: {
   searchParams: Promise<{ session_id?: string }>;

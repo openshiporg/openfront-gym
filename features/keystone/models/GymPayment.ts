@@ -13,7 +13,7 @@ import {
 import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
 import { paymentEvidenceHooks } from './paymentEvidence';
-import { requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
+import { requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from './tenantRelationships';
 
 export const GymPayment = list({
   hooks: {
@@ -56,6 +56,7 @@ export const GymPayment = list({
     }),
     member: relationship({
       ref: 'Member.payments',
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: 'select',
         description: 'Member who made the payment',
@@ -120,7 +121,6 @@ export const GymPayment = list({
       access: { read: permissions.canManageAllRecords },
       defaultValue: {},
       ui: {
-        views: './fields/json-view',
         description: 'Additional payment data from Stripe/PayPal (stored as JSON)',
       },
     }),

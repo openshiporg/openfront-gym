@@ -72,7 +72,7 @@ export function OnboardingCards({
   steps: OnboardingStep[];
   onboardingStatus?: string;
   onDismiss: () => void;
-  onOpenDialog: () => void;
+  onOpenDialog?: () => void;
   userRole?: any;
 }) {
   const [dismissedSteps] = React.useState<string[]>([]);
@@ -120,7 +120,7 @@ function OnboardingCard({
   title: string;
   description: string;
   onDismiss?: () => void;
-  onOpenDialog: () => void;
+  onOpenDialog?: () => void;
 }) {
   const [isDismissed, setIsDismissed] = React.useState(false);
 

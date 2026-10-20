@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { keystoneClient } from '@/features/dashboard/lib/keystoneClient';
+import { gymGraphql as keystoneClient } from '@/features/platform/lib/gym-graphql';
 
 export async function markPaymentRecoveryContacted(formData: FormData): Promise<void> {
   const membershipId = formData.get('membershipId')?.toString();

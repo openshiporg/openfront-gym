@@ -2,6 +2,8 @@ import { list } from "@keystone-6/core";
 import { denyAll } from "@keystone-6/core/access";
 import { integer, json, relationship, select, text, timestamp } from "@keystone-6/core/fields";
 import { requiredRelationshipDb } from "./tenantRelationships";
+import { trackingFields } from "./trackingFields";
+import { trackingBasisField } from "./trackingBasis";
 
 export const GymRefundAttempt = list({
   access: { operation: { query: denyAll, create: denyAll, update: denyAll, delete: denyAll } },
@@ -24,5 +26,7 @@ export const GymRefundAttempt = list({
     lastError: text({ defaultValue: "", access: { read: denyAll, create: denyAll, update: denyAll } }),
     requestedAt: timestamp({ access: { read: denyAll, create: denyAll, update: denyAll } }),
     completedAt: timestamp({ access: { read: denyAll, create: denyAll, update: denyAll } }),
+    ...trackingFields,
+    trackingBasis: trackingBasisField,
   },
 });

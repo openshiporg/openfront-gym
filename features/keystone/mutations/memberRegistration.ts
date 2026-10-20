@@ -1,4 +1,5 @@
-import { consumeAuthAttempt, normalizeAuthIdentity } from "../../../lib/authRateLimit";
+import { budgetKey, consumeAuthAttempt, normalizeAuthIdentity } from "../../../lib/authRateLimit";
+import { isKnownSource, requestClientSource } from "../../../lib/clientSource";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { ensureBoundedMemberRole } from "./memberRole";
 
@@ -23,8 +24,8 @@ export async function registerMember(
   if (password.length < 12 || password.length > 128) throw new Error("Password must be between 12 and 128 characters");
   if (phone.length > 40) throw new Error("Phone number is too long");
   if (
-    !(await consumeAuthAttempt(context.prisma, "signup:global", 100, 60 * 60 * 1000)) ||
-    !(await consumeAuthAttempt(context.prisma, `signup:${email}`, 5, 60 * 60 * 1000))
+    (isKnownSource(requestClientSource(context.req)) && !(await consumeAuthAttempt(context.prisma, budgetKey("signup-source", requestClientSource(context.req)), 20, 60 * 60 * 1000))) ||
+    !(await consumeAuthAttempt(context.prisma, budgetKey("signup", email, requestClientSource(context.req)), 5, 60 * 60 * 1000))
   ) {
     throw new Error("Too many signup attempts. Try again later");
   }

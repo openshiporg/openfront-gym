@@ -1,9 +1,21 @@
 "use client";
 
+import Link from "next/link";
 import { RotateCcw, TriangleAlert } from "lucide-react";
 
 export default function StorefrontError({ reset }: { reset: () => void }) {
   return (
-    <div className="sf-page"><div className="sf-container"><div className="max-w-2xl border border-[var(--sf-border)] bg-[var(--sf-surface)] p-8 sm:p-10"><TriangleAlert className="h-8 w-8 text-[var(--sf-primary)]" aria-hidden="true" /><h1 className="sf-display mt-7 text-4xl sm:text-5xl">We couldn’t load this page.</h1><p className="mt-5 leading-7 text-[var(--sf-muted)]">Try again in a moment. If you were booking a class or making a payment, check your account before repeating the action.</p><button type="button" className="sf-btn-secondary mt-8" onClick={reset}><RotateCcw className="h-4 w-4" aria-hidden="true" />Try again</button><a href="/account" className="sf-btn-secondary mt-8 ml-3">Check your account</a><a href="/contact" className="sf-link mt-6 block">Contact the club</a></div></div></div>
+    <div className="sf-wrap">
+      <div className="sf-outcome sf-rise">
+        <span className="sf-outcome-mark" data-tone="warn"><TriangleAlert aria-hidden="true" /></span>
+        <h1 className="sf-h1">This page didn’t load</h1>
+        <p className="sf-lead">If you were booking or paying, check your account before trying again.</p>
+        <div className="sf-actions">
+          <button type="button" className="sf-btn" data-size="lg" onClick={reset}><RotateCcw aria-hidden="true" />Try again</button>
+          <Link href="/account" className="sf-btn" data-variant="secondary" data-size="lg">Account</Link>
+          <Link href="/contact" className="sf-btn" data-variant="ghost" data-size="lg">Contact</Link>
+        </div>
+      </div>
+    </div>
   );
 }

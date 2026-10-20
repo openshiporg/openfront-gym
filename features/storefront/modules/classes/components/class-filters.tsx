@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 const difficulties = [
-  { id: "all", name: "All formats" },
+  { id: "all", name: "All" },
   { id: "beginner", name: "Beginner" },
   { id: "intermediate", name: "Intermediate" },
   { id: "advanced", name: "Advanced" },
@@ -37,40 +37,22 @@ export default function ClassFilters({
   };
 
   return (
-    <div className="grid gap-3 border-y border-[var(--sf-border)] py-5">
-      <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Filter classes by difficulty">
+    <div className="sf-row">
+      <nav className="sf-seg" aria-label="Level">
         {difficulties.map((item) => {
           const active = selectedDifficulty === item.id || (!selectedDifficulty && item.id === "all");
-          return (
-            <Link
-              key={item.id}
-              href={buildHref({ difficulty: item.id })}
-              aria-current={active ? "page" : undefined}
-              className={`sf-btn shrink-0 px-4 ${active ? "border-[var(--sf-foreground)] bg-[var(--sf-foreground)] text-[var(--sf-background)]" : "border-[var(--sf-border)] bg-[var(--sf-surface)] text-[var(--sf-muted)] hover:border-[var(--sf-border-strong)] hover:text-[var(--sf-foreground)]"}`}
-            >
-              {item.name}
-            </Link>
-          );
+          return <Link key={item.id} href={buildHref({ difficulty: item.id })} aria-current={active ? "page" : undefined} scroll={false}>{item.name}</Link>;
         })}
       </nav>
-      <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Filter classes by duration">
+      <nav className="sf-seg" aria-label="Length">
         {durations.map((item) => {
           const active = selectedDuration === item.id || (!selectedDuration && item.id === "all");
-          return (
-            <Link
-              key={item.id}
-              href={buildHref({ duration: item.id })}
-              aria-current={active ? "page" : undefined}
-              className={`sf-btn shrink-0 px-4 ${active ? "border-[var(--sf-foreground)] bg-[var(--sf-foreground)] text-[var(--sf-background)]" : "border-[var(--sf-border)] bg-[var(--sf-surface)] text-[var(--sf-muted)] hover:border-[var(--sf-border-strong)] hover:text-[var(--sf-foreground)]"}`}
-            >
-              {item.name}
-            </Link>
-          );
+          return <Link key={item.id} href={buildHref({ duration: item.id })} aria-current={active ? "page" : undefined} scroll={false}>{item.name}</Link>;
         })}
-        {selectedDifficulty !== "all" || selectedDuration !== "all" ? (
-          <Link href="/classes" className="sf-btn-ghost ml-2 shrink-0">Clear filters</Link>
-        ) : null}
       </nav>
+      {selectedDifficulty !== "all" || selectedDuration !== "all" ? (
+        <Link href={q ? `/classes?q=${encodeURIComponent(q)}` : "/classes"} className="sf-btn" data-variant="ghost" data-size="sm" scroll={false}>Clear</Link>
+      ) : null}
     </div>
   );
 }

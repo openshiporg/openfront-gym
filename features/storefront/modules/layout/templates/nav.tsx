@@ -1,8 +1,6 @@
-import Link from "next/link";
-import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
 import AuthNav from "../components/auth-nav";
-import KineticMark from "../components/kinetic-mark";
-import NavClient from "../components/NavClient";
+import NavClient, { PrimaryNav } from "../components/NavClient";
+import Wordmark, { wordmarkBrand } from "../components/wordmark";
 
 export default function Nav({
   user,
@@ -13,6 +11,7 @@ export default function Nav({
     name?: string | null;
     tagline?: string | null;
     logoIcon?: string | null;
+    logoColor?: string | null;
     brandHue?: number | null;
     heroPrimaryCtaLabel?: string | null;
     heroPrimaryCtaHref?: string | null;
@@ -20,51 +19,17 @@ export default function Nav({
     heroSecondaryCtaHref?: string | null;
   } | null;
 }) {
-  const brandName = getStorefrontBrandName(config);
-  const usesKineticLockup = brandName.trim().toLowerCase() === "kinetic performance club";
+  const brand = wordmarkBrand(config);
+  const primaryCta = config?.heroPrimaryCtaLabel && config?.heroPrimaryCtaHref ? { label: config.heroPrimaryCtaLabel, href: config.heroPrimaryCtaHref } : null;
+  const secondaryCta = config?.heroSecondaryCtaLabel && config?.heroSecondaryCtaHref ? { label: config.heroSecondaryCtaLabel, href: config.heroSecondaryCtaHref } : null;
   return (
-    <header className="sf-site-header">
-      <div className="sf-container sf-site-header-inner">
-        <Link
-          href="/"
-          className="sf-wordmark"
-          data-kinetic-lockup={usesKineticLockup || undefined}
-          aria-label={`${brandName} home`}
-        >
-          {config?.logoIcon ? (
-            <span
-              className="sf-wordmark-logo [&>svg]:h-full [&>svg]:w-full"
-              aria-hidden="true"
-              dangerouslySetInnerHTML={{ __html: config.logoIcon }}
-            />
-          ) : (
-            <span className="sf-wordmark-mark" aria-hidden="true"><KineticMark /></span>
-          )}
-          <span className="sf-wordmark-copy">
-            <strong>{usesKineticLockup ? "Kinetic" : brandName}</strong>
-            {usesKineticLockup ? <span>Performance Club</span> : config?.tagline ? <span>{config.tagline}</span> : null}
-          </span>
-        </Link>
-
-        <div className="sf-site-navigation">
-          <NavClient
-            user={user}
-            primaryCta={config?.heroPrimaryCtaLabel && config?.heroPrimaryCtaHref ? {
-              label: config.heroPrimaryCtaLabel,
-              href: config.heroPrimaryCtaHref,
-            } : null}
-            secondaryCta={config?.heroSecondaryCtaLabel && config?.heroSecondaryCtaHref ? {
-              label: config.heroSecondaryCtaLabel,
-              href: config.heroSecondaryCtaHref,
-            } : null}
-          />
-          <AuthNav
-            user={user}
-            joinCta={config?.heroPrimaryCtaLabel && config?.heroPrimaryCtaHref ? {
-              label: config.heroPrimaryCtaLabel,
-              href: config.heroPrimaryCtaHref,
-            } : null}
-          />
+    <header className="sf-header">
+      <div className="sf-wrap sf-header-bar">
+        <Wordmark brand={brand} />
+        <PrimaryNav />
+        <div className="sf-header-end">
+          <AuthNav user={user} joinCta={primaryCta} />
+          <NavClient user={user} brand={brand} primaryCta={primaryCta} secondaryCta={secondaryCta} />
         </div>
       </div>
     </header>

@@ -92,6 +92,21 @@ export async function isCompletedMembershipBillingAttempt(context: Context, rawS
   return attempt?.status === "completed";
 }
 
+/**
+ * A retry of the same operation with the same details resumes the original unresolved attempt
+ * (and therefore its provider key), even when the caller lost that key across a redirect or
+ * reload. Different details still conflict and must wait for reconciliation.
+ */
+export async function adoptPendingMembershipBillingKey(context: Context, rawScope: AttemptScope): Promise<AttemptScope> {
+  const scope = normalizeScope(rawScope);
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  const pending = await prisma.membershipBillingAttempt.findFirst({
+    where: { organizationId: scope.organizationId, membershipId: scope.membershipId, operation: scope.operation, requestHash: scope.requestHash, status: "processing" },
+    select: { idempotencyKey: true },
+  });
+  return pending?.idempotencyKey ? { ...scope, idempotencyKey: pending.idempotencyKey } : scope;
+}
+
 export async function claimMembershipBillingAttempt(
   context: Context,
   rawScope: AttemptScope,
@@ -150,15 +165,13 @@ export async function claimMembershipBillingAttempt(
       };
     }
     const unresolvedRemote = await transaction.membershipBillingAttempt.findFirst({
-      where: { organizationId: scope.organizationId, membershipId: scope.membershipId, operation: { in: ["freeze", "tier-change"] }, status: "processing" },
+      where: { organizationId: scope.organizationId, membershipId: scope.membershipId, operation: { in: ["cancel", "freeze", "unfreeze", "tier-change"] }, status: "processing" },
       select: { id: true, operation: true },
     });
     if (unresolvedRemote instanceof Error) throw unresolvedRemote;
     if (unresolvedRemote && unresolvedRemote.id !== existing?.id) {
-      if (unresolvedRemote.operation === "freeze") {
-        throw new Error("Retry the pending freeze with its original idempotency key before another billing change");
-      }
-      throw new Error("Retry the pending membership tier change with its original idempotency key before another billing change");
+      const label = unresolvedRemote.operation === "tier-change" ? "plan change" : unresolvedRemote.operation === "unfreeze" ? "resume" : unresolvedRemote.operation;
+      throw new Error(`A previous ${label} for this membership has not been confirmed yet. Retry that same ${label} first; nothing else can change until it is reconciled.`);
     }
 
     const now = new Date();
@@ -239,7 +252,8 @@ export async function claimMembershipBillingAttempt(
 export async function finishMembershipBillingAttempt(
   context: Context,
   claim: ClaimedAttempt,
-  membershipData: Record<string, unknown>,
+  // Static data, or data derived from the membership row as it stands under the billing fence.
+  membershipData: Record<string, unknown> | ((membership: any) => Record<string, unknown>),
   finalizeRelated?: (transaction: any, membership: any) => Promise<void>,
 ) {
   const prisma = guardKeystonePrismaResults(context.prisma as any);
@@ -262,13 +276,14 @@ export async function finishMembershipBillingAttempt(
     const member = membership && await transaction.member.findFirst({ where: { organizationId: claim.organizationId, userId: membership.memberId } });
     if (!member) throw new Error("Membership member disappeared while finalizing billing");
     await lockTransactionKey(transaction, `member:${member.id}`);
+    const fenced = await transaction.membership.findFirst({ where: { id: claim.membershipId, organizationId: claim.organizationId } });
     const membershipUpdate = await transaction.membership.updateMany({
       where: {
         id: claim.membershipId,
         organizationId: claim.organizationId,
         billingGeneration: claim.generation,
       },
-      data: membershipData,
+      data: typeof membershipData === "function" ? membershipData(fenced) : membershipData,
     });
     if (membershipUpdate.count !== 1) throw new Error("Membership disappeared while finalizing billing operation");
     const updated = await transaction.membership.findFirst({ where: { id: claim.membershipId, organizationId: claim.organizationId } });
@@ -299,7 +314,7 @@ export async function failMembershipBillingAttempt(
   providerOutcome: "definite" | "unknown" = "definite",
 ) {
   const lastError = error instanceof Error ? error.message.slice(0, 2000) : "Billing operation failed";
-  const data = ["freeze", "tier-change"].includes(claim.operation) && providerOutcome === "unknown"
+  const data = providerOutcome === "unknown"
     ? { lastError }
     : { status: "failed", leaseUntil: null, lastError };
   const prisma = guardKeystonePrismaResults(context.prisma as any);

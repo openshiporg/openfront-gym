@@ -14,7 +14,8 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
+      // Same sizing as the Gym segmented track: hugs its tabs, scrolls inside when they overflow.
+      "inline-flex h-10 w-max max-w-full items-center justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 rounded-md bg-muted p-1 text-muted-foreground",
       className
     )}
     {...props}

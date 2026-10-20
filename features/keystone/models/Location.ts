@@ -9,13 +9,36 @@ import {
 import { isSignedIn, permissions } from '../access';
 import { tenantFilter, tenantItemAccess } from '../access/tenantPolicy';
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
+import { retireUnderSchedulingLock } from '../lib/lifecycle-guards';
 
 const tenantItem = (args: any) => tenantItemAccess(args);
 import { trackingFields } from './trackingFields';
 
 export const Location = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
-  hooks: { validateInput: validateTenantOwnership([]) },
+  hooks: {
+    async validateInput(args: any) {
+      let failed = false;
+      const addValidationError = (message: string) => { failed = true; args.addValidationError(message); };
+      await validateTenantOwnership([])({ ...args, addValidationError });
+      // Retiring a site is a deliberate transition: upcoming and in-progress services move or are
+      // cancelled first. The check and the retirement commit together under the scheduling lock.
+      if (!failed && args.operation === 'update' && args.resolvedData.isActive === false && args.item?.isActive) {
+        const problem = await retireUnderSchedulingLock(args.context, 'location', args.item);
+        if (problem) addValidationError(problem);
+      }
+    },
+    async validateDelete({ item, context, addValidationError }: any) {
+      const prisma = context.prisma as any;
+      const [schedules, instances, appointments, checkIns] = await Promise.all([
+        prisma.classSchedule.count({ where: { locationId: item.id } }),
+        prisma.classInstance.count({ where: { locationId: item.id } }),
+        prisma.trainerAppointment.count({ where: { locationId: item.id } }),
+        prisma.checkIn.count({ where: { locationId: item.id } }),
+      ]);
+      if (schedules || instances || appointments || checkIns) addValidationError('Locations with classes, appointments or visits keep their history: mark the location inactive instead of deleting it');
+    },
+  },
   access: {
     operation: {
       query: isSignedIn,

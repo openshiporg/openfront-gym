@@ -1,21 +1,20 @@
 import { Metadata } from "next";
+import { Search } from "lucide-react";
 import ClassGrid from "@/features/storefront/modules/classes/components/class-grid";
 import ClassFilters from "@/features/storefront/modules/classes/components/class-filters";
-import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
-import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
+import { PageHead } from "@/features/storefront/modules/common/page-head";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const config = await getStorefrontConfig();
   return {
-    title: `Classes — ${getStorefrontBrandName(config)}`,
-    description: "Browse coached class formats and move into the live schedule to reserve a spot.",
+    title: "Classes",
+    description: "Class formats by level and length, each linked to its dated sessions.",
   };
 }
 
 export async function ClassesPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ difficulty?: string; duration?: string; q?: string }>;
+  searchParams?: Promise<{ difficulty?: string; duration?: string; q?: string; after?: string }>;
 }) {
   const resolved = searchParams ? await searchParams : undefined;
   const difficulty = resolved?.difficulty ?? "all";
@@ -23,27 +22,25 @@ export async function ClassesPage({
 
   return (
     <div className="sf-page">
-      <div className="sf-container">
-        <header className="sf-page-header">
-          <div>
-            <p className="sf-eyebrow mb-3">Training menu</p>
-            <h1 className="sf-display text-5xl sm:text-6xl">
-              Choose the class
-              <br />
-              <span>that fits today</span>
-            </h1>
-          </div>
-          <p className="sf-lead max-w-md">
-            Find your kind of training. Explore the level, equipment and coaching before choosing a dated session.
-          </p>
-        </header>
+      <div className="sf-wrap">
+        <PageHead title="Classes" />
 
-        <div>
-          <form action="/classes" className="sf-discovery-filters mb-5"><label>Search class formats<input name="q" type="search" defaultValue={resolved?.q} placeholder="Strength, yoga, conditioning…" /></label><input type="hidden" name="difficulty" value={difficulty} /><input type="hidden" name="duration" value={duration} /><button type="submit" className="sf-btn-primary">Search formats</button></form>
+        <div className="sf-stack">
+          <form action="/classes" role="search" className="sf-row" data-gap="sm">
+            <label className="sf-search" style={{ flex: "1 1 16rem" }}>
+              <span className="sr-only">Search classes</span>
+              <Search aria-hidden="true" />
+              <input name="q" type="search" defaultValue={resolved?.q} placeholder="Search classes" className="sf-input" />
+            </label>
+            <input type="hidden" name="difficulty" value={difficulty} />
+            <input type="hidden" name="duration" value={duration} />
+            <button type="submit" className="sf-btn">Search</button>
+          </form>
           <ClassFilters q={resolved?.q} selectedDifficulty={difficulty} selectedDuration={duration} />
-          <div className="mt-8">
-            <ClassGrid q={resolved?.q} difficulty={difficulty} duration={duration} />
-          </div>
+        </div>
+
+        <div style={{ marginTop: 28 }}>
+          <ClassGrid q={typeof resolved?.q === "string" ? resolved.q : undefined} difficulty={difficulty} duration={duration} after={typeof resolved?.after === "string" ? resolved.after.slice(0, 100) : undefined} />
         </div>
       </div>
     </div>

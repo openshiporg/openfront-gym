@@ -4,7 +4,7 @@ import { integer, json, relationship, select, text, timestamp } from "@keystone-
 
 import { isSignedIn, permissions, rules } from "../access";
 import { trackingFields } from "./trackingFields";
-import { requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
+import { requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from "./tenantRelationships";
 
 export const PaymentSession = list({
   db: {
@@ -46,7 +46,7 @@ export const PaymentSession = list({
       graphql: { isNonNull: { read: true } },
       db: { extendPrismaSchema: requiredRelationshipDb("organization") },
     }),
-    user: relationship({ ref: "User.paymentSessions" }),
+    user: relationship({ ref: "User.paymentSessions", db: { extendPrismaSchema: restrictDeleteDb } }),
     membershipTier: relationship({ ref: "MembershipTier.paymentSessions" }),
     paymentProvider: relationship({ ref: "PaymentProvider.sessions" }),
     status: select({

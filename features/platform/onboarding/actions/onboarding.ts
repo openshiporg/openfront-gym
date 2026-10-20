@@ -1,10 +1,18 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { keystoneClient } from '@/features/dashboard/lib/keystoneClient';
+import { gymGraphql as keystoneClient } from '@/features/platform/lib/gym-graphql';
 import type { OnboardingStatus } from './onboardingPolicy';
 
 export type { OnboardingStatus } from './onboardingPolicy';
+
+/** Setup checklist computed from current records after a run. */
+export type OnboardingReadiness = {
+  ready: boolean;
+  steps: Array<{ key: string; label: string; done: boolean; required: boolean; kind?: 'required' | 'optional' | 'first-use'; href: string }>;
+  /** What setup itself created or kept, from its own manifest; separate from readiness. */
+  records?: { created: Record<string, number>; adopted: Record<string, number>; missing: string[]; configurationRecorded: boolean };
+};
 
 type OnboardingActor = {
   id: string;
@@ -66,10 +74,10 @@ export async function runDeterministicOnboardingAction(
   const actor = await getOnboardingActor();
   if (actor.onboardingStatus !== 'in_progress') throw new Error('Onboarding must be in progress before seeding.');
   const response = await keystoneClient<{
-    runDeterministicOnboarding: { success: boolean; instanceCount: number };
+    runDeterministicOnboarding: { success: boolean; instanceCount: number; readiness?: OnboardingReadiness | null };
   }>(`
     mutation RunDeterministicOnboarding($template: String!, $data: JSON) {
-      runDeterministicOnboarding(template: $template, data: $data) { success organizationId runId instanceCount }
+      runDeterministicOnboarding(template: $template, data: $data) { success organizationId runId instanceCount readiness skippedSessions }
     }
   `, { template, data: template === 'custom' ? customData : null });
   if (!response.success || !response.data?.runDeterministicOnboarding?.success) {

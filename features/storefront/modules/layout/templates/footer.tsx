@@ -1,16 +1,46 @@
 import Link from "next/link";
 import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
-import { publicSupportEmail, publishedHours } from "@/features/storefront/lib/contact-config";
+import { mapLink, publicSupportEmail, publishedHours } from "@/features/storefront/lib/contact-config";
+import { isClubToday, orderedHours } from "@/features/storefront/lib/presentation";
+import Wordmark, { wordmarkBrand } from "../components/wordmark";
+import ThemeSwitch from "../components/theme-switch";
 
-const links = [
-  { label: "Classes", href: "/classes" },
+const trainLinks = [
   { label: "Schedule", href: "/schedule" },
-  { label: "Memberships", href: "/memberships" },
+  { label: "Classes", href: "/classes" },
   { label: "Coaches", href: "/instructors" },
-  { label: "Facility", href: "/facilities" },
+  { label: "Memberships", href: "/memberships" },
+];
+
+const clubLinks = [
+  { label: "Facilities", href: "/facilities" },
   { label: "Contact", href: "/contact" },
   { label: "Policies", href: "/policies" },
+  { label: "Account", href: "/account" },
 ];
+
+const DAY_LABEL: Record<string, string> = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
+
+function dayLabel(day: string) {
+  return DAY_LABEL[day.trim().toLowerCase().slice(0, 3)] ?? day;
+}
+
+/** Published opening hours in calendar order; today's row carries the status dot on its line. */
+export function HoursList({ hours, timeZone, short = false }: { hours: Array<[string, string]>; timeZone: string; short?: boolean }) {
+  return (
+    <dl className="sf-hours">
+      {orderedHours(hours).map(([day, value]) => {
+        const today = isClubToday(day, timeZone);
+        return (
+          <div key={day} data-today={today || undefined}>
+            <dt>{short ? dayLabel(day).slice(0, 3) : dayLabel(day)}{today ? <span className="sr-only"> (today)</span> : null}</dt>
+            <dd>{value}</dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
 
 export default function Footer({
   config,
@@ -19,67 +49,60 @@ export default function Footer({
     name?: string | null;
     tagline?: string | null;
     logoIcon?: string | null;
+    logoColor?: string | null;
     description?: string | null;
     footerTagline?: string | null;
     copyrightName?: string | null;
     address?: string | null;
     phone?: string | null;
     email?: string | null;
-    hours?: Record<string, string> | null;
+    timezone?: string | null;
+    hours?: Record<string, unknown> | null;
   } | null;
 }) {
   const brandName = getStorefrontBrandName(config);
-  const footerTagline = config?.footerTagline?.trim() || config?.tagline?.trim() || null;
+  const footerTagline = config?.footerTagline?.trim() || null;
   const copyrightName = config?.copyrightName?.trim() || brandName;
   const supportEmail = publicSupportEmail(config?.email);
   const hours = publishedHours(config?.hours);
+  const timeZone = config?.timezone || "UTC";
 
   return (
-    <footer className="border-t border-[var(--sf-border)] bg-[var(--sf-surface)]">
-      <div className="sf-container grid gap-12 py-14 md:grid-cols-2 lg:grid-cols-[1.25fr_0.8fr_0.9fr] lg:py-18">
-        <div>
-          <Link href="/" className="text-xl font-bold tracking-[-0.04em]">{brandName}</Link>
-          {footerTagline ? (
-            <p className="mt-4 max-w-md text-sm leading-6 text-[var(--sf-muted)]">{footerTagline}</p>
-          ) : null}
-          <nav className="mt-8 flex flex-wrap gap-x-5 gap-y-3 text-sm" aria-label="Footer navigation">
-            {links.map((link) => (
-              <Link key={link.href} href={link.href} className="underline decoration-[var(--sf-border-strong)] underline-offset-4 hover:decoration-[var(--sf-foreground)]">
-                {link.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
+    <footer className="sf-footer sf-on-night">
+      <div className="sf-wrap">
+        <div className="sf-footer-grid">
+          <div className="sf-footer-brand">
+            <div><Wordmark brand={wordmarkBrand(config)} /></div>
+            {footerTagline ? <p>{footerTagline}</p> : null}
+          </div>
 
-        <div>
-          <h2 className="text-sm font-semibold">Visit</h2>
-          <div className="mt-4 space-y-3 text-sm leading-6">
-            {config?.address ? <p>{config.address}</p> : <p className="text-[var(--sf-muted)]">Address not published</p>}
-            {config?.phone ? <a href={`tel:${config.phone}`} className="block hover:underline">{config.phone}</a> : null}
-            {supportEmail ? <a href={`mailto:${supportEmail}`} className="block break-all hover:underline">{supportEmail}</a> : null}
+          <div className="sf-footer-cols">
+            <nav className="sf-footer-col" aria-labelledby="footer-train">
+              <h2 id="footer-train">Train</h2>
+              {trainLinks.map((link) => <Link key={link.href} href={link.href}>{link.label}</Link>)}
+            </nav>
+            <nav className="sf-footer-col" aria-labelledby="footer-club">
+              <h2 id="footer-club">Club</h2>
+              {clubLinks.map((link) => <Link key={link.href} href={link.href}>{link.label}</Link>)}
+            </nav>
+            <div className="sf-footer-col">
+              <h2>Visit</h2>
+              {config?.address ? <p>{config.address}</p> : null}
+              {config?.address ? <a href={mapLink(config.address)} target="_blank" rel="noreferrer">Directions<span className="sr-only"> (opens Google Maps)</span></a> : null}
+              {config?.phone ? <a href={`tel:${config.phone.replace(/[^\d+]/g, "")}`}>{config.phone}</a> : null}
+              {supportEmail ? <a href={`mailto:${supportEmail}`} className="sf-break">{supportEmail}</a> : null}
+              <Link href="/contact">Send a message</Link>
+            </div>
+            <div className="sf-footer-col">
+              <h2>Hours</h2>
+              {hours.length ? <HoursList hours={hours} timeZone={timeZone} short /> : <p>Not published</p>}
+            </div>
           </div>
         </div>
 
-        <div>
-          <h2 className="text-sm font-semibold">Hours</h2>
-          {hours.length ? (
-            <dl className="mt-4 grid gap-2 text-sm">
-              {hours.map(([day, value]) => (
-                <div key={day} className="grid grid-cols-[5.25rem_1fr] gap-3">
-                  <dt className="capitalize text-[var(--sf-muted)]">{day.slice(0, 3)}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : (
-            <p className="mt-4 text-sm text-[var(--sf-muted)]">Hours not published</p>
-          )}
-        </div>
-      </div>
-      <div className="border-t border-[var(--sf-border)]">
-        <div className="sf-container flex flex-col gap-2 py-5 text-xs text-[var(--sf-muted)] sm:flex-row sm:items-center sm:justify-between">
+        <div className="sf-footer-bottom">
           <p>© {new Date().getFullYear()} {copyrightName}</p>
-          <Link href="/account" className="hover:text-[var(--sf-foreground)]">Member account</Link>
+          <ThemeSwitch night />
         </div>
       </div>
     </footer>

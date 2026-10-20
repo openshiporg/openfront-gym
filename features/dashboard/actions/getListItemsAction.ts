@@ -7,7 +7,6 @@
 import { keystoneClient } from '../lib/keystoneClient'
 import { getList } from './getList'
 import { getFieldTypeFromViewsIndex } from '../views/getFieldTypeFromViewsIndex'
-import { normalizeDashboardListWindow } from '@/lib/list-pagination'
 
 interface ListItemsVariables extends Record<string, unknown> {
   where?: any
@@ -70,7 +69,7 @@ function getFieldGraphQLSelection(field: any): string {
         return selectionFn(field.path, field.fieldMeta)
       }
     } catch (error) {
-      console.warn(`Could not get field type for viewsIndex ${field.viewsIndex}:`, error)
+      console.warn("Dashboard operation failed (details redacted).")
     }
   }
   
@@ -132,9 +131,8 @@ export async function getListItemsAction(
       }
     `
     
-    // Clamp caller-controlled take/skip values before the GraphQL request.
-    const pagination = normalizeDashboardListWindow(variables.take, variables.skip, list.pageSize)
-    const response = await keystoneClient(query, { ...variables, ...pagination }, cacheOptions)
+    // Execute the query
+    const response = await keystoneClient(query, variables, cacheOptions)
     
     if (!response.success) {
       console.error(`❌ GraphQL query failed:`, response.error)
@@ -150,10 +148,10 @@ export async function getListItemsAction(
     }
     
   } catch (error) {
-    console.error(`💥 Error fetching list items for ${listKey}:`, error)
+    console.error("Dashboard operation failed (details redacted).")
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error occurred'
+      error: "Unknown error occurred"
     }
   }
 }

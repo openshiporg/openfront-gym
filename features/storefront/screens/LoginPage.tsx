@@ -2,107 +2,93 @@
 
 import Link from "next/link";
 import { useState, useActionState } from "react";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { login, signUp } from "@/features/storefront/lib/data/user";
+import { contactPath } from "@/features/storefront/lib/contact-config";
 
 interface LoginPageProps {
   redirectTo?: string;
   allowSignup?: boolean;
   showHeading?: boolean;
+  /** Which tab opens first when sign-up is allowed; new-visitor flows open on "Create account". */
+  defaultView?: "signin" | "signup";
+  /** Published participation terms a new member accepts with the account. */
+  terms?: { policyId: string; version: string } | null;
 }
 
-export default function LoginPage({ redirectTo, allowSignup = false, showHeading = false }: LoginPageProps) {
-  const [view, setView] = useState<"signin" | "signup">("signin");
+export default function LoginPage({ redirectTo, allowSignup = false, showHeading = false, defaultView = "signin", terms = null }: LoginPageProps) {
+  const [view, setView] = useState<"signin" | "signup">(defaultView);
   const [signinError, signinAction, signinPending] = useActionState(login, null);
   const [signupError, signupAction, signupPending] = useActionState(signUp, null);
-
-  const inputClass =
-    "h-12 w-full border border-[var(--color-rule)] bg-[var(--color-paper)] px-4 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-faint)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)]";
-  const labelClass = "text-sm font-medium text-[var(--color-ink-muted)]";
+  const signup = view === "signup" && allowSignup;
 
   return (
-    <div className="w-full">
-      {showHeading ? (
-        <h1 className="sf-display mb-7 text-[var(--text-display-s)]">Member account</h1>
+    <div className="sf-auth">
+      {showHeading ? <h1 className="sf-h1">{signup ? "Create account" : "Sign in"}</h1> : null}
+      {allowSignup ? (
+        <div className="sf-seg" role="group" aria-label="Account access">
+          {(["signin", "signup"] as const).map((v) => (
+            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+              {v === "signup" ? "Create account" : "Sign in"}
+            </button>
+          ))}
+        </div>
       ) : null}
-      <div className="mb-7 flex border-b border-[var(--color-rule)]">
-        {(allowSignup ? (["signin", "signup"] as const) : (["signin"] as const)).map((v) => (
-          <button
-            key={v}
-            type="button"
-            aria-pressed={view === v}
-            onClick={() => setView(v)}
-            className={`flex-1 border-b-2 pb-3 text-sm font-medium transition-colors ${
-              view === v
-                ? "border-[var(--color-accent)] text-[var(--color-accent)]"
-                : "border-transparent text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
-            }`}
-          >
-            {v === "signup" ? "Create account" : "Sign in"}
-          </button>
-        ))}
-      </div>
 
-      {view === "signin" || !allowSignup ? (
-        <form action={signinAction} className="space-y-4">
+      {!signup ? (
+        <form action={signinAction} className="sf-form">
           {redirectTo ? <input type="hidden" name="redirectTo" value={redirectTo} /> : null}
-          <div className="space-y-1.5">
-            <label htmlFor="signin-email" className={labelClass}>
-              Email
-            </label>
-            <input id="signin-email" name="email" type="email" required autoComplete="email" className={inputClass} />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="signin-password" className={labelClass}>
-              Password
-            </label>
-            <input id="signin-password" name="password" type="password" required autoComplete="current-password" className={inputClass} />
-          </div>
-          <Link href="/dashboard/reset" className="sf-link text-sm">Forgot your password?</Link>
-          {signinError ? <p role="alert" className="sf-status-error px-3 py-2 text-sm">{signinError}</p> : null}
-          <button type="submit" disabled={signinPending} className="sf-btn-primary mt-2 flex h-12 w-full items-center justify-center gap-2 disabled:opacity-50">
-            {signinPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Sign in
+          <label htmlFor="signin-email" className="sf-field">Email
+            <input id="signin-email" name="email" type="email" required autoComplete="email" />
+          </label>
+          <label htmlFor="signin-password" className="sf-field">Password
+            <input id="signin-password" name="password" type="password" required autoComplete="current-password" />
+          </label>
+          {signinError ? <p role="alert" className="sf-field-error">{signinError}</p> : null}
+          <button type="submit" disabled={signinPending} className="sf-btn" data-size="lg" data-block>
+            {signinPending ? <Loader2 className="sf-spin" aria-hidden="true" /> : null}
+            {signinPending ? "Signing in…" : "Sign in"}
           </button>
+          <div><Link href={redirectTo && redirectTo !== "/account" ? `/forgot-password?returnTo=${encodeURIComponent(redirectTo)}` : "/forgot-password"} className="sf-link" data-size="sm">Forgot password</Link></div>
+          {!allowSignup ? (
+            <p className="sf-meta">New to the club? <Link href={contactPath("account", redirectTo)} className="sf-link" data-size="sm">Contact us to open an account</Link></p>
+          ) : null}
         </form>
       ) : (
-        <form action={signupAction} className="space-y-4">
+        <form action={signupAction} className="sf-form">
           {redirectTo ? <input type="hidden" name="redirectTo" value={redirectTo} /> : null}
-          <div className="space-y-1.5">
-            <label htmlFor="signup-name" className={labelClass}>
-              Full name
-            </label>
-            <input id="signup-name" name="name" required autoComplete="name" className={inputClass} />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="signup-email" className={labelClass}>
-              Email
-            </label>
-            <input id="signup-email" name="email" type="email" required autoComplete="email" className={inputClass} />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="signup-phone" className={labelClass}>
-              Phone
-            </label>
-            <input id="signup-phone" name="phone" type="tel" autoComplete="tel" className={inputClass} />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="signup-password" className={labelClass}>
-              Password
-            </label>
-            <input id="signup-password" name="password" type="password" minLength={12} maxLength={128} required autoComplete="new-password" className={inputClass} />
-            <p className="text-xs text-[var(--color-ink-muted)]">Use 12–128 characters.</p>
-          </div>
-          {signupError ? <p role="alert" className="sf-status-error px-3 py-2 text-sm">{signupError}</p> : null}
-          <ul className="space-y-2 pt-1">
-            {["Facility access starts with your plan", "Class entitlement depends on tier", "Billing is handled securely by Stripe"].map((t) => (
-              <li key={t} className="flex items-center gap-2 text-xs text-[var(--color-ink-muted)]">
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
-                {t}
-              </li>
-            ))}
-          </ul>
-          <button type="submit" disabled={signupPending} className="sf-btn-primary mt-2 flex h-12 w-full items-center justify-center gap-2 disabled:opacity-50">
-            {signupPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Create account
+          <label htmlFor="signup-name" className="sf-field">Full name
+            <input id="signup-name" name="name" required autoComplete="name" />
+          </label>
+          <label htmlFor="signup-email" className="sf-field">Email
+            <input id="signup-email" name="email" type="email" required autoComplete="email" />
+          </label>
+          <label htmlFor="signup-phone" className="sf-field">Phone (optional)
+            <input id="signup-phone" name="phone" type="tel" autoComplete="tel" />
+          </label>
+          <label htmlFor="signup-password" className="sf-field">Password
+            <input id="signup-password" name="password" type="password" minLength={12} maxLength={128} required autoComplete="new-password" />
+            <small>12–128 characters</small>
+          </label>
+          {terms ? (
+            <>
+              <input type="hidden" name="termsPolicyId" value={terms.policyId} />
+              <label className="sf-check">
+                <input type="checkbox" name="acceptTerms" required />
+                <span>I accept the <Link href="/waiver" className="sf-link" target="_blank">participation terms</Link> (version {terms.version})</span>
+              </label>
+            </>
+          ) : null}
+          {signupError ? <p role="alert" className="sf-field-error">{signupError}</p> : null}
+          {signupError?.includes("already exists") ? (
+            <div className="sf-actions">
+              <button type="button" className="sf-btn" data-variant="secondary" onClick={() => setView("signin")}>Sign in</button>
+              <Link href={redirectTo && redirectTo !== "/account" ? `/forgot-password?returnTo=${encodeURIComponent(redirectTo)}` : "/forgot-password"} className="sf-link" data-size="sm">Forgot password</Link>
+            </div>
+          ) : null}
+          <button type="submit" disabled={signupPending} className="sf-btn" data-size="lg" data-block>
+            {signupPending ? <Loader2 className="sf-spin" aria-hidden="true" /> : null}
+            {signupPending ? "Creating account…" : "Create account"}
           </button>
         </form>
       )}

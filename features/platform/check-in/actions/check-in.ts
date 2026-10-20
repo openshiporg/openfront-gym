@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
+import { gymGraphql as keystoneClient } from "@/features/platform/lib/gym-graphql";
 import { resolveGymTimeZone } from "@/lib/timezone";
 import { FRONT_DESK_DATA_DOCUMENT } from "../graphql";
+import { staffActionError } from "@/features/platform/lib/action-error";
 
 export type FrontDeskMember = {
   id: string;
@@ -27,7 +28,9 @@ export type FrontDeskCheckIn = {
   } | null;
 };
 
-export async function getFrontDeskData(query?: string) {
+export type OpenVisitQuery = { visitQuery?: string; visitLocationId?: string; visitOrder?: "newest" | "oldest"; visitSkip?: number };
+
+export async function getFrontDeskData(query?: string, visits: OpenVisitQuery = {}) {
   const trimmed = query?.trim() ?? "";
 
   const response = await keystoneClient<{
@@ -36,15 +39,17 @@ export async function getFrontDeskData(query?: string) {
       checkIns: FrontDeskCheckIn[];
       locations: { id: string; name?: string | null }[];
       gymSettings: { timezone?: string | null; organization?: { timezone?: string | null } | null }[];
+      openVisits: { total: number; skip: number; pageSize: number };
     };
-  }>(FRONT_DESK_DATA_DOCUMENT, { query: trimmed });
+  }>(FRONT_DESK_DATA_DOCUMENT, { query: trimmed, visitQuery: visits.visitQuery || null, visitLocationId: visits.visitLocationId || null, visitOrder: visits.visitOrder || null, visitSkip: visits.visitSkip || 0 });
 
   if (!response.success) {
     return {
       success: false as const,
-      error: response.error,
+      error: staffActionError(response, "Front-desk data could not be loaded. Refresh to try again."),
       members: [],
       checkIns: [],
+      openVisits: { total: 0, skip: 0, pageSize: 25 },
       locations: [],
       timeZone: "UTC",
     };
@@ -54,6 +59,7 @@ export async function getFrontDeskData(query?: string) {
     success: true as const,
     members: response.data.frontDeskWorkspace.members,
     checkIns: response.data.frontDeskWorkspace.checkIns,
+    openVisits: response.data.frontDeskWorkspace.openVisits,
     locations: response.data.frontDeskWorkspace.locations,
     timeZone: resolveGymTimeZone(
       response.data.frontDeskWorkspace.gymSettings[0]?.timezone,
@@ -62,9 +68,11 @@ export async function getFrontDeskData(query?: string) {
   };
 }
 
-export async function manualCheckOut(formData: FormData): Promise<void> {
+export type FrontDeskActionState = { status: "idle" | "done" | "error"; message: string | null };
+
+export async function manualCheckOut(_previous: FrontDeskActionState, formData: FormData): Promise<FrontDeskActionState> {
   const checkInId = formData.get("checkInId")?.toString();
-  if (!checkInId) throw new Error("Missing check-in id.");
+  if (!checkInId) return { status: "error", message: "Choose a visit to check out." };
 
   const response = await keystoneClient(`
     mutation ManualCheckOut($checkInId: ID!) {
@@ -74,18 +82,17 @@ export async function manualCheckOut(formData: FormData): Promise<void> {
       }
     }
   `, { checkInId });
-  if (!response.success) throw new Error(response.error);
+  if (!response.success) return { status: "error", message: staffActionError(response, "Check-out was not recorded. Refresh and try again.") };
   revalidatePath("/dashboard/platform/check-in");
+  return { status: "done", message: "Checked out." };
 }
 
-export async function manualCheckIn(formData: FormData): Promise<void> {
+export async function manualCheckIn(_previous: FrontDeskActionState, formData: FormData): Promise<FrontDeskActionState> {
   const memberId = formData.get("memberId")?.toString();
   const locationId = formData.get("locationId")?.toString();
   const method = formData.get("method")?.toString() || "manual";
 
-  if (!memberId) {
-    throw new Error("Missing member id.");
-  }
+  if (!memberId) return { status: "error", message: "Choose a member to check in." };
 
   const mutation = `
     mutation ManualCheckIn($memberId: ID!, $locationId: ID, $method: String!) {
@@ -96,15 +103,16 @@ export async function manualCheckIn(formData: FormData): Promise<void> {
     }
   `;
 
-  const response = await keystoneClient(mutation, {
+  const response = await keystoneClient<{ recordMemberCheckIn: { reused?: boolean } }>(mutation, {
     memberId,
     locationId: locationId || null,
     method,
   });
 
   if (!response.success) {
-    throw new Error(response.error);
+    return { status: "error", message: staffActionError(response, "Entry was not recorded. Check the member's eligibility and the facility hours in Store Settings, then try again.") };
   }
 
   revalidatePath("/dashboard/platform/check-in");
+  return { status: "done", message: response.data.recordMemberCheckIn?.reused ? "Already checked in." : "Checked in." };
 }

@@ -1,6 +1,7 @@
 "use server";
 
-import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
+import { gymGraphql as keystoneClient } from "@/features/platform/lib/gym-graphql";
+import { staffActionError as safeActionError } from "@/features/platform/lib/action-error";
 
 export type MemberProfileProjection = {
   id: string;
@@ -18,13 +19,14 @@ export type MemberProfileProjection = {
   membershipLengthDays: number;
   attendanceRate: number;
   lastCheckIn: string | null;
+  updatedAt: string | null;
 };
 
 const PROFILE_FIELDS = `
   id name email phone dateOfBirth joinDate status
   emergencyContactName emergencyContactPhone healthNotes profilePhotoUrl
   membershipTier { id name monthlyPrice }
-  membershipLengthDays attendanceRate lastCheckIn
+  membershipLengthDays attendanceRate lastCheckIn updatedAt
 `;
 
 export async function getMemberProfileAction(): Promise<MemberProfileProjection> {
@@ -33,27 +35,26 @@ export async function getMemberProfileAction(): Promise<MemberProfileProjection>
       memberProfile { ${PROFILE_FIELDS} }
     }
   `);
-  if (!response.success) throw new Error(response.error);
+  if (!response.success) throw new Error(safeActionError(response, "Your member details couldn’t be loaded. Try again."));
   return response.data.memberProfile;
 }
 
 export async function updateMemberProfileAction(data: {
   name?: string;
-  email?: string;
   phone?: string;
-  password?: string;
   dateOfBirth?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   healthNotes?: { conditions: string[]; injuries: string[]; notes: string };
-}): Promise<MemberProfileProjection> {
+  expectedUpdatedAt?: string | null;
+}): Promise<{ success: true; profile: MemberProfileProjection } | { success: false; error: string }> {
   const response = await keystoneClient<{ updateMemberProfile: MemberProfileProjection }>(`
     mutation UpdateMemberProfile($data: MemberProfileUpdateInput!) {
       updateMemberProfile(data: $data) { ${PROFILE_FIELDS} }
     }
   `, { data });
-  if (!response.success) throw new Error(response.error);
-  return response.data.updateMemberProfile;
+  if (!response.success) return { success: false, error: safeActionError(response, "Your changes could not be saved. Please try again.") };
+  return { success: true, profile: response.data.updateMemberProfile };
 }
 
 export async function getMemberCheckInCodeAction(): Promise<{

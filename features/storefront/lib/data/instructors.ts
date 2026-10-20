@@ -1,5 +1,6 @@
 import { gql } from "graphql-request";
 import { gymClient } from "@/features/storefront/lib/config";
+import { PUBLIC_PAGE_SIZE, collectPublicPages, publicCatalogPage } from "./pages";
 
 export type InstructorData = {
   id: string;
@@ -33,12 +34,22 @@ function instructorShape(instructor: PublicInstructor): InstructorData {
 }
 
 export async function getInstructors(): Promise<InstructorData[]> {
-  const result = await gymClient.request<{ publicGymInstructors: PublicInstructor[] }>(gql`
-    query StorefrontInstructors {
-      publicGymInstructors(limit: 100) { id name bio specialties certifications imagePath }
+  const { items } = await collectPublicPages(async (skip) => (await gymClient.request<{ publicGymInstructors: PublicInstructor[] }>(gql`
+    query StorefrontInstructors($skip: Int, $limit: Int) {
+      publicGymInstructors(limit: $limit, skip: $skip) { id name bio specialties certifications imagePath }
     }
-  `);
-  return result.publicGymInstructors.map(instructorShape);
+  `, { skip, limit: PUBLIC_PAGE_SIZE })).publicGymInstructors);
+  return items.map(instructorShape).sort((left, right) => left.user.name.localeCompare(right.user.name));
+}
+
+/** One page of published coaches after `after` (keyset continuation). */
+export async function getInstructorPage(after?: string) {
+  const page = await publicCatalogPage(async (limit) => (await gymClient.request<{ publicGymInstructors: PublicInstructor[] }>(gql`
+    query StorefrontInstructorPage($limit: Int, $after: ID) {
+      publicGymInstructors(limit: $limit, after: $after) { id name bio specialties certifications imagePath }
+    }
+  `, { limit, after: after || null })).publicGymInstructors);
+  return { items: page.items.map(instructorShape), nextAfter: page.nextAfter };
 }
 
 export async function getInstructorById(id: string): Promise<InstructorData | null> {

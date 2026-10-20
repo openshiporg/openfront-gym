@@ -3,10 +3,29 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { CalendarDays, Clock, MapPin, Users, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { bookClass } from "@/features/storefront/lib/actions/classes";
+import { acceptParticipationTermsAction } from "@/features/storefront/lib/actions/participation";
+import { contactPath } from "@/features/storefront/lib/contact-config";
+import { difficultyLabel } from "@/features/storefront/lib/presentation";
+import { bookingReturnPath, joinPath } from "@/features/storefront/lib/return-path";
+import { SessionState } from "@/features/storefront/modules/common/training";
+import { Sheet } from "@/features/storefront/modules/common/sheet";
+import { Banner } from "@/features/storefront/modules/common/ui";
+import LoginPage from "@/features/storefront/screens/LoginPage";
+
+/** Who is looking at the booking sheet, resolved on the server so the sheet opens on the right step. */
+export type BookingViewer = {
+  signedIn: boolean;
+  membership: "active" | "attention" | "none";
+  signupsAllowed: boolean;
+  /** The member's upcoming confirmed or waitlisted bookings, by session id. */
+  bookings?: Record<string, { status: "confirmed" | "waitlist"; waitlistPosition?: number | null }>;
+  /** Published participation terms, accepted at sign-up. */
+  terms?: { policyId: string; version: string } | null;
+  /** Signed-in member's standing against the current participation terms. */
+  participation?: { policyId: string; version: string; accepted: boolean; termsHref: string } | null;
+};
 
 type ClassBookingModalProps = {
   isOpen: boolean;
@@ -19,40 +38,49 @@ type ClassBookingModalProps = {
     duration: number;
     spots: number;
     capacity: number;
+    waitlist?: number;
     difficulty?: string;
     date?: string;
     location?: string;
     isBookable?: boolean;
   };
+  viewer?: BookingViewer;
   onBookingSuccess?: () => void;
   onReturnFocus?: () => void;
 };
+
+type Result =
+  | { success: true; waitlist: boolean; title: string; message: string }
+  | { success: false; message: string; actionHref?: string; actionLabel?: string };
 
 export default function ClassBookingModal({
   isOpen,
   onClose,
   classData,
+  viewer,
   onBookingSuccess,
   onReturnFocus,
 }: ClassBookingModalProps) {
-  const [result, setResult] = useState<{
-    success: boolean;
-    message: string;
-    actionHref?: string;
-    actionLabel?: string;
-  } | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsError, setTermsError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const returnTo = bookingReturnPath(classData.id);
 
   const handleBook = () => {
     startTransition(async () => {
       const res = await bookClass(classData.id);
       if (res.success) {
-        const message =
-          res.status === "waitlist"
-            ? `Joined the waitlist${res.waitlistPosition ? ` at position #${res.waitlistPosition}` : ""}. This is not a confirmed space. Check your bookings for promotion; an eligible credit is used when your place is confirmed.`
-            : `Booked. You have ${res.creditsRemaining === -1 ? "unlimited" : res.creditsRemaining} class credit(s) remaining.`;
-        setResult({ success: true, message });
+        const waitlist = res.status === "waitlist";
+        setResult({
+          success: true,
+          waitlist,
+          title: waitlist ? `On the waitlist${res.waitlistPosition ? ` · position ${res.waitlistPosition}` : ""}` : "Booked",
+          message: waitlist
+            ? "Not a confirmed space yet."
+            : res.creditsRemaining === -1 ? "Unlimited classes on your plan." : `${res.creditsRemaining} class ${res.creditsRemaining === 1 ? "credit" : "credits"} left.`,
+        });
         router.refresh();
         onBookingSuccess?.();
       } else {
@@ -66,107 +94,133 @@ export default function ClassBookingModal({
     });
   };
 
+  const handleAcceptTerms = (policyId: string) => {
+    startTransition(async () => {
+      const accepted = await acceptParticipationTermsAction(policyId);
+      if (accepted.success) { setTermsError(null); setTermsAccepted(true); router.refresh(); }
+      else setTermsError(accepted.error || "Your acceptance wasn't saved. Try again.");
+    });
+  };
+
   const handleClose = () => {
     setResult(null);
+    setTermsError(null);
     onClose();
   };
 
-  const spotsLeft = classData.spots;
-  const isFull = spotsLeft <= 0;
+  const isFull = classData.spots <= 0;
   const isBookable = classData.isBookable !== false;
+  const level = difficultyLabel(classData.difficulty);
+  const when = [classData.date, classData.time].filter(Boolean).join(" · ");
+  const contactLink = <Link href={contactPath("booking", returnTo)} className="sf-link">Contact the club</Link>;
+  const existing = viewer?.bookings?.[classData.id];
+  const needsTerms = Boolean(viewer?.participation && !viewer.participation.accepted && !termsAccepted);
+  const step = !viewer || result ? "book" : existing ? "booked" : !viewer.signedIn ? "account" : viewer.membership === "none" ? "membership" : viewer.membership === "attention" ? "attention" : needsTerms ? "terms" : "book";
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !isPending) handleClose(); }}>
-      <DialogContent onCloseAutoFocus={event => { if (onReturnFocus) { event.preventDefault(); onReturnFocus(); } }} className="sf-booking-dialog max-w-md border-[var(--sf-border)] bg-[var(--sf-surface)] text-[var(--sf-foreground)] shadow-none">
-        <DialogHeader>
-          <DialogTitle>{isFull ? "Join this session’s waitlist" : "Review your class booking"}</DialogTitle>
-          <DialogDescription>
-            Check the session details below. Your membership and eligibility are confirmed when you submit.
-          </DialogDescription>
-        </DialogHeader>
+    <Sheet
+      open={isOpen}
+      onOpenChange={(open) => { if (!open && !isPending) handleClose(); }}
+      title={classData.name}
+      description={when}
+      dismissible={!isPending}
+      onCloseAutoFocus={(event) => { if (onReturnFocus) { event.preventDefault(); onReturnFocus(); } }}
+    >
+      <dl className="sf-facts">
+        <div><dt>Spaces</dt><dd><SessionState spots={classData.spots} capacity={classData.capacity} waitlist={classData.waitlist} long /></dd></div>
+        <div><dt>Coach</dt><dd>{classData.instructor || "Not published"}</dd></div>
+        <div><dt>Length</dt><dd>{classData.duration} min</dd></div>
+        {level ? <div><dt>Level</dt><dd>{level}</dd></div> : null}
+        {classData.location ? <div><dt>Location</dt><dd>{classData.location}</dd></div> : null}
+      </dl>
 
-        <div className="space-y-4">
-          {/* Class info */}
-          <div className="space-y-2 border border-[var(--sf-border)] bg-[var(--sf-secondary)] p-4">
-            <p className="font-semibold">{classData.name}</p>
-            {classData.date ? (
-              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <CalendarDays className="h-3.5 w-3.5" />
-                {classData.date}
-              </p>
-            ) : null}
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" />
-                {classData.time} · typically {classData.duration} min
-              </span>
-              <span className="flex items-center gap-1">
-                <Users className="h-3.5 w-3.5" />
-                {isFull ? (
-                  <span className="text-[var(--sf-warning)] font-medium">Full</span>
-                ) : (
-                  <span className={spotsLeft <= 3 ? "text-[var(--sf-warning)] font-medium" : ""}>
-                    {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left
-                  </span>
-                )}
-              </span>
-            </div>
-            {classData.instructor ? (
-              <p className="text-xs text-muted-foreground">with {classData.instructor}</p>
-            ) : null}
-            {classData.location ? (
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <MapPin className="h-3.5 w-3.5" />
-                {classData.location}
-              </p>
-            ) : null}
+      {step === "booked" && existing ? (
+        <>
+          <Banner
+            tone={existing.status === "waitlist" ? "warn" : "ok"}
+            title={existing.status === "waitlist" ? `You’re on the waitlist${existing.waitlistPosition ? ` · position ${existing.waitlistPosition}` : ""}` : "You’re booked for this class"}
+          >
+            {existing.status === "waitlist" ? "If a place opens, it’s offered in waitlist order while your membership and credits still allow it. Leave the waitlist from your bookings." : "Cancel from your bookings if you can’t make it."}
+          </Banner>
+          <div className="sf-sheet-actions">
+            <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose}>Close</button>
+            <Link href="/account/bookings" className="sf-btn" data-variant="accent">Your bookings</Link>
           </div>
-
-          {/* Result feedback */}
-          {result && (
-            <div role={result.success ? "status" : "alert"} className={`flex items-start gap-2 p-3 text-sm ${result.success ? "sf-status-success" : "sf-status-error"}`}>
-              {result.success
-                ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-                : <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />}
-              {result.message}
+        </>
+      ) : step === "account" ? (
+        <>
+          <Banner
+            title={viewer?.signupsAllowed ? "Create an account or sign in to book" : "Sign in to book"}
+            action={<Link href={contactPath("trial", returnTo)} className="sf-link">Ask about a drop-in or trial visit</Link>}
+          >
+            You’ll come back to this class to confirm. Visiting once? Drop-ins and trial visits are arranged by the front desk.
+          </Banner>
+          <LoginPage redirectTo={returnTo} allowSignup={viewer?.signupsAllowed} defaultView="signup" terms={viewer?.terms} />
+        </>
+      ) : step === "terms" && viewer?.participation ? (
+        <>
+          <Banner tone="warn" title="Accept the participation terms to book">
+            Read the <Link href={viewer.participation.termsHref} className="sf-link" target="_blank">participation terms</Link> (version {viewer.participation.version}). The club records your acceptance once for this version.
+          </Banner>
+          {termsError ? <Banner tone="bad" action={contactLink}>{termsError}</Banner> : null}
+          <form className="sf-form" onSubmit={(event) => { event.preventDefault(); handleAcceptTerms(viewer.participation!.policyId); }}>
+            <label className="sf-check"><input type="checkbox" name="acceptTerms" required /><span>I accept the participation terms, version {viewer.participation.version}</span></label>
+            <div className="sf-sheet-actions">
+              <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose} disabled={isPending}>Close</button>
+              <button type="submit" className="sf-btn" data-variant="accent" disabled={isPending}>
+                {isPending ? <Loader2 className="sf-spin" aria-hidden="true" /> : null}
+                {isPending ? "Saving…" : "Accept and continue"}
+              </button>
             </div>
-          )}
-
-          {result && !result.success && result.actionHref && result.actionLabel ? (
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" onClick={handleClose}>Cancel</Button>
-              <Button asChild>
-                <Link href={result.actionHref}>{result.actionLabel}</Link>
-              </Button>
-            </div>
+          </form>
+        </>
+      ) : step === "membership" ? (
+        <>
+          <Banner tone="warn" title="A membership is needed to book classes" action={contactLink}>
+            Choose a plan, then you’ll come back to this class to confirm.
+          </Banner>
+          <div className="sf-sheet-actions">
+            <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose}>Close</button>
+            <Link href={joinPath(null, returnTo)} className="sf-btn" data-variant="accent">Choose membership</Link>
+          </div>
+        </>
+      ) : step === "attention" ? (
+        <>
+          <Banner tone="warn" title="Your membership needs attention before you can book" action={contactLink} />
+          <div className="sf-sheet-actions">
+            <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose}>Close</button>
+            <Link href="/account/membership" className="sf-btn" data-variant="accent">Review membership</Link>
+          </div>
+        </>
+      ) : (
+        <>
+          {result && result.success ? (
+            <Banner tone={result.waitlist ? "warn" : "ok"} title={result.title}>{result.message}</Banner>
+          ) : result ? (
+            <Banner tone="bad" action={contactLink}>{result.message}</Banner>
           ) : null}
 
-          {/* Actions */}
-          {!result?.success && !result?.actionHref && (
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={handleClose} disabled={isPending} className="flex-1">
-                Cancel
-              </Button>
-              <Button
-                onClick={handleBook}
-                disabled={isPending || !isBookable}
-                className="flex-1"
-              >
-                {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {!isBookable ? "No upcoming session" : isFull ? "Join waitlist" : "Confirm booking"}
-              </Button>
+          {result && result.success ? (
+            <div className="sf-sheet-actions">
+              <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose}>Done</button>
+              <Link href="/account/bookings" className="sf-btn">Your bookings</Link>
+            </div>
+          ) : result && !result.success && result.actionHref && result.actionLabel ? (
+            <div className="sf-sheet-actions">
+              <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose}>Close</button>
+              <Link href={result.actionHref} className="sf-btn" data-variant="accent">{result.actionLabel}</Link>
+            </div>
+          ) : (
+            <div className="sf-sheet-actions">
+              <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose} disabled={isPending}>Cancel</button>
+              <button type="button" className="sf-btn" data-variant="accent" onClick={handleBook} disabled={isPending || !isBookable}>
+                {isPending ? <Loader2 className="sf-spin" aria-hidden="true" /> : null}
+                {!isBookable ? "Unavailable" : isPending ? (isFull ? "Joining…" : "Booking…") : isFull ? "Join waitlist" : "Confirm booking"}
+              </button>
             </div>
           )}
-          {result?.success ? (
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" onClick={handleClose}>Done</Button>
-              <Button asChild>
-                <Link href="/account/bookings">View bookings</Link>
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </DialogContent>
-    </Dialog>
+        </>
+      )}
+    </Sheet>
   );
 }

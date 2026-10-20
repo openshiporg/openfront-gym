@@ -12,6 +12,15 @@ export function requiredRelationshipDb(relationName: string) {
     .replace(new RegExp(`(${relationName}Id\\s+String)\\?`), "$1");
 }
 
+/**
+ * History keeps the identity it names: the database refuses to delete the referenced member or
+ * account while this row points at it, whatever path the delete takes or races with. (The list's
+ * validateDelete explains the supported alternative first; this is the authority.)
+ */
+export function restrictDeleteDb(field: string) {
+  return field.replace(/@relation\(([^)]*)\)/, "@relation($1, onDelete: Restrict)");
+}
+
 export function compoundUniqueDb(...constraints: string[]) {
   return (schema: string) => {
     const additions = constraints

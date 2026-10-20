@@ -4,17 +4,21 @@ import "dotenv/config";
 import { models } from "./models";
 import { statelessSessions } from "@keystone-6/core/session";
 import { extendGraphqlSchema } from "./mutations";
-import { sendPasswordResetEmail } from "./lib/mail";
+import { mailDeliveryEnabled, sendPasswordResetEmail } from "./lib/mail";
 import { permissions } from "./access";
 import { withGraphqlListMaxTake } from "./security/graphql-limits";
 
 const isNextBuild = process.env.NEXT_PHASE === "phase-production-build";
 const strictConfig = (!isNextBuild && process.env.NODE_ENV === "production") || process.env.GYM_STRICT_CONFIG === "true";
 
+// Dashboard self-signup is unsupported for Gym. The request boundary already refuses it
+// (generic createUser needs people-management permission), so a wrong flag is reported
+// instead of preventing every other part of the app from starting.
 if (process.env.PUBLIC_SIGNUPS_ALLOWED === "true") {
-  throw new Error("PUBLIC_SIGNUPS_ALLOWED is reserved for dashboard User signup, which is not supported for Gym.");
+  console.error("PUBLIC_SIGNUPS_ALLOWED=true is not supported for Gym; dashboard signup stays refused. Set it to false.");
 }
 
+// Synthetic payments can never run in production.
 if (strictConfig && process.env.PAYMENT_TEST_MODE === "true") {
   throw new Error("PAYMENT_TEST_MODE must be disabled in strict/production mode.");
 }
@@ -27,77 +31,42 @@ function requiredSecret(name: string) {
   return value;
 }
 
-function requiredValue(name: string) {
-  const value = process.env[name]?.trim();
-  if (strictConfig && !value) throw new Error(`${name} must be configured in strict mode.`);
-  return value;
-}
-
-function requiredUrl(name: string) {
-  const value = requiredValue(name);
-  if (strictConfig && value) {
-    const parsed = new URL(value);
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      throw new Error(`${name} must use http or https.`);
-    }
-  }
-  return value;
-}
-
-function explicitCapability(name: string) {
-  const value = process.env[name]?.trim().toLowerCase();
-  if (strictConfig && value !== "true" && value !== "false") {
-    throw new Error(`${name} must be explicitly true or false in strict mode.`);
-  }
-  return value === "true";
-}
-
-const databaseURL = process.env.DATABASE_URL || "file:./keystone.db";
+const DEVELOPMENT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/openfront_gym_dev";
 if (strictConfig && !process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be configured in strict mode.");
+}
+const databaseURL = process.env.DATABASE_URL || DEVELOPMENT_DATABASE_URL;
+if (!/^postgres(ql)?:\/\//.test(databaseURL)) {
+  throw new Error("DATABASE_URL must be a PostgreSQL connection URL (postgresql://…).");
 }
 
 const sessionConfig = {
   maxAge: 60 * 60 * 24 * 30,
   secret: requiredSecret("SESSION_SECRET") || "local-only-session-secret-for-tests",
 };
-if (strictConfig) {
-  const stripeEnabled = explicitCapability("STRIPE_ENABLED");
-  const mailEnabled = explicitCapability("MAIL_ENABLED");
-  if (stripeEnabled) {
-    requiredSecret("STRIPE_SECRET_KEY");
-    requiredSecret("STRIPE_WEBHOOK_SECRET");
+
+/**
+ * Optional capabilities (payments, mail, kiosk, partner discovery, member QR codes) are
+ * validated when they are switched on and used; a missing or incomplete one is reported and
+ * stays unavailable, but never stops the dashboard and storefront from starting.
+ */
+function capabilityWarnings() {
+  const warnings: string[] = [];
+  const missing = (name: string, min = 1) => !process.env[name] || process.env[name]!.trim().length < min;
+  for (const flag of ["STRIPE_ENABLED", "MAIL_ENABLED"]) {
+    const value = process.env[flag]?.trim().toLowerCase();
+    if (value !== undefined && value !== "true" && value !== "false") warnings.push(`${flag} must be true or false; treating it as false`);
   }
-  requiredSecret("QR_CODE_SECRET");
-  requiredUrl("NEXTAUTH_URL");
-  if (mailEnabled) {
-    requiredValue("SMTP_HOST");
-    requiredValue("SMTP_PORT");
-    requiredValue("SMTP_USER");
-    requiredValue("SMTP_PASSWORD");
-    requiredValue("SMTP_FROM");
-    requiredUrl("SMTP_STORE_LINK");
-  }
-  if (process.env.PUBLIC_MEMBER_SIGNUPS_ALLOWED === "true") {
-    requiredValue("PUBLIC_MEMBER_SIGNUP_ORGANIZATION_ID");
-    requiredValue("STOREFRONT_ORGANIZATION_ID");
-  }
-  const kioskConfigured = Boolean(process.env.KIOSK_API_TOKEN || process.env.KIOSK_ORGANIZATION_ID);
-  if (kioskConfigured) {
-    requiredSecret("KIOSK_API_TOKEN");
-    requiredValue("KIOSK_ORGANIZATION_ID");
-  }
-  const discoveryConfigured = Boolean(
-    process.env.DISCOVERY_API_KEY ||
-    process.env.DISCOVERY_ORGANIZATION_ID ||
-    process.env.DISCOVERY_API_SCOPES,
-  );
-  if (discoveryConfigured) {
-    requiredSecret("DISCOVERY_API_KEY");
-    requiredValue("DISCOVERY_ORGANIZATION_ID");
-    requiredValue("DISCOVERY_API_SCOPES");
-  }
+  if (process.env.STRIPE_ENABLED === "true" && (missing("STRIPE_SECRET_KEY", 32) || missing("STRIPE_WEBHOOK_SECRET", 32))) warnings.push("Stripe is enabled without STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET; card payments are unavailable");
+  if (process.env.MAIL_ENABLED === "true" && (missing("SMTP_HOST") || missing("SMTP_FROM"))) warnings.push("Mail is enabled without SMTP_HOST and SMTP_FROM; email is unavailable");
+  if ((process.env.STRIPE_ENABLED === "true" || process.env.MAIL_ENABLED === "true") && missing("NEXTAUTH_URL")) warnings.push("NEXTAUTH_URL (the public site origin) is required for payment returns and email links");
+  if ((process.env.KIOSK_API_TOKEN || process.env.KIOSK_ORGANIZATION_ID) && (missing("KIOSK_API_TOKEN", 32) || missing("KIOSK_ORGANIZATION_ID"))) warnings.push("Kiosk needs both KIOSK_API_TOKEN (32+ characters) and KIOSK_ORGANIZATION_ID; kiosk is unavailable");
+  if ((process.env.DISCOVERY_API_KEY || process.env.DISCOVERY_ORGANIZATION_ID || process.env.DISCOVERY_API_SCOPES) && (missing("DISCOVERY_API_KEY", 32) || missing("DISCOVERY_ORGANIZATION_ID") || missing("DISCOVERY_API_SCOPES"))) warnings.push("Partner discovery is partly configured; it stays unavailable");
+  if (missing("QR_CODE_SECRET", 32)) warnings.push("QR_CODE_SECRET is not set; member check-in codes are unavailable");
+  if (process.env.PUBLIC_MEMBER_SIGNUPS_ALLOWED === "true" && (missing("PUBLIC_MEMBER_SIGNUP_ORGANIZATION_ID") || missing("STOREFRONT_ORGANIZATION_ID"))) warnings.push("Public member signup needs PUBLIC_MEMBER_SIGNUP_ORGANIZATION_ID and STOREFRONT_ORGANIZATION_ID; signup is unavailable");
+  return warnings;
 }
+if (strictConfig) for (const warning of capabilityWarnings()) console.warn(`[gym config] ${warning}`);
 
 const bucketName = process.env.S3_BUCKET_NAME || (strictConfig ? "" : "keystone-test");
 const region = process.env.S3_REGION || (strictConfig ? "" : "ap-southeast-2");
@@ -145,9 +114,21 @@ const { withAuth } = createAuth({
     },
   },
   passwordResetLink: {
+    tokensValidForMins: 60,
     async sendToken(args) {
-      // send the email
-      await sendPasswordResetEmail(args.token, args.identity);
+      // The link goes only to the holder's own mailbox. A member account keeps its storefront
+      // channel (even when it also has dashboard access); staff-only accounts reset in the dashboard.
+      // Failures never surface to the caller, so the public reply cannot reveal whether an account
+      // exists; they are logged without identity or token.
+      try {
+        const user = await args.context.sudo().query.User.findOne({ where: { id: String(args.itemId) }, query: "id organization { id } role { canAccessDashboard }" });
+        const members = user ? await args.context.sudo().query.Member.count({ where: { AND: [{ user: { id: { equals: user.id } } }, { organization: { id: { equals: user.organization?.id ?? "" } } }] } }) : 0;
+        if (!mailDeliveryEnabled()) return;
+        const outcome = await sendPasswordResetEmail(args.token, args.identity, { storefront: members > 0, dashboard: Boolean(user?.role?.canAccessDashboard) });
+        if (outcome !== "accepted") console.warn(`Password link mail ${outcome} by the mail server`);
+      } catch {
+        console.warn("Password link mail could not be sent");
+      }
     },
   },
   sessionData: `
@@ -157,6 +138,7 @@ const { withAuth } = createAuth({
     organization {
       id
       name
+      status
     }
     role {
       id

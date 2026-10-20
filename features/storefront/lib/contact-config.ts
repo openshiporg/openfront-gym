@@ -1,11 +1,13 @@
+import { displayWeeklyHours } from "@/features/keystone/lib/gym-hours";
+
 /** Gym Settings hours are authoritative; contact-topic prose is not a second timetable. */
-export function publishedHours(hours?: Record<string, string> | null) {
-  return Object.entries(hours || {}).filter(([, value]) => typeof value === "string" && value.trim());
+export function publishedHours(hours?: unknown) {
+  return displayWeeklyHours(hours);
 }
 
 export function contactTopicsWithHours(
   topics: Array<{ title: string; details: string[] }>,
-  hours?: Record<string, string> | null,
+  hours?: unknown,
 ) {
   const entries = publishedHours(hours);
   const details = entries.length ? entries.map(([day, value]) => `${day} · ${value}`) : ["Hours not published"];
@@ -45,4 +47,35 @@ export function sanitizeContactTopics(
     }
     return topic;
   });
+}
+
+/** Contact form topics; `key` is what storefront links pass as `?topic=` to preselect one. */
+export const CONTACT_TOPICS = [
+  { key: "membership", label: "Membership" },
+  { key: "booking", label: "Class booking" },
+  { key: "training", label: "Personal training" },
+  { key: "account", label: "Account and sign-in" },
+  { key: "tour", label: "Visit or tour" },
+  { key: "trial", label: "Drop-in or trial visit" },
+  { key: "general", label: "Something else" },
+] as const;
+
+export type ContactTopicKey = (typeof CONTACT_TOPICS)[number]["key"];
+
+export function contactTopicLabel(key?: string | null) {
+  return CONTACT_TOPICS.find((topic) => topic.key === key)?.label ?? CONTACT_TOPICS[0].label;
+}
+
+/** Link to the contact page with a topic preselected and the page the customer was on. */
+export function contactPath(topic?: ContactTopicKey | null, from?: string | null) {
+  const params = new URLSearchParams();
+  if (topic) params.set("topic", topic);
+  if (from && from.startsWith("/") && !from.startsWith("//")) params.set("from", from);
+  const query = params.toString();
+  return query ? `/contact?${query}` : "/contact";
+}
+
+/** Google Maps search link for a published street address. */
+export function mapLink(address: string) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }

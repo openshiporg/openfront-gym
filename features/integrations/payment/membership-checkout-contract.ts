@@ -1,4 +1,6 @@
 export const CHECKOUT_RETURN_COOKIE = "gym-membership-checkout-return";
+/** Billing cycle of the checkout in progress, so an abandoned checkout returns to the same offer. */
+export const CHECKOUT_CYCLE_COOKIE = "gym-membership-checkout-cycle";
 
 export type CheckoutResult =
   | { success: true; url: string; paymentSessionId: string }

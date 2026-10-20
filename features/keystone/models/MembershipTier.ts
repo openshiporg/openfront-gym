@@ -17,6 +17,7 @@ import { trackingFields } from "./trackingFields";
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 
 import { decimalToMinor } from "../../integrations/payment/commercial-agreement";
+import { membershipAccessWindow } from "../lib/membership-access-hours";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
 const validateMembershipTierTenant = validateTenantOwnership([]);
@@ -50,6 +51,29 @@ export async function validateMembershipTierInput(args: any) {
   }
   if ((monthlyPriceId || annualPriceId) && !productId) {
     args.addValidationError("A Stripe Product ID is required with checkout Price IDs");
+  }
+  // Online membership service starts only after a positive paid invoice, so a zero price can't
+  // be published for checkout. Free plans stay drafts until there is a supported free policy.
+  if (monthlyPriceId && Number.isFinite(monthlyPrice) && monthlyPrice <= 0) {
+    args.addValidationError("A monthly price above zero is required to sell this plan online; set the price or remove the monthly Stripe Price ID");
+  }
+  if (annualPriceId && Number.isFinite(annualPrice) && annualPrice <= 0) {
+    args.addValidationError("An annual price above zero is required to sell this plan online; set the price or remove the annual Stripe Price ID");
+  }
+  for (const [field, label, max] of [["guestPasses", "Guest passes", 1000], ["personalTrainingSessions", "Included personal training sessions", 1000], ["contractLength", "Contract length (months)", 120], ["maxClassBookings", "Maximum concurrent bookings", 1000]] as const) {
+    const current = value(field);
+    if (current == null) continue;
+    if (!Number.isInteger(current) || current < 0 || current > max) args.addValidationError(`${label} must be a whole number from 0 to ${max}`);
+  }
+  // Access hours are enforced at facility admission: only a policy the admission check can
+  // read may be saved.
+  if (args.resolvedData.accessHours !== undefined || args.resolvedData.accessHoursJson !== undefined) {
+    try { membershipAccessWindow({ accessHours: value("accessHours"), accessHoursJson: value("accessHoursJson") }); }
+    catch { args.addValidationError("Access hours must be one of: 24/7, Staffed hours, Limited, Closed, or one range such as 5:00 AM – 11:00 PM"); }
+  }
+  const features = value("features");
+  if (features != null && (!Array.isArray(features) || features.length > 12 || features.some((item: unknown) => typeof item !== "string" || !item.trim() || item.length > 120))) {
+    args.addValidationError("Plan features must be a list of up to 12 short lines (120 characters each)");
   }
 }
 
@@ -108,8 +132,9 @@ export const MembershipTier = list({
       links: true,
     }),
 
-    monthlyPriceMinor: integer({ access: { create: denyAll, update: denyAll }, db: { isNullable: true } }),
-    annualPriceMinor: integer({ access: { create: denyAll, update: denyAll }, db: { isNullable: true } }),
+    // Derived from the display prices in resolveInput; never entered directly.
+    monthlyPriceMinor: integer({ access: { create: denyAll, update: denyAll }, db: { isNullable: true }, ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "read" }, description: "Set automatically from Monthly price" } }),
+    annualPriceMinor: integer({ access: { create: denyAll, update: denyAll }, db: { isNullable: true }, ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "read" }, description: "Set automatically from Annual price" } }),
 
     monthlyPrice: float({
       validation: { isRequired: true },
@@ -136,7 +161,7 @@ export const MembershipTier = list({
     accessHours: text({
       defaultValue: "limited",
       ui: {
-        description: "e.g., '24/7' or 'limited' (6am-10pm)",
+        description: "Enforced at facility check-in. Enter exactly one of: 24/7, Staffed hours, Limited (the saved limited range, 6:00 AM – 10:00 PM unless one is configured), Closed, or one range such as 5:00 AM – 11:00 PM",
       },
     }),
 
@@ -203,24 +228,26 @@ export const MembershipTier = list({
       },
     }),
 
+    // Legacy display value: checkout sells the monthly and annual Stripe prices above, so this
+    // field changes no billing and is kept only to preserve existing data.
     billingInterval: select({
       type: 'string',
       options: [
         { label: 'Monthly', value: 'monthly' },
-        { label: 'Quarterly', value: 'quarterly' },
         { label: 'Annual', value: 'annual' },
       ],
       defaultValue: 'monthly',
       ui: {
-        description: 'Default billing interval for this tier',
+        createView: { fieldMode: 'hidden' },
+        itemView: { fieldMode: 'hidden' },
+        listView: { fieldMode: 'hidden' },
       },
     }),
 
     features: json({
       defaultValue: [],
       ui: {
-        views: './fields/json-view',
-        description: 'List of features included in this tier (stored as JSON array)',
+        description: 'Up to 12 short lines shown on the public plan card, e.g. ["Open gym access", "2 guest passes a month"]',
       },
     }),
 
@@ -231,17 +258,20 @@ export const MembershipTier = list({
       },
     }),
 
+    // Not connected to admission or display (guest passes are the supported benefit); kept
+    // only to preserve existing data.
     hasGuestPrivileges: checkbox({
       defaultValue: false,
       ui: {
-        description: 'Can members bring guests?',
+        createView: { fieldMode: 'hidden' },
+        itemView: { fieldMode: 'hidden' },
+        listView: { fieldMode: 'hidden' },
       },
     }),
 
     accessHoursJson: json({
       defaultValue: { type: 'limited', hours: '6am-10pm' },
       ui: {
-        views: './fields/json-view',
         description: 'Access hours configuration (stored as JSON)',
       },
     }),
@@ -250,6 +280,7 @@ export const MembershipTier = list({
       ref: 'PaymentSession.membershipTier',
       many: true,
       access: { create: denyAll, update: denyAll },
+      ui: { createView: { fieldMode: 'hidden' }, itemView: { fieldMode: 'read' } },
     }),
 
     ...trackingFields,

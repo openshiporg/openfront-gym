@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getUser } from "@/features/storefront/lib/data/user";
 import { cookies } from "next/headers";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Clock3 } from "lucide-react";
 import {
   clearCheckoutReturnAndRedirect,
   completeMembershipCheckoutAction,
@@ -15,7 +15,7 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
   let result: { ok: true; tierName: string; billingCycle: string } | { ok: false; message: string };
 
   if (!sessionId) {
-    result = { ok: false, message: "This link does not contain a checkout confirmation. Check your membership, or return using the confirmation link from your checkout." };
+    result = { ok: false, message: "This link has no checkout confirmation. Check your membership, or use the link from your checkout." };
   } else {
     try {
       const provisioned = await completeMembershipCheckoutAction(sessionId);
@@ -29,44 +29,40 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
     } catch {
       result = {
         ok: false,
-        message: "Membership activation could not be confirmed yet. Do not start another payment; check your account or contact the front desk with the checkout time.",
+        message: "Activation isn’t confirmed yet. Don’t start another payment; check your membership or contact the front desk with the checkout time.",
       };
     }
   }
 
   return (
-    <div className="sf-page px-5 py-20 sm:px-8">
-      <div className="mx-auto max-w-3xl border border-[var(--color-rule)] bg-[var(--color-surface)] p-10">
+    <div className="sf-wrap">
+      <div className="sf-outcome sf-rise">
         {result.ok ? (
           <>
-            <CheckCircle2 className="h-10 w-10 text-[var(--color-accent)]" />
-            <p className="sf-eyebrow mt-5">Membership confirmed</p>
-            <h1 className="sf-display mt-3 text-[var(--text-display-s)]">Welcome to the club</h1>
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-[var(--color-ink-muted)]">
-              Your <span className="font-medium text-[var(--color-ink)]">{result.tierName}</span> plan is now active on a{" "}
-              <span className="font-medium text-[var(--color-ink)]">{result.billingCycle}</span> billing cycle.
-            </p>
-            <div className="mt-10 flex flex-wrap gap-3">
-              <CheckoutReturnButton
-                destination={returnTo || "/account"}
-                className="sf-btn-primary px-6"
-              >
-                {returnTo?.startsWith("/schedule") ? "Continue class booking" : returnTo ? "Continue" : "Go to account"}
+            <span className="sf-outcome-mark" data-tone="ok"><CheckCircle2 aria-hidden="true" /></span>
+            <h1 className="sf-h1">Membership active</h1>
+            <dl className="sf-facts" style={{ width: "100%" }}>
+              <div><dt>Plan</dt><dd>{result.tierName}</dd></div>
+              <div><dt>Billing</dt><dd style={{ textTransform: "capitalize" }}>{result.billingCycle}</dd></div>
+            </dl>
+            <div className="sf-actions">
+              <CheckoutReturnButton destination={returnTo || "/schedule"} variant="accent">
+                {returnTo?.startsWith("/schedule") ? "Continue booking" : returnTo ? "Continue" : "Book a class"}
               </CheckoutReturnButton>
-              <CheckoutReturnButton destination="/account/membership" className="sf-btn-outline px-6">
-                View membership
+              <CheckoutReturnButton destination="/account/membership" variant="secondary">
+                Membership
               </CheckoutReturnButton>
             </div>
           </>
         ) : (
           <>
-            <p className="sf-eyebrow">Payment verification</p>
-            <h1 className="sf-display mt-3 text-[var(--text-display-s)]">Verification still needed</h1>
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-[var(--color-ink-muted)]">{result.message}</p>
-            <div className="mt-10 flex flex-wrap gap-3">
-              <Link href="/account/membership" className="sf-btn-primary">Check membership</Link>
-              {sessionId && <Link href={`/join/success?session_id=${encodeURIComponent(sessionId)}`} className="sf-btn-secondary">Check confirmation again</Link>}
-              <Link href="/contact" className="sf-btn-secondary">Contact the front desk</Link>
+            <span className="sf-outcome-mark" data-tone="warn"><Clock3 aria-hidden="true" /></span>
+            <h1 className="sf-h1">Payment not yet verified</h1>
+            <p className="sf-lead">{result.message}</p>
+            <div className="sf-actions">
+              <Link href="/account/membership" className="sf-btn">Check membership</Link>
+              {sessionId ? <Link href={`/join/success?session_id=${encodeURIComponent(sessionId)}`} className="sf-btn" data-variant="secondary">Check again</Link> : null}
+              <Link href="/contact" className="sf-btn" data-variant="ghost">Contact</Link>
             </div>
           </>
         )}
@@ -77,17 +73,17 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
 
 function CheckoutReturnButton({
   destination,
-  className,
+  variant,
   children,
 }: {
   destination: string;
-  className: string;
+  variant: "accent" | "secondary";
   children: React.ReactNode;
 }) {
   return (
     <form action={clearCheckoutReturnAndRedirect}>
       <input type="hidden" name="destination" value={destination} />
-      <button type="submit" className={className}>{children}</button>
+      <button type="submit" className="sf-btn" data-variant={variant} data-size="lg">{children}</button>
     </form>
   );
 }

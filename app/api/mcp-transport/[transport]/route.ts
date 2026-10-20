@@ -15,7 +15,7 @@ import {
   parse,
   validate,
 } from 'graphql';
-import { getBaseUrl } from '@/features/dashboard/lib/getBaseUrl';
+import { internalGraphqlEndpoint } from '@/features/keystone/lib/internal-origin';
 import { internalGraphqlFetch } from '@/features/keystone/lib/internal-origin';
 
 // Get simple type name for display
@@ -138,8 +138,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
     const { transport } = await params;
     
     // Construct GraphQL endpoint
-    const baseUrl = await getBaseUrl();
-    const graphqlEndpoint = `${baseUrl}/api/graphql`;
+    const graphqlEndpoint = internalGraphqlEndpoint();
     
     // Extract cookie from request
     const cookie = request.headers.get('cookie') || ''
@@ -1029,8 +1028,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
 export async function GET(request: Request, { params }: { params: Promise<{ transport: string }> }) {
   const { transport } = await params;
   
-  const baseUrl = await getBaseUrl();
-  const graphqlEndpoint = `${baseUrl}/api/graphql`;
+  const graphqlEndpoint = internalGraphqlEndpoint();
   
   return new Response(JSON.stringify({ 
     message: 'Simple MCP Server is running',

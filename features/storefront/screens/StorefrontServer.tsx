@@ -1,6 +1,7 @@
 import { ThemeProvider } from "next-themes";
 import { getUser } from "@/features/storefront/lib/data/user";
 import { MainLayout } from "./MainLayout";
+import { SegmentedTrackScroller } from "@/components/segmented-track-scroller";
 
 /**
  * StorefrontServer — async root wrapper for all storefront routes.
@@ -23,6 +24,7 @@ export default async function StorefrontServer({
       disableTransitionOnChange
     >
       <MainLayout user={user}>{children}</MainLayout>
+      <SegmentedTrackScroller />
     </ThemeProvider>
   );
 }

@@ -2,7 +2,9 @@ import { mergeSchemas } from "@graphql-tools/schema";
 import type { GraphQLSchema } from 'graphql';
 import redirectToInit from "./redirectToInit";
 import { getBillingStats, getBillingWorkspace } from "../queries/billing";
-import { getMemberCheckInCode, getMemberProfile, updateMemberProfile } from "../queries/memberExperience";
+import { getMemberCheckInCode, getMemberProfile, getMyUpcomingBookingPage, updateMemberProfile } from "../queries/memberExperience";
+import { changeMemberPassword } from "../lib/password-proof";
+import { confirmEmailChange, requestEmailChange } from "./accountIdentity";
 import { getSchedulingWorkspace } from "../queries/scheduling";
 import { getInstructorAccount, getRosterDetail, getRosterSessions } from "../queries/rosters";
 import { getFrontDeskWorkspace } from "../queries/checkIn";
@@ -19,6 +21,7 @@ import {
   getPublicGymSchedule,
   getPublicGymSchedules,
   getPublicGymSettings,
+  configuredStorefrontOrganization,
 } from "../queries/publicGym";
 import {
   checkClassAvailability,
@@ -39,7 +42,7 @@ import {
   completeMembershipCheckout,
   refundGymPayment,
 } from "./paymentLifecycle";
-import { upsertGymSettings } from "./gymSettingsLifecycle";
+import { gymSettingsEditor, publishGymParticipationTerms, upsertGymSettings } from "./gymSettingsLifecycle";
 import {
   cancelClassBooking,
   cancelClassInstance,
@@ -51,7 +54,6 @@ import { runDeterministicOnboarding } from "./deterministicOnboarding";
 import { registerMember } from "./memberRegistration";
 import { inviteMember } from "./memberInvitation";
 import { setMemberAccountStatus } from "./memberAccount";
-import { prepareInstructorAccount } from "./instructorAccount";
 import { transitionOnboardingStatus } from "./onboardingStatus";
 import {
   generateUpcomingClassInstances,
@@ -76,7 +78,10 @@ import { refreshMyEntitlement } from './memberEntitlement';
 import { trainingWorkspaceTypeDefs, getTrainingWorkspace, recordTrainingPackage, refundTrainingPackage, saveTrainerAvailability, assignCoaching, transitionCoaching, saveTrainingLead } from './trainingWorkspace';
 import { bookTrainerAppointment, transitionTrainerAppointment, rescheduleTrainerAppointment } from './trainerAppointment';
 import { importMemberContacts } from './portableData';
-import { retailTypeDefs, retailWorkspace, saveRetailItem, sellRetail, returnRetail, closeRetail } from './retailLifecycle';
+import { retailTypeDefs, retailWorkspace, retailSaleItems, saveRetailItem, quoteRetailSale, sellRetail, returnRetail, closeRetail } from './retailLifecycle';
+import { counterPaymentTypeDefs, reconcileCounterPayment } from './counterPayments';
+import { beginStaffIntent, getMyPendingStaffIntents, getStaffIntent, settleStaffIntent, staffIntentTypeDefs } from './staffIntents';
+import { coachProfileTypeDefs, createCoachProfile, eligibleCoachAccounts } from './coachProfiles';
 
 const graphql = String.raw;
 
@@ -85,20 +90,22 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
     schemas: [baseSchema],
     typeDefs: [graphql`
       type Query {
-        operationsWorkspace(caseAfterId: ID): JSON!
-        participationWorkspace: JSON!
+        gymSettingsEditor: JSON!
+        operationsWorkspace(caseAfterId: ID, noticeSkip: Int, eventSkip: Int, resourceSkip: Int, credentialScope: String, credentialSkip: Int, memberQuery: String): JSON!
+        participationWorkspace(evidenceAfterId: ID): JSON!
         exportOperatingData(kind: String!, from: String!, to: String!): JSON!
         redirectToInit: Boolean
         checkClassAvailability(classInstanceId: ID!): ClassAvailabilityResult!
         getBillingStats: BillingStats!
-        billingWorkspace: JSON!
+        billingWorkspace(q: String, recoverySkip: Int, failedSkip: Int, planSkip: Int, refundSkip: Int, tierQuery: String, tierSkip: Int, pinnedTierId: ID): JSON!
         memberProfile: MemberProfileProjection!
         memberCheckInCode: MemberCheckInCode!
+        myUpcomingBookingPage(status: String!, skip: Int = 0, take: Int = 20, before: DateTime): JSON!
         schedulingWorkspace(start: DateTime!, end: DateTime!, userId: ID): JSON!
         instructorAccount: JSON
-        rosterSessions: JSON!
-        rosterDetail(classInstanceId: ID!): JSON
-        frontDeskWorkspace(query: String): JSON!
+        rosterSessions(q: String, state: String, from: String, to: String, sort: String, skip: Int): JSON!
+        rosterDetail(classInstanceId: ID!, confirmedSkip: Int, waitlistSkip: Int, otherSkip: Int): JSON
+        frontDeskWorkspace(query: String, visitQuery: String, visitLocationId: ID, visitOrder: String, visitSkip: Int): JSON!
         reportsDashboard: JSON!
         kioskSearchMembers(query: String!, organizationId: ID!, credential: String!): [KioskSearchMember!]!
         discoveryClasses(
@@ -110,10 +117,12 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
           locationId: ID
           locationName: String
           limit: Int
+          skip: Int
         ): JSON!
 
         publicGymSettings: PublicGymSettings
-        publicGymClassTypes(limit: Int = 50): [PublicGymClassType!]!
+        storefrontOrganization: ID
+        publicGymClassTypes(limit: Int = 50, skip: Int = 0, after: ID, q: String, difficulty: String, duration: String): [PublicGymClassType!]!
         publicGymClassType(id: ID!): PublicGymClassType
         publicGymSchedules(dayOfWeek: String, instructorId: ID, limit: Int = 50): [PublicGymSchedule!]!
         publicGymSchedule(id: ID!): PublicGymSchedule
@@ -122,20 +131,26 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
           to: DateTime
           scheduleId: ID
           instructorId: ID
+          classTypeId: ID
+          locationId: ID
+          search: String
+          skip: Int = 0
           limit: Int = 50
         ): [PublicGymClassInstance!]!
         publicGymClassInstance(id: ID!): PublicGymClassInstance
-        publicGymInstructors(limit: Int = 50): [PublicGymInstructor!]!
+        publicGymInstructors(limit: Int = 50, skip: Int = 0, after: ID): [PublicGymInstructor!]!
         publicGymInstructor(id: ID!): PublicGymInstructor
-        publicGymMembershipTiers(limit: Int = 50): [PublicGymMembershipTier!]!
+        publicGymMembershipTiers(limit: Int = 50, skip: Int = 0, after: ID): [PublicGymMembershipTier!]!
         publicGymMembershipTier(id: ID!): PublicGymMembershipTier
       }
 
       type PublicGymSettings {
         id: ID!
+        salesOpen: Boolean!
         name: String!
         tagline: String
         logoIcon: String
+        logoColor: String!
         brandHue: Int!
         description: String
         address: String
@@ -162,6 +177,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         facilityHighlights: JSON
         heroStats: JSON
         contactTopics: JSON
+        participationTerms: JSON
       }
 
       type PublicGymClassType {
@@ -203,11 +219,18 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         state: String!
       }
 
+      type PublicGymLocation {
+        id: ID!
+        name: String!
+        address: String
+      }
+
       type PublicGymClassInstance {
         id: ID!
         startsAt: String!
         schedule: PublicGymSchedule
         instructor: PublicGymInstructor
+        location: PublicGymLocation
         availability: PublicGymAvailability!
       }
 
@@ -223,6 +246,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         personalTrainingSessions: Int!
         freezeAllowed: Boolean!
         contractLength: Int!
+        features: [String!]!
         monthlyCheckoutAvailable: Boolean!
         annualCheckoutAvailable: Boolean!
       }
@@ -248,13 +272,16 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         ): AttendanceRecord!
         recordMemberCheckIn(memberId: ID!, locationId: ID, method: String!): CheckInTransitionResult!
         checkOutMember(checkInId: ID!): CheckInTransitionResult!
-        upsertGymSettings(data: GymSettingsUpdateInput!): GymSettings!
+        upsertGymSettings(data: GymSettingsUpdateInput!, expectedUpdatedAt: String): GymSettings!
+        publishGymParticipationTerms(text: String!, expectedPolicyId: ID): JSON
         runDeterministicOnboarding(template: String!, data: JSON): OnboardingRunResult!
         registerMember(data: RegisterMemberInput!): User
         inviteMember(data: InviteMemberInput!): InviteMemberResult!
         setMemberAccountStatus(memberId: ID!, status: String!): Member!
-        prepareInstructorAccount(instructorId: ID!, email: String!): InstructorAccountClaimResult!
         updateMemberProfile(data: MemberProfileUpdateInput!): MemberProfileProjection!
+        changeMemberPassword(currentPassword: String!, newPassword: String!, confirmPassword: String!): Boolean!
+        requestEmailChange(newEmail: String!, currentPassword: String!, surface: String): EmailChangeRequest!
+        confirmEmailChange(token: String!): Boolean!
         transitionOnboardingStatus(status: String!): User!
         generateUpcomingClassInstances(weeks: Int!): SchedulingGenerationResult!
         updateClassScheduleCapacity(classScheduleId: ID!, maxCapacity: Int!): ClassSchedule!
@@ -369,13 +396,14 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         membershipLengthDays: Int!
         attendanceRate: Float!
         lastCheckIn: String
+        updatedAt: String
       }
 
       input MemberProfileUpdateInput {
         name: String
         email: String
+        expectedUpdatedAt: String
         phone: String
-        password: String
         dateOfBirth: String
         emergencyContactName: String
         emergencyContactPhone: String
@@ -394,20 +422,22 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         phone: String
       }
 
+      type EmailChangeRequest {
+        pendingEmail: String!
+        mail: String!
+      }
+
       type InviteMemberResult {
         userId: ID!
         memberId: ID!
         email: String!
-      }
-
-      type InstructorAccountClaimResult {
-        userId: ID!
-        email: String!
+        created: Boolean!
       }
 
       type SchedulingGenerationResult {
         success: Boolean!
         createdCount: Int!
+        skippedNonexistent: Int!
       }
 
       type KioskSearchMember {
@@ -463,6 +493,8 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         phone: String
         topic: String
         message: String!
+        reference: String
+        sourcePath: String
       }
 
       input RegisterMemberInput {
@@ -477,6 +509,8 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         organizationId: ID!
         runId: ID!
         instanceCount: Int!
+        readiness: JSON
+        skippedSessions: JSON
       }
 
       type SetupIntentResult {
@@ -501,10 +535,12 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         activeMemberships: Int!
         pastDueCount: Int!
       }
-    `, trainingWorkspaceTypeDefs, retailTypeDefs],
+    `, trainingWorkspaceTypeDefs, retailTypeDefs, counterPaymentTypeDefs, staffIntentTypeDefs, coachProfileTypeDefs],
     resolvers: {
       Query: {
         retailWorkspace,
+        retailSaleItems,
+        gymSettingsEditor,
         trainingWorkspace: getTrainingWorkspace,
         operationsWorkspace,
         participationWorkspace,
@@ -515,6 +551,10 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         billingWorkspace: getBillingWorkspace,
         memberProfile: getMemberProfile,
         memberCheckInCode: getMemberCheckInCode,
+        myUpcomingBookingPage: getMyUpcomingBookingPage,
+        staffIntent: getStaffIntent,
+        myPendingStaffIntents: getMyPendingStaffIntents,
+        eligibleCoachAccounts,
         schedulingWorkspace: getSchedulingWorkspace,
         instructorAccount: getInstructorAccount,
         rosterSessions: getRosterSessions,
@@ -524,6 +564,8 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         kioskSearchMembers,
         discoveryClasses: getDiscoveryClasses,
         publicGymSettings: getPublicGymSettings,
+        // Accounts, history and recovery bind to the configured tenant even while its sales are paused.
+        storefrontOrganization: async (_root: unknown, _args: unknown, context: any) => (await configuredStorefrontOrganization(context))?.id ?? null,
         publicGymClassTypes: getPublicGymClassTypes,
         publicGymClassType: getPublicGymClassType,
         publicGymSchedules: getPublicGymSchedules,
@@ -537,7 +579,8 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
       },
       Mutation: {
         updateGymResourceAllocation: updateGymResource,
-        saveRetailItem, sellRetail, returnRetail, closeRetail,
+        saveRetailItem, quoteRetailSale, sellRetail, returnRetail, closeRetail, reconcileCounterPayment,
+        beginStaffIntent, settleStaffIntent, createCoachProfile,
         importMemberContacts,
         bookTrainerAppointment, transitionTrainerAppointment, rescheduleTrainerAppointment,
         recordTrainingPackage, refundTrainingPackage, saveTrainerAvailability, assignCoaching, transitionCoaching, saveTrainingLead,
@@ -554,12 +597,15 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         recordMemberCheckIn,
         checkOutMember,
         upsertGymSettings,
+        publishGymParticipationTerms,
         runDeterministicOnboarding,
         registerMember,
         inviteMember,
         setMemberAccountStatus,
-        prepareInstructorAccount,
         updateMemberProfile,
+        changeMemberPassword,
+        requestEmailChange,
+        confirmEmailChange,
         transitionOnboardingStatus,
         generateUpcomingClassInstances,
         updateClassScheduleCapacity,

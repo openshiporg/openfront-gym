@@ -1,53 +1,54 @@
 import { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, UsersRound } from "lucide-react";
-import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
-import { getInstructors } from "@/features/storefront/lib/data/instructors";
-import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
+import { UsersRound } from "lucide-react";
+import { getInstructorPage } from "@/features/storefront/lib/data/instructors";
+import { documentText, initials } from "@/features/storefront/lib/presentation";
+import { PageHead } from "@/features/storefront/modules/common/page-head";
+import { ArrowLink, EmptyState } from "@/features/storefront/modules/common/ui";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const config = await getStorefrontConfig();
-  return { title: `Our instructors — ${getStorefrontBrandName(config)}`, description: "Meet the coaches behind the programming." };
+  return { title: "Coaches", description: "The coaching team and the classes each coach leads." };
 }
 
-function getBioText(bio: unknown): string {
-  if (typeof bio === "string") return bio;
-  if (!bio || typeof bio !== "object") return "";
-  const document = (bio as { document?: Array<{ children?: Array<{ text?: string }> }> }).document;
-  return document?.flatMap((node) => node.children || []).map((child) => child.text || "").join(" ").trim() || "";
-}
-
-export async function InstructorsPage() {
-  const instructors = await getInstructors();
+export async function InstructorsPage({ searchParams }: { searchParams?: Promise<{ after?: string | string[] }> } = {}) {
+  const resolved = searchParams ? await searchParams : undefined;
+  const after = typeof resolved?.after === "string" ? resolved.after.slice(0, 100) : undefined;
+  const page = await getInstructorPage(after);
+  const instructors = [...page.items].sort((left, right) => left.user.name.localeCompare(right.user.name));
 
   return (
     <div className="sf-page">
-      <div className="sf-container">
-        <header className="sf-page-header">
-          <div><p className="sf-eyebrow">Your coaching team</p><h1 className="sf-display mt-4 text-[var(--text-display-s)]">The people behind the programming</h1></div>
-          <p className="max-w-md text-base leading-7 text-[var(--sf-muted)]">Find a coach whose approach fits your goals, then explore their upcoming classes.</p>
-        </header>
+      <div className="sf-wrap">
+        <PageHead title="Coaches" />
 
         {instructors.length ? (
-          <div className="sf-coach-grid">
+          <div className="sf-grid" data-cols="coaches">
             {instructors.map((instructor) => {
-              const bio = getBioText(instructor.bio);
+              const bio = documentText(instructor.bio);
               return (
-                <Link key={instructor.id} href={`/instructors/${instructor.id}`} className="sf-coach-card">
+                <article key={instructor.id} className="sf-coach">
                   <div className="sf-coach-photo">
-                    {instructor.photo ? <Image src={instructor.photo} alt={`${instructor.user.name} coaching portrait`} width={480} height={600} sizes="(max-width: 700px) 45vw, 30vw" className="h-full w-full object-cover grayscale-[20%]" unoptimized /> : <span>Portrait not published</span>}
+                    {instructor.photo ? <Image src={instructor.photo} alt={instructor.user.name} width={600} height={750} sizes="(max-width: 899px) 50vw, 25vw" unoptimized /> : <span className="sf-monogram" aria-hidden="true">{initials(instructor.user.name)}</span>}
                   </div>
-                  <h2 className="text-2xl font-bold tracking-[-0.04em]">{instructor.user.name}</h2>
-                  <div>{bio ? <p className="line-clamp-2 text-sm leading-6 text-[var(--sf-muted)]">{bio}</p> : null}<p className="mt-2 text-xs font-semibold text-[var(--sf-primary)]">{instructor.specialties?.length ? instructor.specialties.join(" / ") : "Specialties not published"}</p></div>
-                  <ArrowRight className="h-4 w-4 text-[var(--sf-muted)] transition-transform group-hover:translate-x-1 group-hover:text-[var(--sf-foreground)]" aria-hidden="true" />
-                </Link>
+                  <div className="sf-stack" data-gap="sm">
+                    <h2 className="sf-h3"><Link href={`/instructors/${instructor.id}`}>{instructor.user.name}</Link></h2>
+                    {instructor.specialties?.length ? <p>{instructor.specialties.join(", ")}</p> : null}
+                    {bio ? <p className="sf-text-2" style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{bio}</p> : null}
+                  </div>
+                </article>
               );
             })}
           </div>
         ) : (
-          <div className="border border-[var(--sf-border)] bg-[var(--sf-surface)] p-8 sm:p-10"><UsersRound className="h-8 w-8 text-[var(--sf-primary)]" aria-hidden="true" /><h2 className="mt-7 text-2xl font-bold">No active instructors are published.</h2></div>
+          <EmptyState headingLevel={2} icon={<UsersRound aria-hidden="true" />} title={after ? "No more coaches" : "No coaches published"} action={after ? <ArrowLink href="/instructors">First coaches</ArrowLink> : <ArrowLink href="/contact">Contact</ArrowLink>} />
         )}
+        {after || page.nextAfter ? (
+          <nav className="sf-row" data-between aria-label="Coach pages" style={{ marginTop: 24 }}>
+            {after ? <Link className="sf-link" href="/instructors">First coaches</Link> : <span />}
+            {page.nextAfter ? <Link className="sf-link" href={`/instructors?after=${encodeURIComponent(page.nextAfter)}`}>More coaches</Link> : <span />}
+          </nav>
+        ) : null}
       </div>
     </div>
   );

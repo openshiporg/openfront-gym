@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { AlertCircle, CalendarClock, Plus, Trash2, Copy } from 'lucide-react'
+import { AlertCircle, Plus, Trash2, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type DayKey =
@@ -23,6 +23,10 @@ export interface DayRange {
 
 export interface DaySchedule {
   enabled: boolean
+  /** Open around the clock; admission never closes for a minute. */
+  allDay?: boolean
+  /** Saved hours were missing or unreadable: the owner must choose before hours can be saved. */
+  unset?: boolean
   ranges: DayRange[]
 }
 
@@ -43,6 +47,7 @@ interface WeeklyHoursEditorProps {
   timezone: string
   error: string | null
   onSetDayEnabled: (day: DayKey, enabled: boolean) => void
+  onSetAllDay: (day: DayKey, allDay: boolean) => void
   onSetRangeValue: (day: DayKey, idx: number, key: 'open' | 'close', value: string) => void
   onAddRange: (day: DayKey) => void
   onRemoveRange: (day: DayKey, idx: number) => void
@@ -54,111 +59,123 @@ export function WeeklyHoursEditor({
   hours,
   error,
   onSetDayEnabled,
+  onSetAllDay,
   onSetRangeValue,
   onAddRange,
   onRemoveRange,
   onCopyDayToAll,
 }: WeeklyHoursEditorProps) {
-  const [activeDay, setActiveDay] = useState<DayKey>(days[0].key)
-
-  const s = hours[activeDay]
-  const activeDayData = days.find((d) => d.key === activeDay)!
+  const [confirmCopyDay, setConfirmCopyDay] = useState<DayKey | null>(null)
   const jsDay = new Date().getDay()
   const todayKey = days[jsDay === 0 ? 6 : jsDay - 1].key
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden divide-y divide-border">
-      <div className="px-5 py-3 flex items-center gap-2 bg-muted/20">
-        <CalendarClock size={13} className="text-muted-foreground" />
-        <span className="text-[11px] uppercase tracking-wider font-semibold text-foreground">
-          Access Hours
-        </span>
-      </div>
-
-      <div className="grid grid-cols-7 divide-x divide-border">
+    <div>
+      <ul className="divide-y">
         {days.map((day) => {
-          const ds = hours[day.key]
-          const isActive = activeDay === day.key
+          const schedule = hours[day.key]
           const isToday = day.key === todayKey
+          const switchId = `hours-${day.key}`
           return (
-            <button
+            <li
               key={day.key}
-              onClick={() => setActiveDay(day.key)}
               className={cn(
-                'flex flex-col items-center py-3 px-1 transition-colors',
-                isActive ? 'bg-muted' : 'hover:bg-muted/30'
+                'grid gap-3 px-4 py-3 sm:px-5 md:grid-cols-[9rem_minmax(0,1fr)_auto] md:items-start',
+                isToday && 'bg-muted/30',
               )}
             >
-              <p className={cn('text-[10px] uppercase tracking-wider font-semibold', isActive ? 'text-foreground' : 'text-muted-foreground')}>
-                {day.short}
-              </p>
-              <span className={cn('w-1.5 h-1.5 rounded-full mt-1.5', ds.enabled ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-zinc-600')} />
-              {isToday && (
-                <span className="mt-0.5 text-[8px] uppercase tracking-wider font-semibold text-blue-500">
-                  Today
-                </span>
+              <div className="flex items-center justify-between gap-3 md:h-9 md:justify-start">
+                <label htmlFor={switchId} className="flex items-center gap-2 text-sm font-medium">
+                  {day.label}
+                  {isToday ? (
+                    <span className="rounded-full bg-foreground px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-background">Today</span>
+                  ) : null}
+                </label>
+                <Switch id={switchId} checked={schedule.enabled} onCheckedChange={(v) => onSetDayEnabled(day.key, v)} className="md:hidden" />
+              </div>
+
+              {schedule.unset ? (
+                <p className="flex h-9 items-center text-sm text-amber-700 dark:text-amber-400">Not set. Turn the day on and choose times, or leave it closed.</p>
+              ) : schedule.enabled && schedule.allDay ? (
+                <p className="flex h-9 items-center text-sm">Open all day</p>
+              ) : schedule.enabled ? (
+                <div className="grid gap-2">
+                  {schedule.ranges.map((range, idx) => (
+                    <div key={`${day.key}-${idx}`} className="flex items-center gap-2">
+                      <Input
+                        type="time"
+                        step={1800}
+                        aria-label={`${day.label} window ${idx + 1} opens`}
+                        value={range.open}
+                        onChange={(e) => onSetRangeValue(day.key, idx, 'open', e.target.value)}
+                        className="h-9 w-32 px-3 text-sm tabular-nums"
+                      />
+                      <span className="text-xs text-muted-foreground">to</span>
+                      <Input
+                        type="time"
+                        step={1800}
+                        aria-label={`${day.label} window ${idx + 1} closes`}
+                        value={range.close}
+                        onChange={(e) => onSetRangeValue(day.key, idx, 'close', e.target.value)}
+                        className="h-9 w-32 px-3 text-sm tabular-nums"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-muted-foreground hover:text-rose-600"
+                        onClick={() => onRemoveRange(day.key, idx)}
+                        disabled={schedule.ranges.length <= 1}
+                        aria-label={`Remove ${day.label} window ${idx + 1}`}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="flex h-9 items-center text-sm text-muted-foreground">Closed all day</p>
               )}
-            </button>
+
+              <div className="flex items-center gap-1 md:h-9">
+                <Switch checked={schedule.enabled} onCheckedChange={(v) => onSetDayEnabled(day.key, v)} aria-label={`${day.label} open`} className="mr-2 hidden md:inline-flex" />
+                {schedule.enabled ? (
+                  <label className="mr-1 inline-flex h-8 items-center gap-1.5 px-1 text-xs">
+                    <input type="checkbox" checked={Boolean(schedule.allDay)} onChange={(event) => onSetAllDay(day.key, event.target.checked)} className="size-3.5" />
+                    All day
+                  </label>
+                ) : null}
+                {schedule.enabled && !schedule.allDay ? (
+                  <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => onAddRange(day.key)}>
+                    <Plus className="size-3.5" aria-hidden /> Split
+                  </Button>
+                ) : null}
+                {confirmCopyDay === day.key ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={() => { onCopyDayToAll(day.key); setConfirmCopyDay(null) }}>
+                      Apply to all 7 days
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setConfirmCopyDay(null)}>
+                      Cancel
+                    </Button>
+                  </span>
+                ) : (
+                  <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs text-muted-foreground" onClick={() => setConfirmCopyDay(day.key)}>
+                    <Copy className="size-3.5" aria-hidden /> Copy to all
+                  </Button>
+                )}
+              </div>
+            </li>
           )
         })}
-      </div>
+      </ul>
 
-      <div className="px-5 py-3 flex items-center justify-between">
-        <div>
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground">{activeDayData.label}</p>
-          <p className="text-sm font-semibold mt-0.5">
-            {s.enabled ? (s.ranges.length > 0 ? `${s.ranges.length} access window${s.ranges.length !== 1 ? 's' : ''}` : 'No windows set') : 'Closed all day'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <span className="text-xs text-muted-foreground">{s.enabled ? 'Open' : 'Closed'}</span>
-          <Switch checked={s.enabled} onCheckedChange={(v) => onSetDayEnabled(activeDay, v)} />
-        </div>
-      </div>
-
-      {s.enabled ? (
-        <>
-          {s.ranges.map((range, idx) => (
-            <div key={`${activeDay}-${idx}`} className="grid divide-x divide-border" style={{ gridTemplateColumns: '1fr 1fr auto' }}>
-              <div className="px-5 py-3">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Open</p>
-                <Input type="time" step={1800} value={range.open} onChange={(e) => onSetRangeValue(activeDay, idx, 'open', e.target.value)} className="mt-1.5 h-8 text-sm font-semibold" />
-              </div>
-              <div className="px-5 py-3">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Close</p>
-                <Input type="time" step={1800} value={range.close} onChange={(e) => onSetRangeValue(activeDay, idx, 'close', e.target.value)} className="mt-1.5 h-8 text-sm font-semibold" />
-              </div>
-              <div className="px-4 flex items-end pb-4">
-                <button className="text-muted-foreground hover:text-red-600 transition-colors disabled:opacity-25 disabled:pointer-events-none" onClick={() => onRemoveRange(activeDay, idx)} disabled={s.ranges.length <= 1}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <div className="px-5 py-3 flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-7 text-xs px-2.5" onClick={() => onAddRange(activeDay)}>
-              <Plus size={11} className="mr-1" />
-              Split shift
-            </Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs px-2.5 text-muted-foreground" onClick={() => onCopyDayToAll(activeDay)}>
-              <Copy size={11} className="mr-1" />
-              Copy to all days
-            </Button>
-          </div>
-        </>
-      ) : (
-        <div className="px-5 py-4 text-xs text-muted-foreground italic">
-          Toggle open to add access windows for {activeDayData.label}.
-        </div>
-      )}
-
-      {error && (
-        <div className="px-5 py-3 flex items-center gap-2 text-xs text-destructive">
+      {error ? (
+        <div className="flex items-center gap-2 border-t px-5 py-3 text-xs text-destructive">
           <AlertCircle size={12} />
           {error}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

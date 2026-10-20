@@ -1,4 +1,4 @@
-import { list } from "@keystone-6/core";
+import { graphql, list } from "@keystone-6/core";
 import { allOperations, denyAll } from "@keystone-6/core/access";
 import {
   relationship,
@@ -7,6 +7,7 @@ import {
   checkbox,
   text,
   json,
+  virtual,
 } from "@keystone-6/core/fields";
 
 import { isSignedIn, permissions, rules } from "../access";
@@ -65,7 +66,27 @@ export const ClassInstance = list({
     location: relationship({ ref: "Location" }),
     resource: relationship({ ref: "GymResource" }),
     endsAt: timestamp(),
-    changeHistory: json({ defaultValue: [] }),
+    // Controlled amendments (who, before, after), written only by the scheduling service.
+    changeHistory: json({
+      defaultValue: [],
+      access: { read: permissions.canManageAllRecords, create: denyAll, update: denyAll },
+      ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "read" } },
+    }),
+    // What changed after booking opened (time, coach, location, room) and when, without who
+    // changed it, so a member can see that the session they booked was amended.
+    amendments: virtual({
+      field: graphql.field({
+        type: graphql.JSON,
+        resolve(item: any) {
+          const labels: Record<string, string> = { date: "time", instructorId: "coach", locationId: "location", resourceId: "room" };
+          return (Array.isArray(item.changeHistory) ? item.changeHistory : []).map((entry: any) => ({
+            at: typeof entry?.at === "string" ? entry.at : null,
+            changed: Object.keys(labels).filter((key) => entry?.before?.[key] !== entry?.after?.[key]).map((key) => labels[key]),
+          }));
+        },
+      }),
+      ui: { itemView: { fieldMode: "hidden" }, listView: { fieldMode: "hidden" } },
+    }),
     occurrenceKey: text({ isIndexed: "unique", db: { isNullable: true } }),
     // Reference to the recurring schedule
     classSchedule: relationship({

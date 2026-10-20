@@ -49,10 +49,12 @@ export async function inviteMember(
         query: "id email",
       });
       if (!members[0]) throw new Error("This account exists but is not a member profile");
+      // An existing account belongs to its holder: no setup email is triggered for it here.
       return {
         userId: (existing[0] as any).id,
         memberId: (members[0] as any).id,
         email: (existing[0] as any).email,
+        created: false,
       };
     }
 
@@ -81,6 +83,6 @@ export async function inviteMember(
       },
       query: "id",
     });
-    return { userId: user.id, memberId: member.id, email };
+    return { userId: user.id, memberId: member.id, email, created: true };
   });
 }

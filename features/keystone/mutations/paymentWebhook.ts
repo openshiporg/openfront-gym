@@ -1,3 +1,4 @@
+import { reconciliationPaymentProviderWhere } from "../lib/stripe-environment-provider";
 import type Stripe from "stripe";
 import type { Context } from ".keystone/types";
 import { provisionMembershipFromCheckoutSession } from "../../integrations/payment/provision-membership";
@@ -9,7 +10,10 @@ import { ensureMonthlyCreditGrant, reviewFutureMembershipBookings } from "../lib
 import { currentRoleActor } from "../access/currentRoleActor";
 import { lockTransactionKey } from "./classCapacity";
 import { guardKeystonePrismaResults, requirePrismaAffectedCount, withKeystonePrismaTransaction } from "../lib/prisma-result";
-import { assertExactProviderRefund, readRefundReservation } from "../lib/refund-reservation";
+import { assertExactProviderRefund, readRefundReservation, reconcileProviderRefundCumulative } from "../lib/refund-reservation";
+import { ownsCounterPayment, reconcileCounterCheckoutEvent, reconcileCounterRefundEvent } from "./counterPayments";
+import { COUNTER_SOURCE } from "../lib/counter-card-payment";
+import { acceptedProviderPrice, invoiceServiceProblem, subscriptionItemsProblem } from "../../integrations/payment/commercial-agreement";
 
 const PROVIDER_CODE = "pp_stripe";
 
@@ -34,7 +38,7 @@ export function paymentEventReplayEvidence(event: Stripe.Event) {
     for (const key of ["subscription", "payment_intent", "charge"]) if (evidence[key] && typeof evidence[key] === "object") evidence[key] = evidence[key].id;
     evidence.lines = { data: (object.lines?.data || []).map((line: any) => ({ id: line.id, amount: line.amount, description: line.description, period: line.period, quantity: line.quantity, type: line.type, proration: line.proration, price: line.price ? { id: line.price.id } : null })) };
   } else {
-    evidence = Object.fromEntries(["id", "mode", "metadata", "client_reference_id", "amount", "currency", "amount_refunded", "payment_intent", "status"].map(key => [key, object[key] ?? null]));
+    evidence = Object.fromEntries(["id", "object", "mode", "metadata", "client_reference_id", "amount", "amount_total", "currency", "amount_refunded", "payment_intent", "payment_status", "status"].map(key => [key, object[key] ?? null]));
     if (event.type === "charge.refunded") {
       evidence.refunds = { data: (object.refunds?.data || []).map((refund: any) => ({
         id: refund.id, payment_intent: typeof refund.payment_intent === "string" ? refund.payment_intent : refund.payment_intent?.id,
@@ -43,7 +47,8 @@ export function paymentEventReplayEvidence(event: Stripe.Event) {
       })) };
     }
     if (evidence.payment_intent && typeof evidence.payment_intent === "object") evidence.payment_intent = evidence.payment_intent.id;
-    if (evidence.metadata) evidence.metadata = { paymentSessionKey: evidence.metadata.paymentSessionKey ?? null };
+    if (evidence.metadata) evidence.metadata = Object.fromEntries(["paymentSessionKey", "source", "kind", "attemptId", "organizationId", "gymRefundOperationKey"]
+      .map(key => [key, evidence.metadata[key] ?? null]));
   }
   return { id: event.id, type: event.type, created: event.created, livemode: event.livemode, data: { object: evidence } };
 }
@@ -72,23 +77,26 @@ async function claimEvent(context: Context, providerId: string, organizationId: 
   }
 }
 
-async function resolveTier(transaction: any, subscription: Stripe.Subscription, organizationId: string) {
-  const metadataTierId = subscription.metadata?.tierId;
-  if (metadataTierId) {
-    const tier = await transaction.membershipTier.findFirst({
-      where: { id: metadataTierId, organizationId },
-      select: { id: true, classCreditsPerMonth: true },
-    });
-    if (tier) return tier;
-  }
+/** The accepted provider price for a membership (or its accepting checkout, before one exists). */
+async function membershipAcceptedPrice(transaction: any, membership: any, checkout: any) {
+  const tierId = membership?.tierId || checkout?.membershipTierId;
+  const cycle = membership?.billingCycle || checkout?.billingCycle;
+  const tier = tierId ? await transaction.membershipTier.findFirst({ where: { id: tierId }, select: { stripeMonthlyPriceId: true, stripeAnnualPriceId: true } }) : null;
+  // The accepting checkout's price speaks for the agreement only while it is that same plan and cycle.
+  const checkoutAccepted = checkout && (!membership || (checkout.membershipTierId === membership.tierId && checkout.billingCycle === membership.billingCycle));
+  return acceptedProviderPrice(membership?.agreementSnapshot || checkout?.data?.agreementSnapshot, {
+    checkoutPriceId: checkoutAccepted ? checkout.data?.priceId : null,
+    checkoutProductId: checkoutAccepted ? checkout.data?.productId : null,
+    tierPriceId: cycle === "annual" ? tier?.stripeAnnualPriceId : tier?.stripeMonthlyPriceId,
+  });
+}
 
-  const priceId = subscription.items.data[0]?.price?.id;
+/** The local plan whose configured Stripe Price the provider subscription actually bills. */
+async function tierForProviderPrice(transaction: any, subscription: Stripe.Subscription, organizationId: string) {
+  const priceId = subscription.items?.data?.[0]?.price?.id;
   if (!priceId) return null;
   return transaction.membershipTier.findFirst({
-    where: {
-      organizationId,
-      OR: [{ stripeMonthlyPriceId: priceId }, { stripeAnnualPriceId: priceId }],
-    },
+    where: { organizationId, OR: [{ stripeMonthlyPriceId: priceId }, { stripeAnnualPriceId: priceId }] },
     select: { id: true, classCreditsPerMonth: true },
   });
 }
@@ -133,14 +141,6 @@ export async function syncSubscription(
     throw new Error("Stripe subscription event ordering evidence is invalid");
   }
 
-  // Provider truth, not a historical webhook snapshot, is authoritative. The
-  // durable high-water transaction below prevents a delayed older event from
-  // overwriting a newer cancellation, pause, tier, or renewal state.
-  let subscription = assertRetrievedSubscription(
-    incomingSubscription.id,
-    await adapter.retrieveSubscription(incomingSubscription.id),
-  );
-
   return withKeystonePrismaTransaction(context.prisma, async (transaction: any) => {
     await lockTransactionKey(
       transaction,
@@ -163,21 +163,10 @@ export async function syncSubscription(
     ) {
       return { applied: false, duplicate: true };
     }
-    if (
-      existingProjection &&
-      event.created === existingProjection.providerEventCreated &&
-      event.id !== existingProjection.providerEventId
-    ) {
-      // Stripe timestamps have one-second precision. Distinct same-second
-      // events cannot be ordered by their opaque IDs, so refetch while holding
-      // the subscription lock and apply current provider truth.
-      subscription = assertRetrievedSubscription(
-        incomingSubscription.id,
-        await adapter.retrieveSubscription(incomingSubscription.id),
-      );
-    }
 
-    const owner = await findUserForSubscription(transaction, subscription, organizationId);
+    // Customer and owner metadata are immutable for a subscription, so the owner can be
+    // resolved before provider truth is read.
+    const owner = await findUserForSubscription(transaction, incomingSubscription, organizationId);
     if (!owner) throw new Error("Subscription owner prerequisite missing; retry reconciliation");
     const { user, customerId } = owner;
     const member = await transaction.member.findFirst({
@@ -185,30 +174,63 @@ export async function syncSubscription(
       select: { id: true },
     });
     if (!member) throw new Error("Subscription member prerequisite missing; retry reconciliation");
+    // Operator billing finalization also holds the member lock. Provider truth and the local
+    // membership are read only after both locks are held, so neither a stale provider
+    // snapshot nor a pre-lock membership row can overwrite a newer committed state.
+    await lockTransactionKey(transaction, `member:${member.id}`);
+    const subscription = assertRetrievedSubscription(
+      incomingSubscription.id,
+      await adapter.retrieveSubscription(incomingSubscription.id),
+    );
+
     const checkout = await transaction.paymentSession.findFirst({ where: { organizationId, userId: user.id, idempotencyKey: subscription.metadata?.paymentSessionKey || "__missing__" } });
     const agreement = checkout?.data?.agreementSnapshot;
-    const tier = await resolveTier(transaction, subscription, organizationId);
     const membership = await transaction.membership.findFirst({
       where: { memberId: user.id, organizationId },
     });
     if (membership && membership.stripeSubscriptionId !== subscription.id) throw new Error("Another subscription owns this membership; checkout reconciliation required");
-    await lockTransactionKey(transaction, `member:${member.id}`);
+
+    // The plan is changed only through the authorized tier-change workflow. A provider
+    // subscription that doesn't bill exactly the accepted price (same price, product, quantity,
+    // currency and cycle) is recorded for reconciliation, never applied.
+    const priceTier = await tierForProviderPrice(transaction, subscription, organizationId);
+    let tierId: string | null = membership?.tierId || checkout?.membershipTierId || null;
+    const accepted = await membershipAcceptedPrice(transaction, membership, checkout);
+    const itemProblem = subscriptionItemsProblem(subscription, accepted, membership?.billingCycle || checkout?.billingCycle || "monthly");
+    if (!membership && checkout && itemProblem) {
+      throw new Error(`Subscription doesn't match its checkout agreement (it ${itemProblem}); operator reconciliation required`);
+    }
+    if (!tierId) tierId = priceTier?.id || null;
+    if (membership && itemProblem) {
+      const pendingTierChange = await transaction.membershipBillingAttempt.findFirst({
+        where: { organizationId, membershipId: membership.id, operation: "tier-change", status: "processing" },
+        select: { id: true },
+      });
+      if (!pendingTierChange) {
+        await createFinanceException(transaction, {
+          organizationId, key: `subscription-price:${subscription.id}:${subscription.items?.data?.[0]?.price?.id || "none"}`, kind: "subscription-plan-mismatch",
+          reference: subscription.id,
+          summary: `The provider subscription ${itemProblem}, which doesn't match the member's accepted plan. Review the subscription and change the plan from Billing, or restore the provider price.`,
+        });
+      }
+    }
+
     const providerMembershipStatus = mapStripeStatusToMembership(
       subscription.status,
       Boolean(subscription.pause_collection),
     );
     const now = new Date();
+    // Paid service is evidenced by the period a positive paid invoice established, whatever
+    // local status (frozen, past due) the membership currently has. A first active/trialing
+    // event has no such period and therefore cannot create entitlement.
     const hasCurrentPaidServicePeriod = Boolean(
-      membership?.status === "active" && membership.creditPeriodStart && membership.creditPeriodEnd &&
+      membership?.creditPeriodStart && membership.creditPeriodEnd &&
       new Date(membership.creditPeriodStart) <= now && now < new Date(membership.creditPeriodEnd),
     );
-    // Provider subscription status is not a receipt. Existing paid service may
-    // continue through an active event; a first active/trialing event cannot
-    // create entitlement before a positive paid invoice commits.
     const membershipStatus = providerMembershipStatus === "active"
       ? (hasCurrentPaidServicePeriod ? "active" : "past-due")
       : providerMembershipStatus;
-    const billingCycle = subscription.metadata?.billingCycle === "annual" ? "annual" : "monthly";
+    const billingCycle = membership?.billingCycle === "annual" || (!membership && subscription.metadata?.billingCycle === "annual") ? "annual" : "monthly";
     const nextBillingDate = subscription.current_period_end
       ? new Date(subscription.current_period_end * 1000)
       : null;
@@ -217,7 +239,6 @@ export async function syncSubscription(
       : new Date(event.created * 1000);
     const eventTime = new Date(event.created * 1000);
     const membershipData = {
-      ...(tier ? { tierId: tier.id } : {}),
       status: membershipStatus,
       billingCycle,
       startDate,
@@ -236,14 +257,14 @@ export async function syncSubscription(
     if (!membership && !agreement?.version) throw new Error("Subscription checkout agreement prerequisite missing; retry reconciliation");
     if (membership) {
       await transaction.membership.update({ where: { id: membership.id }, data: membershipData });
-    } else if (member && tier) {
+    } else if (tierId) {
       // Establish canonical membership state even when the signed subscription
       // event is delivered before checkout.session.completed.
       await transaction.membership.create({
         data: {
           organizationId,
           memberId: user.id,
-          tierId: tier.id,
+          tierId,
           ...membershipData,
           agreementSnapshot: agreement,
           creditPeriodStart: null,
@@ -253,43 +274,41 @@ export async function syncSubscription(
       });
     }
 
-    if (member && tier) {
+    if (tierId && !membership) {
       await transaction.member.updateMany({
         where: { id: member.id, organizationId },
-        data: { membershipTierId: tier.id },
+        data: { membershipTierId: tierId },
       });
     }
 
-    if (member) {
-      const projectionData = {
-        memberId: member.id,
-        ...(tier ? { membershipTierId: tier.id } : {}),
-        status: mapStripeStatusToSubscription(
-          subscription.status,
-          Boolean(subscription.pause_collection),
-        ),
-        startDate,
-        nextBillingDate,
-        cancelledAt: subscription.status === "canceled" ? eventTime : null,
-        pausedAt: subscription.status === "paused" || subscription.pause_collection ? eventTime : null,
-        stripeCustomerId: customerId,
-        providerEventCreated: event.created,
-        providerEventId: event.id,
-      };
-      if (existingProjection) {
-        await transaction.subscription.update({
-          where: { id: existingProjection.id },
-          data: projectionData,
-        });
-      } else if (tier) {
-        await transaction.subscription.create({
-          data: {
-            organizationId,
-            stripeSubscriptionId: subscription.id,
-            ...projectionData,
-          },
-        });
-      }
+    const projectionData = {
+      memberId: member.id,
+      ...(tierId ? { membershipTierId: tierId } : {}),
+      status: mapStripeStatusToSubscription(
+        subscription.status,
+        Boolean(subscription.pause_collection),
+      ),
+      startDate,
+      nextBillingDate,
+      cancelledAt: subscription.status === "canceled" ? eventTime : null,
+      pausedAt: subscription.status === "paused" || subscription.pause_collection ? eventTime : null,
+      stripeCustomerId: customerId,
+      providerEventCreated: event.created,
+      providerEventId: event.id,
+    };
+    if (existingProjection) {
+      await transaction.subscription.update({
+        where: { id: existingProjection.id },
+        data: projectionData,
+      });
+    } else if (tierId) {
+      await transaction.subscription.create({
+        data: {
+          organizationId,
+          stripeSubscriptionId: subscription.id,
+          ...projectionData,
+        },
+      });
     }
 
     const reconciled = await transaction.membership.findFirst({ where: { memberId: user.id, organizationId } });
@@ -366,10 +385,27 @@ export async function recordInvoicePayment(
     const isOlderPeriod = membership.creditPeriodEnd && periodEnd * 1000 < new Date(membership.creditPeriodEnd).getTime();
     const isOlderEvent = membership.billingEventAt && eventAt < new Date(membership.billingEventAt);
     if (isOlderPeriod || isOlderEvent || (settled && status === "failed")) return { applied: false, stale: true };
+    // A paid period is granted only from the accepted agreement's own service line. Positive money
+    // for anything else stays recorded as a receipt and goes to finance review, granting nothing.
+    const grantsPeriod = status === "succeeded" && ["subscription_create", "subscription_cycle"].includes(invoice.billing_reason || "");
+    const serviceProblem = grantsPeriod
+      ? invoiceServiceProblem(invoice, await membershipAcceptedPrice(tx, membership, session), membership.billingCycle)
+      : null;
+    if (serviceProblem) {
+      const pendingTierChange = await tx.membershipBillingAttempt.findFirst({
+        where: { organizationId, membershipId: membership.id, operation: "tier-change", status: "processing" }, select: { id: true },
+      });
+      // A plan change being finalized may bill its new price first; retry once it settles.
+      if (pendingTierChange) throw new Error("A plan change is being finalized for this membership; retry invoice reconciliation");
+      await createFinanceException(tx, { organizationId, key: `invoice-service:${invoice.id}`, kind: "subscription-plan-mismatch", reference: invoice.id,
+        summary: `Paid invoice ${invoice.id} ${serviceProblem}, so it was recorded without granting a service period. Reconcile the subscription with the member's accepted plan.` });
+      await tx.membership.update({ where: { id: membership.id }, data: { billingEventAt: new Date(eventCreated * 1000) } });
+      return { applied: false, mismatch: true };
+    }
     const data: any = { billingEventAt: eventAt };
     if (!["cancelled", "frozen"].includes(membership.status) &&
         (membership.status !== "expired" || (membership.autoRenew && status === "succeeded" && periodEnd * 1000 > Date.now()))) data.status = status === "succeeded" ? "active" : "past-due";
-    if (status === "succeeded" && ["subscription_create", "subscription_cycle"].includes(invoice.billing_reason || "")) {
+    if (grantsPeriod) {
       if (!Number.isInteger(periodStart) || !Number.isInteger(periodEnd) || periodEnd <= periodStart) throw new Error("Invoice service period is invalid");
       data.creditPeriodStart = new Date(periodStart * 1000);
       data.creditPeriodEnd = new Date(periodEnd * 1000);
@@ -482,26 +518,72 @@ export async function recordRefund(context: Context, charge: Stripe.Charge, orga
   });
 }
 
+/**
+ * Expires exactly the provider checkout this event names, under the same customer checkout
+ * lock provisioning holds; a completed attempt is terminal and a newer replacement attempt
+ * (a different provider session) is never expired by an old event.
+ */
 async function expireCheckoutSession(context: Context, session: Stripe.Checkout.Session, organizationId: string) {
   const key = session.metadata?.paymentSessionKey || session.client_reference_id;
-  if (!key) return;
-  const sessions = await context.sudo().query.PaymentSession.findMany({
-    where: { AND: [{ idempotencyKey: { equals: key } }, { organization: { id: { equals: organizationId } } }] },
-    take: 1,
-    query: "id status",
+  if (!key || !session.id) return;
+  await withKeystonePrismaTransaction(context.prisma, async (tx: any) => {
+    const localSession = await tx.paymentSession.findFirst({ where: { organizationId, idempotencyKey: key }, select: { id: true, userId: true } });
+    if (!localSession) return;
+    await lockTransactionKey(tx, `membership-checkout:${organizationId}:${localSession.userId}`);
+    await tx.paymentSession.updateMany({
+      where: { id: localSession.id, organizationId, status: { notIn: ["completed", "expired"] }, OR: [{ providerSessionId: session.id }, { providerSessionId: "" }] },
+      data: { status: "expired", expiresAt: new Date(), provisioningLockedUntil: null },
+    });
   });
-  const localSession = sessions[0] as any;
-  if (!localSession || localSession.status === "completed") return;
-  await context.sudo().query.PaymentSession.updateOne({
-    where: { id: localSession.id },
-    data: { status: "expired", expiresAt: new Date().toISOString() },
-    query: "id",
+}
+
+/**
+ * refund.created / refund.updated / refund.failed: settles a membership refund attempt or a
+ * counter refund from the refund's own terminal status, without waiting for a charge event.
+ */
+async function recordRefundObservation(context: Context, adapter: PaymentProviderAdapter, refundEvent: Stripe.Refund, organizationId: string) {
+  const refund = adapter.retrieveRefund ? await adapter.retrieveRefund(refundEvent.id) : refundEvent;
+  if (refund.id !== refundEvent.id) throw new Error("Payment provider returned a different refund");
+  const counter = await reconcileCounterRefundEvent(context, organizationId, refund);
+  if (counter.matched) return;
+  const operationKey = refund.metadata?.gymRefundOperationKey;
+  const paymentIntentId = typeof refund.payment_intent === "string" ? refund.payment_intent : refund.payment_intent?.id;
+  if (typeof operationKey !== "string" || !operationKey || !paymentIntentId) return;
+  await withKeystonePrismaTransaction(context.prisma, async (tx: any) => {
+    await lockTransactionKey(tx, `payment-refund:${organizationId}:${paymentIntentId}`);
+    const payment = await tx.gymPayment.findFirst({ where: { organizationId, stripePaymentIntentId: paymentIntentId } });
+    if (!payment) return;
+    await lockTransactionKey(tx, `refund:${payment.id}`);
+    const attempts = await tx.gymRefundAttempt.findMany({ where: { organizationId, paymentId: payment.id, status: "processing" } });
+    const attempt = attempts.find((candidate: any) => readRefundReservation(candidate)?.reservation.providerRequestKey === operationKey);
+    if (!attempt) return;
+    const saved = readRefundReservation(attempt);
+    if (!saved) throw new Error("Refund event matched an attempt without frozen reservation evidence");
+    assertExactProviderRefund(refund, saved.reservation);
+    const now = new Date();
+    if (refund.status === "succeeded") {
+      const membershipPayment = payment.stripeInvoiceId ? await tx.membershipPayment.findFirst({ where: { organizationId, stripePaymentIntentId: paymentIntentId } }) : null;
+      const prior = Math.max(payment.refundAmount ?? 0, membershipPayment?.refundAmount ?? 0);
+      const totalRefunded = reconcileProviderRefundCumulative(payment.amount, prior, saved.reservation.startingRefundAmount, saved.reservation.amount);
+      const fullyRefunded = totalRefunded >= payment.amount;
+      const update = await tx.gymRefundAttempt.updateMany({ where: { id: attempt.id, status: "processing" }, data: { status: "succeeded", providerRefundId: refund.id, completedAt: now, reservation: saved.reservation, lastError: "" } });
+      requirePrismaAffectedCount(update, 1, "refund event finalization fence");
+      await tx.gymPayment.update({ where: { id: payment.id }, data: { status: fullyRefunded ? "refunded" : "succeeded", refundAmount: totalRefunded, refundedAt: now, ...(payment.refundLockToken === attempt.claimToken ? { refundLockUntil: null, refundLockToken: "" } : {}) } });
+      if (membershipPayment) {
+        await tx.membershipPayment.update({ where: { id: membershipPayment.id }, data: { status: fullyRefunded ? "refunded" : membershipPayment.status === "disputed" ? "disputed" : "completed", refundAmount: totalRefunded, refundedAt: now } });
+      }
+    } else if (refund.status === "failed" || refund.status === "canceled") {
+      await tx.gymRefundAttempt.updateMany({ where: { id: attempt.id, status: "processing" }, data: { status: "failed", providerRefundId: refund.id, reservation: saved.reservation, lastError: `Provider refund status: ${refund.status}` } });
+      await tx.gymPayment.updateMany({ where: { id: payment.id, refundLockToken: attempt.claimToken }, data: { refundLockUntil: null, refundLockToken: "" } });
+    } else {
+      await tx.gymRefundAttempt.updateMany({ where: { id: attempt.id, status: "processing" }, data: { providerRefundId: refund.id, lastError: `Provider refund status: ${refund.status || "unknown"}` } });
+    }
   });
 }
 
 export async function resolveStripeWebhookProvider(context: Context, payload: string, signature: string) {
   const providers = await context.sudo().query.PaymentProvider.findMany({
-    where: { AND: [{ code: { equals: PROVIDER_CODE } }, { isInstalled: { equals: true } }] },
+    where: { AND: [{ code: { equals: PROVIDER_CODE } }, reconciliationPaymentProviderWhere()] },
     take: 100,
     query: "id code adapterKey providerAccountId organization { id }",
   });
@@ -522,6 +604,23 @@ export async function resolveStripeWebhookProvider(context: Context, payload: st
 
 export async function handleStripeWebhook(context: Context, payload: string, signature: string) {
   const resolved = await resolveStripeWebhookProvider(context, payload, signature);
+  const object = resolved.event.data.object as any;
+  const source = object.metadata?.source || object.subscription_details?.metadata?.source || object.parent?.subscription_details?.metadata?.source;
+  // Payouts belong to the verified merchant account itself; counter payments carry their own
+  // source. Anything else must correlate with a Gym subscription or payment.
+  if (source !== 'openfront-gym' && source !== COUNTER_SOURCE && object.object !== 'payout') {
+    const prisma = guardKeystonePrismaResults(context.prisma as any);
+    const subscriptionId = object.object === 'subscription' ? object.id : typeof object.subscription === 'string' ? object.subscription : object.subscription?.id;
+    const paymentIntentId = typeof object.payment_intent === 'string' ? object.payment_intent : object.payment_intent?.id;
+    const owned = subscriptionId
+      ? await prisma.subscription.findFirst({ where: { organizationId: resolved.organizationId, stripeSubscriptionId: subscriptionId }, select: { id: true } })
+      : paymentIntentId
+        ? (await prisma.membershipPayment.findFirst({ where: { organizationId: resolved.organizationId, stripePaymentIntentId: paymentIntentId }, select: { id: true } })) ||
+          (await prisma.gymPayment.findFirst({ where: { organizationId: resolved.organizationId, stripePaymentIntentId: paymentIntentId }, select: { id: true } })) ||
+          (await ownsCounterPayment(prisma, resolved.organizationId, paymentIntentId) ? { id: paymentIntentId } : null)
+        : null;
+    if (!owned) return { received: true, ignored: true };
+  }
   return processVerifiedPaymentEvent(context, resolved.provider, resolved.adapter, resolved.organizationId, resolved.event);
 }
 
@@ -532,6 +631,10 @@ export async function replayPaymentEvent(_root: unknown, { eventId }: { eventId:
   if (!actor.canManageAllRecords) throw new Error("Payment reconciliation management permission required");
   const organizationId = actor.organizationId;
   const record = await prisma.paymentEvent.findFirst({ where: { id: eventId, organizationId } });
+  return replayStoredPaymentEvent(context, organizationId, record);
+}
+
+async function replayStoredPaymentEvent(context: Context, organizationId: string, record: any) {
   if (!record || !record.data?.event || !["failed", "processing"].includes(record.status)) throw new Error("Replayable payment event not found");
   if (record.status === "processing" && record.lockedUntil > new Date()) throw new Error("Payment event is currently processing");
   const provider = await context.sudo().query.PaymentProvider.findOne({ where: { id: record.paymentProviderId }, query: "id adapterKey organization { id }" });
@@ -542,20 +645,102 @@ export async function replayPaymentEvent(_root: unknown, { eventId }: { eventId:
   return processVerifiedPaymentEvent(context, provider, adapter, organizationId, event);
 }
 
+const INVOICE_PREREQUISITE_ERROR = /^Invoice (?:membership|member) prerequisite missing/;
+
+/**
+ * Stripe can deliver invoice.paid before checkout.session.completed. Like Restaurant's
+ * webhook (completeVerifiedCheckout before failing correlation), complete the verified
+ * checkout from provider truth and record the invoice once. Anything still missing
+ * fails the event so the provider retries and staff can replay it.
+ */
+async function recordInvoiceWithCheckoutPrerequisites(
+  context: Context, providerId: string, adapter: PaymentProviderAdapter, organizationId: string,
+  invoice: Stripe.Invoice, status: "succeeded" | "failed", eventCreated: number,
+) {
+  try {
+    return await recordInvoicePayment(context, providerId, organizationId, invoice, status, eventCreated);
+  } catch (error) {
+    if (!(error instanceof Error) || !INVOICE_PREREQUISITE_ERROR.test(error.message)) throw error;
+    const subscriptionId = typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+    if (!subscriptionId || !(await provisionCheckoutForSubscription(context, adapter, organizationId, subscriptionId))) throw error;
+    return recordInvoicePayment(context, providerId, organizationId, invoice, status, eventCreated);
+  }
+}
+
+async function provisionCheckoutForSubscription(context: Context, adapter: PaymentProviderAdapter, organizationId: string, subscriptionId: string) {
+  const subscription = assertRetrievedSubscription(subscriptionId, await adapter.retrieveSubscription(subscriptionId));
+  const key = subscription.metadata?.paymentSessionKey;
+  if (!key) return false;
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  const local = await prisma.paymentSession.findFirst({
+    where: { organizationId, OR: [{ idempotencyKey: key }, { idempotencyKey: key.replace(/:attempt:\d+$/, "") }] },
+    select: { providerSessionId: true },
+  });
+  if (!local?.providerSessionId) return false;
+  await provisionMembershipFromCheckoutSession(local.providerSessionId, organizationId, context);
+  return true;
+}
+
+/**
+ * After checkout provisioning commits, replay stored signature-verified invoice events
+ * that failed only because the membership did not exist yet. Others stay in Operations.
+ */
+export async function replayDeferredInvoiceEvents(context: Context, organizationId: string, subscriptionId?: string | null) {
+  if (!subscriptionId) return 0;
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  const deferred = await prisma.paymentEvent.findMany({
+    where: {
+      organizationId, status: "failed",
+      eventType: { in: ["invoice.paid", "invoice.payment_failed"] },
+      lastError: { contains: "prerequisite missing" },
+      data: { path: ["event", "data", "object", "subscription"], equals: subscriptionId },
+    },
+    orderBy: { createdAt: "asc" },
+    take: 10,
+  });
+  let replayed = 0;
+  for (const record of deferred) {
+    try {
+      await replayStoredPaymentEvent(context, organizationId, record);
+      replayed += 1;
+    } catch (error) {
+      console.error("Deferred payment event replay failed", { eventType: record.eventType, name: error instanceof Error ? error.name : "UnknownError" });
+    }
+  }
+  return replayed;
+}
+
 async function processVerifiedPaymentEvent(context: Context, provider: any, adapter: PaymentProviderAdapter, organizationId: string, event: Stripe.Event) {
   const prisma = guardKeystonePrismaResults(context.prisma as any);
   const eventRecord = await claimEvent(context, provider.id, organizationId, event);
   if (!eventRecord) return { received: true, duplicate: true };
 
   try {
-    switch (event.type) {
-      case "checkout.session.completed": {
+    // Newer Stripe API versions also send refund.failed (absent from this SDK's event union);
+    // it carries the same refund object as refund.updated.
+    if ((event.type as string) === "refund.failed") {
+      await recordRefundObservation(context, adapter, event.data.object as Stripe.Refund, organizationId);
+    } else switch (event.type) {
+      case "checkout.session.completed":
+      case "checkout.session.async_payment_succeeded": {
         const session = event.data.object as Stripe.Checkout.Session;
-        if (session.mode === "subscription") await provisionMembershipFromCheckoutSession(session.id, organizationId, context);
+        if (session.metadata?.source === COUNTER_SOURCE) {
+          await reconcileCounterCheckoutEvent(context, organizationId, session);
+        } else if (session.mode === "subscription" && event.type === "checkout.session.completed") {
+          const provisioned = await provisionMembershipFromCheckoutSession(session.id, organizationId, context);
+          await replayDeferredInvoiceEvents(context, organizationId, provisioned.subscriptionId);
+        }
         break;
       }
-      case "checkout.session.expired":
-        await expireCheckoutSession(context, event.data.object as Stripe.Checkout.Session, organizationId);
+      case "checkout.session.expired": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        if (session.metadata?.source === COUNTER_SOURCE) await reconcileCounterCheckoutEvent(context, organizationId, session);
+        else await expireCheckoutSession(context, session, organizationId);
+        break;
+      }
+      case "refund.created":
+      case "refund.updated":
+        await recordRefundObservation(context, adapter, event.data.object as Stripe.Refund, organizationId);
         break;
       case "customer.subscription.created":
       case "customer.subscription.updated":
@@ -569,10 +754,10 @@ async function processVerifiedPaymentEvent(context: Context, provider: any, adap
         );
         break;
       case "invoice.paid":
-        await recordInvoicePayment(context, provider.id, organizationId, event.data.object as Stripe.Invoice, "succeeded", event.created);
+        await recordInvoiceWithCheckoutPrerequisites(context, provider.id, adapter, organizationId, event.data.object as Stripe.Invoice, "succeeded", event.created);
         break;
       case "invoice.payment_failed":
-        await recordInvoicePayment(context, provider.id, organizationId, event.data.object as Stripe.Invoice, "failed", event.created);
+        await recordInvoiceWithCheckoutPrerequisites(context, provider.id, adapter, organizationId, event.data.object as Stripe.Invoice, "failed", event.created);
         break;
       case "invoice.payment_action_required":
       case "charge.dispute.created":
@@ -595,9 +780,18 @@ async function processVerifiedPaymentEvent(context: Context, provider: any, adap
         });
         break;
       }
-      case "charge.refunded":
-        await recordRefund(context, event.data.object as Stripe.Charge, organizationId, new Date(event.created * 1000));
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        let counterRefunds = 0;
+        for (const refund of ((charge as any).refunds?.data || [])) {
+          if ((await reconcileCounterRefundEvent(context, organizationId, refund)).matched) counterRefunds += 1;
+        }
+        const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+        // Counter charges settle through their refund attempts; membership charges keep the receipt path.
+        const counterCharge = counterRefunds > 0 || (paymentIntentId ? await ownsCounterPayment(prisma, organizationId, paymentIntentId) : false);
+        if (!counterCharge) await recordRefund(context, charge, organizationId, new Date(event.created * 1000));
         break;
+      }
       default:
         const ignored = await prisma.paymentEvent.updateMany({
           where: { id: (eventRecord as any).id, status: "processing", attempts: (eventRecord as any).attempts },

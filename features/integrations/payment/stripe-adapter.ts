@@ -1,13 +1,21 @@
 import Stripe from "stripe";
 import type { MembershipPriceValidationInput, PaymentProviderAdapter } from "./types";
 
+/**
+ * Credentials are enough to verify and reconcile obligations that already exist at Stripe
+ * (webhooks, refunds, subscription status). New charges additionally need STRIPE_ENABLED.
+ */
 function getStripeClient() {
-  if (process.env.STRIPE_ENABLED !== "true") {
-    throw new Error("Stripe checkout is disabled for this Gym deployment.");
-  }
   const secretKey = process.env.STRIPE_SECRET_KEY;
   if (!secretKey) throw new Error("Stripe secret key not configured.");
   return new Stripe(secretKey, { apiVersion: "2023-10-16" });
+}
+
+function getStripeChargeClient() {
+  if (process.env.STRIPE_ENABLED !== "true") {
+    throw new Error("Stripe checkout is disabled for this Gym deployment.");
+  }
+  return getStripeClient();
 }
 
 async function ensureCustomer(input: {
@@ -18,7 +26,7 @@ async function ensureCustomer(input: {
 }) {
   if (input.customerId) return input.customerId;
 
-  const customer = await getStripeClient().customers.create(
+  const customer = await getStripeChargeClient().customers.create(
     {
       email: input.userEmail,
       name: input.userName,
@@ -60,14 +68,14 @@ export function assertStripeMembershipPrice(
 
 export const stripePaymentProviderAdapter: PaymentProviderAdapter = {
   async validateMembershipPrice(input) {
-    const price = await getStripeClient().prices.retrieve(input.priceId, {
+    const price = await getStripeChargeClient().prices.retrieve(input.priceId, {
       expand: ["product"],
     });
     assertStripeMembershipPrice(price, input);
   },
 
   async createMembershipCheckout(input) {
-    const stripe = getStripeClient();
+    const stripe = getStripeChargeClient();
     const customerId = await ensureCustomer(input);
     const session = await stripe.checkout.sessions.create(
       {
@@ -77,7 +85,9 @@ export const stripePaymentProviderAdapter: PaymentProviderAdapter = {
         line_items: [{ price: input.priceId, quantity: 1 }],
         success_url: input.successUrl,
         cancel_url: input.cancelUrl,
-        allow_promotion_codes: true,
+        // The reviewed agreement is the plan price. Promotion codes could make the first
+        // invoice zero, which never activates paid-only service, so none are offered.
+        allow_promotion_codes: false,
         metadata: {
           source: "openfront-gym",
           paymentSessionKey: input.idempotencyKey,
@@ -119,8 +129,56 @@ export const stripePaymentProviderAdapter: PaymentProviderAdapter = {
     return getStripeClient().subscriptions.retrieve(subscriptionId);
   },
 
+  async createCounterCheckout(input) {
+    const session = await getStripeChargeClient().checkout.sessions.create(
+      {
+        mode: "payment",
+        ...(input.expiresAt ? { expires_at: Math.floor(input.expiresAt.getTime() / 1000) } : {}),
+        client_reference_id: input.idempotencyKey,
+        line_items: [{
+          quantity: 1,
+          price_data: {
+            currency: input.currencyCode.toLowerCase(),
+            unit_amount: input.amount,
+            product_data: { name: input.description },
+          },
+        }],
+        success_url: input.successUrl,
+        cancel_url: input.cancelUrl,
+        metadata: input.metadata,
+        payment_intent_data: { description: input.description, metadata: input.metadata },
+      },
+      { idempotencyKey: input.idempotencyKey },
+    );
+    if (!session.url && session.status === "open") throw new Error("Stripe checkout did not return a redirect URL.");
+    return {
+      providerSessionId: session.id,
+      checkoutUrl: session.url || "",
+      status: session.status || "open",
+      expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : null,
+    };
+  },
+
+  retrieveCounterCheckout(providerSessionId) {
+    return getStripeClient().checkout.sessions.retrieve(providerSessionId);
+  },
+
+  async expireCounterCheckout(providerSessionId) {
+    const stripe = getStripeClient();
+    const session = await stripe.checkout.sessions.retrieve(providerSessionId);
+    if (session.status !== "open") return session;
+    try {
+      return await stripe.checkout.sessions.expire(providerSessionId);
+    } catch (error) {
+      // A concurrent completion makes the session non-expirable; report provider truth.
+      const current = await stripe.checkout.sessions.retrieve(providerSessionId);
+      if (current.status !== "open") return current;
+      throw error;
+    }
+  },
+
   async createSetupIntent(customerId) {
-    const intent = await getStripeClient().setupIntents.create({
+    const intent = await getStripeChargeClient().setupIntents.create({
       customer: customerId,
       payment_method_types: ["card"],
     });
@@ -149,7 +207,7 @@ export const stripePaymentProviderAdapter: PaymentProviderAdapter = {
   },
 
   async changeSubscriptionPrice(subscriptionId, priceId, metadata, idempotencyKey) {
-    const stripe = getStripeClient();
+    const stripe = getStripeChargeClient();
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     const itemId = subscription.items.data[0]?.id;
     if (!itemId) throw new Error("Stripe subscription has no active line item.");
@@ -203,6 +261,10 @@ export const stripePaymentProviderAdapter: PaymentProviderAdapter = {
       startingAfter = lastId;
     }
     throw new Error("Stripe refund history exceeds the automatic reconciliation bound; operator review required");
+  },
+
+  retrieveRefund(refundId) {
+    return getStripeClient().refunds.retrieve(refundId);
   },
 
   constructWebhookEvent(payload, signature) {

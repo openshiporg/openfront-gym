@@ -5,6 +5,7 @@ import { mapStripeStatusToMembership } from "./lifecycle";
 import { ensureMonthlyCreditGrant } from "../../keystone/lib/membership-credits";
 import { assertCheckoutCorrelation } from "./commercial-agreement";
 import { guardKeystonePrismaResults } from "../../keystone/lib/prisma-result";
+import { createFinanceException } from "../../keystone/lib/operational-notices";
 
 /** Provider calls are outside the transaction; all local activation records commit together. */
 export async function provisionMembershipFromCheckoutSession(providerSessionId: string, expectedOrganizationId: string | undefined, context: any) {
@@ -13,7 +14,8 @@ export async function provisionMembershipFromCheckoutSession(providerSessionId: 
   if (known.length > 1) throw new Error("Provider session is ambiguously assigned");
   const organizationId = expectedOrganizationId || known[0]?.organization?.id;
   if (!organizationId || (known[0] && known[0].organization.id !== organizationId)) throw new Error("Provider session organization does not match");
-  const { provider, adapter } = await getAdapterForProvider(ctx, "pp_stripe", organizationId);
+  // Completing an already-paid checkout reconciles an existing obligation.
+  const { provider, adapter } = await getAdapterForProvider(ctx, "pp_stripe", organizationId, "reconcile");
   const session = await adapter.retrieveMembershipCheckout(providerSessionId);
   if (session.id !== providerSessionId) throw new Error("Provider returned a different checkout session");
   const key = session.metadata?.paymentSessionKey;
@@ -83,6 +85,12 @@ export async function provisionMembershipFromCheckoutSession(providerSessionId: 
       stripeCustomerId: customerId, startDate, nextBillingDate,
       status: providerStatus === "active" ? "active" : providerStatus === "frozen" ? "paused" : providerStatus === "past-due" ? "past_due" : "cancelled",
     } });
+    if (session.payment_status === "no_payment_required") {
+      // Paid-only service: a checkout completed without payment (a legacy promotion) records the
+      // membership as past due and asks staff to reconcile; it never grants service.
+      await createFinanceException(tx, { organizationId, key: `unpaid-checkout:${session.id}`, kind: "unpaid-checkout", reference: session.id,
+        summary: "A membership checkout completed without a payment. Service stays inactive until a paid invoice; review the subscription and the member's plan." });
+    }
     await tx.paymentSession.update({ where: { id: local.id }, data: {
       status: "completed", provisioningLockedUntil: null, completedAt: new Date(), providerSessionId: session.id,
       providerCustomerId: customerId, providerSubscriptionId: subscriptionId,

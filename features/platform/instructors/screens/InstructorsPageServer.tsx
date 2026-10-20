@@ -1,26 +1,23 @@
-import { requireDashboardManager } from '@/features/dashboard/lib/current-user'
-import { keystoneClient } from '@/features/dashboard/lib/keystoneClient'
-import { InstructorsPage } from './InstructorsPage'
+import { requireDashboardManager } from '@/features/platform/lib/current-user'
+import { ListPage } from '@/features/dashboard/screens/ListPage'
+import { AddCoachPanel } from '../components/AddCoachPanel'
 
-export async function InstructorsPageServer() {
+/**
+ * Coach profiles use the shared list and item workflow: server search, filters, sort, field selection and
+ * pagination, stable item and create URLs, and the shared document and relationship editors that
+ * save only changed fields. Model access, hooks and validation stay authoritative.
+ */
+export async function InstructorsPageServer({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   await requireDashboardManager()
-  const now = new Date().toISOString()
-  const response = await keystoneClient<{ instructors: any[]; users: any[] }>(`
-    query InstructorWorkspace($now: DateTime!) {
-      instructors(orderBy: [{ updatedAt: desc }], take: 500) {
-        id user { id name email } bio { document } specialties certifications photo isActive
-        classSchedules { id }
-        classInstances(where: { date: { gte: $now } }, take: 500) { id }
-      }
-      users(orderBy: [{ name: asc }], take: 1000) { id name email role { isInstructor } }
-    }
-  `, { now })
-  if (!response.success) throw new Error(response.error)
+  const params = await searchParams
+  const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) || ''
   return (
-    <InstructorsPage
-      initialInstructors={response.data.instructors}
-      userOptions={response.data.users.filter((user) => user.role?.isInstructor)}
-    />
+    <>
+      <ListPage params={Promise.resolve({ listKey: 'instructors' })} searchParams={Promise.resolve(params)} />
+      <div className="px-4 pb-6 md:px-6">
+        <AddCoachPanel q={first(params.coachQuery).slice(0, 100)} skip={Number(first(params.coachSkip)) || 0} error={first(params.coachError).slice(0, 300) || undefined} />
+      </div>
+    </>
   )
 }
 

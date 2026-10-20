@@ -1,19 +1,31 @@
 "use client"
 
-import React, { useMemo, useState } from "react"
+import React, { useCallback, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CalendarDays, GraduationCap, Plus, Users } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { CalendarDays, CalendarPlus, Clock3, GraduationCap, Plus, Repeat, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { toast } from "sonner"
+import {
+  SeatCount,
+  EmptyBlock,
+  FieldTextarea,
+  FormField,
+  KeyValueList,
+  Notice,
+  Panel,
+  PanelHeader,
+  PlatformBody,
+  SplitLayout,
+  StatusPill,
+} from "@/features/platform/components/platform-ui"
 import { ExperimentalCalendar } from "../components/experimental-calendar/ExperimentalCalendar"
 import type { CalendarEvent as ExperimentalCalendarEvent } from "../components/experimental-calendar/types"
 import { ScheduleEditorDialog } from "../components/ScheduleEditorDialog"
 import { InstanceEditorDialog } from "../components/InstanceEditorDialog"
 import { cancelClassInstanceAction, generateUpcomingInstances } from "../actions/scheduling"
+import { formatRosterDayHeading, rosterDayKey } from "../../rosters/timezone"
 
 type Event = {
   id: string
@@ -77,6 +89,10 @@ interface SchedulingClientProps {
   timeZone: string
   isInstructor?: boolean
   canManageWorkspace?: boolean
+  loadedWindow?: { from: string; to: string }
+  windowComplete?: boolean
+  truncatedOptions?: Partial<Record<"schedules" | "instructors" | "classTypes" | "locations" | "resources", boolean>>
+  initialDate?: string
 }
 
 export function SchedulingClient({
@@ -90,8 +106,22 @@ export function SchedulingClient({
   timeZone,
   isInstructor = false,
   canManageWorkspace = false,
+  loadedWindow,
+  windowComplete = true,
+  truncatedOptions = {},
+  initialDate,
 }: SchedulingClientProps) {
   const router = useRouter()
+  const [isLoadingWindow, startWindowTransition] = useTransition()
+  const [now] = useState(() => Date.now())
+  const requestWindow = useCallback(
+    (from: string) => {
+      startWindowTransition(() => {
+        router.replace(`/dashboard/platform/scheduling?from=${from}`, { scroll: false })
+      })
+    },
+    [router],
+  )
   const [editingSchedule, setEditingSchedule] = useState<ScheduleTemplate | null>(null)
   const [isCreateScheduleOpen, setIsCreateScheduleOpen] = useState(false)
   const [defaultScheduleForInstance, setDefaultScheduleForInstance] = useState<ScheduleTemplate | null>(null)
@@ -119,12 +149,27 @@ export function SchedulingClient({
   )
 
   const activeScheduleCount = schedules.filter((schedule) => schedule.isActive).length
+  const unassignedUpcoming = upcomingInstances.filter(
+    (instance) => !instance.isCancelled && !instance.instructor?.user?.name && !instance.classSchedule?.instructor?.user?.name,
+  ).length
+  const upcomingGroups = useMemo(() => {
+    const groups: Array<{ key: string; heading: string; items: UpcomingInstance[] }> = []
+    for (const instance of upcomingInstances) {
+      const key = rosterDayKey(instance.date, timeZone)
+      const last = groups[groups.length - 1]
+      if (last && last.key === key) last.items.push(instance)
+      else groups.push({ key, heading: formatRosterDayHeading(instance.date, timeZone, now), items: [instance] })
+    }
+    return groups
+  }, [upcomingInstances, timeZone, now])
 
   const cancelInstance = async () => {
     if (!cancellingInstance || cancellationReason.trim().length < 3) return
     setIsCancelling(true)
     try {
-      const outcome = await cancelClassInstanceAction(cancellingInstance.id, cancellationReason.trim())
+      const result = await cancelClassInstanceAction(cancellingInstance.id, cancellationReason.trim())
+      if (!result.ok) throw new Error(result.error)
+      const outcome = result.data
       toast.success(`Class cancelled. ${outcome.cancelledBookings} booking(s) closed and ${outcome.refundedCredits} credit(s) returned. Notify affected members outside Gym.`)
       setCancellingInstance(null)
       setCancellationReason("")
@@ -139,162 +184,296 @@ export function SchedulingClient({
   const generateInstances = async (weeks: number) => {
     setIsGenerating(true)
     try {
-      const result = await generateUpcomingInstances(weeks)
-      if (!result.success) throw new Error('Instance generation failed')
-      toast.success(`Created ${result.createdCount} upcoming class instance(s).`)
+      const generated = await generateUpcomingInstances(weeks)
+      if (!generated.ok) throw new Error(generated.error)
+      const result = generated.data
+      if (!result.success) throw new Error('Could not create sessions')
+      toast.success(`Created ${result.createdCount} upcoming class session${result.createdCount === 1 ? "" : "s"}.${result.skippedNonexistent ? ` ${result.skippedNonexistent} skipped: their start time does not exist on a daylight-saving change day.` : ""}`)
       router.refresh()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Instance generation failed')
+      toast.error(error instanceof Error ? error.message : 'Could not create sessions')
     } finally {
       setIsGenerating(false)
     }
   }
 
+  const dayOrder = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+  const sortedSchedules = [...schedules].sort((a, b) => {
+    const day = dayOrder.indexOf(a.dayOfWeek) - dayOrder.indexOf(b.dayOfWeek)
+    return day !== 0 ? day : a.startTime.localeCompare(b.startTime)
+  })
+  const formatInstanceTime = (value: string) =>
+    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' }).format(new Date(value))
+  const formatInstanceDate = (value: string) =>
+    new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
+  const firstActiveSchedule = sortedSchedules.find((schedule) => schedule.isActive) || null
+  const cancellingBooked = cancellingInstance?.bookingsCount ?? 0
+  const closeCancelDialog = () => {
+    if (isCancelling) return
+    setCancellingInstance(null)
+    setCancellationReason("")
+  }
+
   return (
-    <div className="grid min-w-0 gap-6 p-4 md:p-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)]">
-      <div className="min-w-0 space-y-6">
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          {canManageWorkspace ? (
-            <>
-              <Button variant="outline" className="rounded-none" onClick={() => generateInstances(4)} disabled={isGenerating}>
-                {isGenerating ? 'Generating…' : 'Generate 4 weeks'}
-              </Button>
-              <Button variant="outline" className="rounded-none" onClick={() => { setEditingSchedule(null); setIsCreateScheduleOpen(true) }}>
-                <Plus className="mr-2 h-4 w-4" /> New recurring schedule
-              </Button>
-              <Button className="rounded-none" onClick={() => { setEditingInstance(null); setDefaultScheduleForInstance(schedules[0] || null); setIsCreateInstanceOpen(true) }}>
-                <Plus className="mr-2 h-4 w-4" /> Create one-off instance
-              </Button>
-            </>
-          ) : (
-            <p className="text-xs font-medium text-muted-foreground">
-              {isInstructor ? 'Instructor view · roster-first access' : 'Read-only scheduling view'}
-            </p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 divide-x rounded-lg border bg-card md:grid-cols-4">
-          {[['Templates', schedules.length], ['Active', activeScheduleCount], ['Instructors', instructors.length], ['Upcoming instances', upcomingInstances.length]].map(([label, value]) => (
-            <div key={String(label)} className="px-4 py-3">
-              <p className="text-xs font-medium text-muted-foreground">{label}</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-            </div>
-          ))}
-        </div>
-
-        <ExperimentalCalendar events={calendarEvents} timeZone={timeZone} />
+    <PlatformBody>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="inline-flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Clock3 className="size-3.5" aria-hidden />
+          Times shown in <span className="font-medium text-foreground">{timeZone}</span>
+          {!canManageWorkspace ? (
+            <StatusPill tone="info" className="ml-1">{isInstructor ? 'Instructor view · roster-first access' : 'Read-only scheduling view'}</StatusPill>
+          ) : null}
+        </p>
+        {canManageWorkspace ? (
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => generateInstances(4)}
+              disabled={isGenerating || activeScheduleCount === 0}
+              title={activeScheduleCount === 0 ? 'Activate a recurring template first' : 'Create dated sessions for the next four weeks from active templates'}
+            >
+              <CalendarPlus aria-hidden /> {isGenerating ? 'Generating…' : 'Generate 4 weeks'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { setEditingSchedule(null); setIsCreateScheduleOpen(true) }}>
+              <Repeat aria-hidden /> New template
+            </Button>
+            <Button
+              size="sm"
+              className="col-span-2 sm:col-span-1"
+              disabled={!firstActiveSchedule}
+              onClick={() => { setEditingInstance(null); setDefaultScheduleForInstance(firstActiveSchedule); setIsCreateInstanceOpen(true) }}
+            >
+              <Plus aria-hidden /> One-off session
+            </Button>
+          </div>
+        ) : null}
       </div>
 
-      <div className="min-w-0 space-y-6">
-        <div className="rounded-lg border bg-card p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Scheduling inventory</p>
-              <h3 className="mt-1 text-lg font-semibold">Recurring templates</h3>
-            </div>
-            <CalendarDays className="h-5 w-5 text-muted-foreground" />
-          </div>
+      {canManageWorkspace && schedules.length === 0 ? (
+        <Notice
+          tone="info"
+          title="Set up the weekly program"
+          action={
+            <Button size="sm" onClick={() => { setEditingSchedule(null); setIsCreateScheduleOpen(true) }}>
+              <Repeat aria-hidden /> New template
+            </Button>
+          }
+        >
+          Create a recurring template for each weekly class slot, then generate four weeks of sessions. Members can book
+          once sessions are on the calendar.
+        </Notice>
+      ) : canManageWorkspace && activeScheduleCount > 0 && upcomingInstances.length === 0 ? (
+        <Notice
+          tone="warning"
+          title="No upcoming sessions are bookable"
+          action={
+            <Button size="sm" variant="outline" onClick={() => generateInstances(4)} disabled={isGenerating}>
+              <CalendarPlus aria-hidden /> {isGenerating ? 'Generating…' : 'Generate 4 weeks'}
+            </Button>
+          }
+        >
+          {activeScheduleCount} active template{activeScheduleCount === 1 ? '' : 's'} but nothing dated ahead. Generate
+          sessions so members can book.
+        </Notice>
+      ) : null}
 
-          <div className="mt-6 space-y-3 max-h-[720px] overflow-auto pr-1">
-            {schedules.length === 0 ? (
-              <div className="rounded-md border border-dashed px-4 py-10 text-sm text-muted-foreground">
-                No recurring schedules yet. Create a template to establish the weekly program.
-              </div>
-            ) : (
-              schedules.map((schedule) => (
-                <div key={schedule.id} className="rounded-md border px-4 py-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold">{schedule.name}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {schedule.classType?.name || 'Class type not assigned'} · {schedule.dayOfWeek} · {schedule.startTime}–{schedule.endTime}
-                      </p>
-                    </div>
-                    <Badge variant="outline">{schedule.maxCapacity} cap</Badge>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-4 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-2"><GraduationCap className="h-3.5 w-3.5" /> {schedule.instructor?.user?.name || 'Unassigned'}</span>
-                    <span>{schedule.isActive ? 'Active' : 'Inactive'}</span>
-                  </div>
-                  {canManageWorkspace ? (
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <Button type="button" variant="ghost" size="sm" onClick={() => setEditingSchedule(schedule)}>Edit template</Button>
-                      <Button type="button" variant="outline" size="sm" onClick={() => { setEditingInstance(null); setDefaultScheduleForInstance(schedule); setIsCreateInstanceOpen(true) }}>Create instance</Button>
-                    </div>
+      {unassignedUpcoming ? (
+        <Notice tone="warning">
+          {unassignedUpcoming} upcoming session{unassignedUpcoming === 1 ? ' has' : 's have'} no coach. Assign one from Upcoming sessions.
+        </Notice>
+      ) : null}
+
+      {Object.values(truncatedOptions).some(Boolean) ? (
+        <Notice tone="info">
+          Editor choices show the first 500 {[truncatedOptions.schedules && "templates", truncatedOptions.instructors && "coaches", truncatedOptions.classTypes && "class types", truncatedOptions.locations && "locations", truncatedOptions.resources && "rooms"].filter(Boolean).join(", ")} by name.
+        </Notice>
+      ) : null}
+
+      <SplitLayout
+        asideWidth="narrow"
+        main={
+          <ExperimentalCalendar
+            events={calendarEvents}
+            timeZone={timeZone}
+            loadedWindow={loadedWindow}
+            initialDate={initialDate}
+            onWindowRequest={requestWindow}
+            loading={isLoadingWindow}
+            complete={windowComplete}
+          />
+        }
+        aside={
+          <>
+            <Panel>
+              <PanelHeader
+                icon={Users}
+                title="Upcoming sessions"
+                count={upcomingInstances.length}
+                description="The next dated sessions from now, with fill and coach at a glance."
+              />
+              {upcomingInstances.length === 0 ? (
+                <EmptyBlock
+                  compact
+                  icon={CalendarDays}
+                  title="No upcoming sessions"
+                  description={canManageWorkspace ? 'Generate the rolling schedule or add a one-off session.' : 'Sessions assigned to you appear here once they are scheduled.'}
+                />
+              ) : (
+                <div className="max-h-[36rem] overflow-y-auto">
+                  {upcomingGroups.map((group) => (
+                    <section key={group.key} aria-label={group.heading}>
+                      <h3 className="sticky top-0 z-10 flex items-center justify-between border-b bg-muted/80 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur sm:px-5">
+                        <span>{group.heading}</span>
+                        <span className="font-medium normal-case tracking-normal tabular-nums">{group.items.length}</span>
+                      </h3>
+                      <ul className="divide-y">
+                        {group.items.map((instance) => {
+                          const booked = instance.bookingsCount || 0
+                          const cap = instance.maxCapacity || instance.classSchedule?.maxCapacity || 0
+                          const coach = instance.instructor?.user?.name || instance.classSchedule?.instructor?.user?.name
+                          const full = !instance.isCancelled && cap > 0 && booked >= cap
+                          return (
+                            <li key={instance.id} className="space-y-2 px-4 py-3 sm:px-5">
+                              <div className="flex items-start gap-3">
+                                <p className={instance.isCancelled ? 'w-16 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground line-through' : 'w-16 shrink-0 text-sm font-semibold tabular-nums'}>
+                                  {formatInstanceTime(instance.date)}
+                                </p>
+                                <div className="min-w-0 flex-1">
+                                  <Link href={`/dashboard/platform/rosters/${instance.id}`} className="block truncate text-sm font-medium underline-offset-4 hover:underline">
+                                    {instance.classSchedule?.name || 'Class session'}
+                                  </Link>
+                                  <p className={coach ? 'truncate text-xs text-muted-foreground' : 'truncate text-xs font-medium text-amber-700 dark:text-amber-400'}>
+                                    {coach || 'No coach assigned'}
+                                  </p>
+                                </div>
+                                {instance.isCancelled ? <StatusPill tone="danger">Cancelled</StatusPill> : full ? <StatusPill tone="warning">Full</StatusPill> : null}
+                              </div>
+                              {!instance.isCancelled ? (
+                                <div className="pl-[4.75rem]">
+                                  <SeatCount booked={booked} capacity={cap} />
+                                </div>
+                              ) : null}
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pl-[4.75rem] text-xs font-medium">
+                                <Link href={`/dashboard/platform/rosters/${instance.id}`} className="text-foreground underline-offset-4 hover:underline">
+                                  Roster
+                                </Link>
+                                {canManageWorkspace && !instance.isCancelled ? (
+                                  <>
+                                    <button type="button" onClick={() => { setEditingInstance(instance); setDefaultScheduleForInstance(null); setIsCreateInstanceOpen(true) }} className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                                      Edit
+                                    </button>
+                                    <button type="button" onClick={() => { setCancellingInstance(instance); setCancellationReason("") }} className="text-rose-600 underline-offset-4 hover:underline dark:text-rose-400">
+                                      Cancel session
+                                    </button>
+                                  </>
+                                ) : null}
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </Panel>
+
+            <Panel>
+              <PanelHeader
+                icon={Repeat}
+                title="Recurring templates"
+                count={schedules.length}
+                description="The weekly program that generates dated sessions."
+              />
+              {schedules.length === 0 ? (
+                <EmptyBlock
+                  compact
+                  icon={Repeat}
+                  title="No recurring templates yet"
+                  description="Each template is one weekly class slot: day, time, coach, room, and capacity."
+                  action={canManageWorkspace ? (
+                    <Button size="sm" variant="outline" onClick={() => { setEditingSchedule(null); setIsCreateScheduleOpen(true) }}>
+                      <Plus aria-hidden /> New template
+                    </Button>
                   ) : null}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-lg border bg-card p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Live queue</p>
-              <h3 className="mt-1 text-lg font-semibold">Upcoming sessions</h3>
-            </div>
-            <Users className="h-5 w-5 text-muted-foreground" />
-          </div>
-
-          <div className="mt-6 space-y-3 max-h-[520px] overflow-auto pr-1">
-            {upcomingInstances.length === 0 ? (
-              <div className="rounded-md border border-dashed px-4 py-10 text-sm text-muted-foreground">
-                No upcoming class instances. Generate the rolling schedule or create a one-off session.
-              </div>
-            ) : (
-              upcomingInstances.map((instance) => (
-                <div key={instance.id} className="rounded-md border px-4 py-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold">{instance.classSchedule?.name || 'Class instance'}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(instance.date))}
-                      </p>
-                    </div>
-                    <Link href={`/dashboard/platform/rosters/${instance.id}`} className="text-sm font-medium text-primary underline-offset-4 hover:underline">
-                      Open roster
-                    </Link>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-4 text-xs text-muted-foreground">
-                    <span>{instance.instructor?.user?.name || instance.classSchedule?.instructor?.user?.name || 'TBA'}</span>
-                    <span>{instance.bookingsCount || 0}/{instance.maxCapacity || instance.classSchedule?.maxCapacity || 0}</span>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <Link href={`/dashboard/platform/rosters/${instance.id}`} className="text-sm font-medium hover:underline">
-                        View roster
-                      </Link>
+                />
+              ) : (
+                <ul className="max-h-[34rem] divide-y overflow-y-auto">
+                  {sortedSchedules.map((schedule) => (
+                    <li key={schedule.id} className={schedule.isActive ? 'px-4 py-3 sm:px-5' : 'bg-muted/20 px-4 py-3 sm:px-5'}>
+                      <div className="flex items-start gap-3">
+                        <span className={schedule.isActive ? 'grid h-9 w-11 shrink-0 place-items-center rounded-md border bg-background text-[11px] font-semibold uppercase tracking-wider' : 'grid h-9 w-11 shrink-0 place-items-center rounded-md border border-dashed text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'}>
+                          {schedule.dayOfWeek.slice(0, 3)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-medium">{schedule.name}</p>
+                            {!schedule.isActive ? <StatusPill>Paused</StatusPill> : null}
+                          </div>
+                          <p className="truncate text-xs tabular-nums text-muted-foreground">
+                            {schedule.startTime}–{schedule.endTime} · {schedule.classType?.name || 'No class type'} · {schedule.maxCapacity} spots
+                          </p>
+                          <p className={schedule.instructor?.user?.name ? 'mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground' : 'mt-0.5 flex items-center gap-1.5 truncate text-xs text-amber-700 dark:text-amber-400'}>
+                            <GraduationCap className="size-3.5 shrink-0" aria-hidden /> {schedule.instructor?.user?.name || 'No coach assigned'}
+                          </p>
+                        </div>
+                      </div>
                       {canManageWorkspace ? (
-                        <button type="button" onClick={() => { setEditingInstance(instance); setDefaultScheduleForInstance(null); setIsCreateInstanceOpen(true) }} className="text-sm font-medium hover:underline">
-                          Edit instance
-                        </button>
+                        <div className="mt-2 flex gap-3 pl-14 text-xs font-medium">
+                          <button type="button" onClick={() => setEditingSchedule(schedule)} className="text-foreground underline-offset-4 hover:underline">Edit template</button>
+                          {schedule.isActive ? (
+                            <button type="button" onClick={() => { setEditingInstance(null); setDefaultScheduleForInstance(schedule); setIsCreateInstanceOpen(true) }} className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Add one-off session</button>
+                          ) : null}
+                        </div>
                       ) : null}
-                    </div>
-                    {canManageWorkspace ? (
-                      !instance.isCancelled ? (
-                        <button type="button" onClick={() => { setCancellingInstance(instance); setCancellationReason("") }} className="text-sm font-medium text-destructive hover:underline">
-                          Cancel instance
-                        </button>
-                      ) : (
-                        <Badge variant="destructive">Cancelled</Badge>
-                      )
-                    ) : instance.isCancelled ? (
-                      <Badge variant="destructive">Cancelled</Badge>
-                    ) : null}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Panel>
+          </>
+        }
+      />
 
-      <Dialog open={Boolean(cancellingInstance)} onOpenChange={(open) => { if (!open && !isCancelling) { setCancellingInstance(null); setCancellationReason("") } }}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Cancel this class instance?</DialogTitle><DialogDescription>Confirmed and waitlisted bookings will be closed. Finite credits are returned by the existing lifecycle action. Member notification remains an operator task.</DialogDescription></DialogHeader>
-          <label className="space-y-2 text-sm font-medium">Cancellation reason<Textarea value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} minLength={3} maxLength={500} placeholder="Describe the operational reason" /></label>
-          <DialogFooter><Button variant="outline" onClick={() => setCancellingInstance(null)} disabled={isCancelling}>Keep session</Button><Button variant="destructive" onClick={cancelInstance} disabled={isCancelling || cancellationReason.trim().length < 3}>{isCancelling ? "Cancelling…" : "Cancel session"}</Button></DialogFooter>
+      <Dialog open={Boolean(cancellingInstance)} onOpenChange={(open) => { if (!open) closeCancelDialog() }}>
+        <DialogContent className="w-[calc(100vw-2rem)] rounded-xl sm:max-w-lg">
+          <DialogHeader className="text-left">
+            <DialogTitle>Cancel {cancellingInstance?.classSchedule?.name || 'this session'}?</DialogTitle>
+            <DialogDescription className="text-pretty">
+              This cannot be undone from Gym. The session stays on the calendar marked cancelled.
+            </DialogDescription>
+          </DialogHeader>
+          {cancellingInstance ? (
+            <KeyValueList
+              className="rounded-lg border px-3.5 py-3"
+              items={[
+                { label: 'Starts', value: formatInstanceDate(cancellingInstance.date) },
+                { label: 'Coach', value: cancellingInstance.instructor?.user?.name || cancellingInstance.classSchedule?.instructor?.user?.name || 'No coach assigned' },
+                { label: 'Booked', value: `${cancellingBooked} member${cancellingBooked === 1 ? '' : 's'}` },
+              ]}
+            />
+          ) : null}
+          <Notice tone={cancellingBooked ? 'warning' : 'neutral'}>
+            Confirmed and waitlisted bookings are closed and finite class credits are returned.
+            {cancellingBooked ? ' Members are not messaged automatically. Contact them yourself.' : ''}
+          </Notice>
+          <FormField label="Cancellation reason" hint="Kept on the session record. At least 3 characters.">
+            <FieldTextarea
+              value={cancellationReason}
+              onChange={(event) => setCancellationReason(event.target.value)}
+              minLength={3}
+              maxLength={500}
+              rows={3}
+              placeholder="Coach illness, facility closure, low enrolment…"
+            />
+          </FormField>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={closeCancelDialog} disabled={isCancelling}>Keep session</Button>
+            <Button variant="destructive" onClick={cancelInstance} disabled={isCancelling || cancellationReason.trim().length < 3}>
+              {isCancelling ? 'Cancelling…' : 'Cancel session'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -302,15 +481,15 @@ export function SchedulingClient({
         <>
           <ScheduleEditorDialog
             open={isCreateScheduleOpen || Boolean(editingSchedule)}
-        onOpenChange={(open) => {
-          if (!open) setEditingSchedule(null)
-          setIsCreateScheduleOpen(open)
-        }}
-        instructors={instructors}
-        classTypes={classTypes}
-        locations={locations}
-        resources={resources}
-        schedule={editingSchedule}
+            onOpenChange={(open) => {
+              if (!open) setEditingSchedule(null)
+              setIsCreateScheduleOpen(open)
+            }}
+            instructors={instructors}
+            classTypes={classTypes}
+            locations={locations}
+            resources={resources}
+            schedule={editingSchedule}
           />
 
           <InstanceEditorDialog
@@ -329,6 +508,6 @@ export function SchedulingClient({
           />
         </>
       ) : null}
-    </div>
+    </PlatformBody>
   )
 }

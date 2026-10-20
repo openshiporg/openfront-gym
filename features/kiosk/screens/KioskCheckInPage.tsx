@@ -1,12 +1,8 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Check, X, QrCode, Search, User, Clock, UserPlus, ShieldCheck, BadgeAlert } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { toast } from "sonner"
+import { Check, X } from "lucide-react"
+import { Banner, EmptyState } from "@/features/storefront/modules/common/ui"
 
 type CheckInResult = {
   success: boolean
@@ -42,7 +38,7 @@ function formatCredits(value?: number | null) {
   return "Credits unavailable"
 }
 
-export default function KioskCheckInPage() {
+export default function KioskCheckInPage({ brandName = "Front desk" }: { brandName?: string } = {}) {
   const [authorization, setAuthorization] = useState<"checking" | "authorized" | "required" | "unconfigured">("checking")
   const [unlockToken, setUnlockToken] = useState("")
   const [unlockError, setUnlockError] = useState<string | null>(null)
@@ -58,6 +54,7 @@ export default function KioskCheckInPage() {
   const [recentCheckIns, setRecentCheckIns] = useState<RecentCheckIn[]>([])
   const [guestForm, setGuestForm] = useState({ name: "", phone: "", hostMember: "" })
   const guestIdempotencyKey = useRef(crypto.randomUUID())
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -85,6 +82,7 @@ export default function KioskCheckInPage() {
         setSearchQuery("")
         setSearchResults([])
         setCheckInResult(null)
+        setNotice(null)
         setGuestForm({ name: "", phone: "", hostMember: "" })
       }, INACTIVITY_RESET_MS)
     }
@@ -161,7 +159,7 @@ export default function KioskCheckInPage() {
       if (!response.ok) throw new Error(data.error || "Search failed")
       setSearchResults(data.members || [])
     } catch {
-      toast.error("Search failed. Please try again.")
+      setNotice("Search failed. Please try again.")
     } finally {
       setIsSearching(false)
     }
@@ -204,7 +202,7 @@ export default function KioskCheckInPage() {
 
   const handleQrSubmit = useCallback(async () => {
     if (!scanValue.trim()) {
-      toast.error("Paste or scan a QR payload first")
+      setNotice("Paste or scan a QR payload first")
       return
     }
 
@@ -244,7 +242,7 @@ export default function KioskCheckInPage() {
 
   const handleGuestCheckIn = useCallback(async () => {
     if (!guestForm.name.trim()) {
-      toast.error("Please enter guest name")
+      setNotice("Please enter guest name")
       return
     }
 
@@ -271,329 +269,225 @@ export default function KioskCheckInPage() {
         guestIdempotencyKey.current = crypto.randomUUID()
         setMode("scan")
       } else {
-        toast.error(data.error || "Guest check-in failed")
+        setNotice(data.error || "Guest check-in failed")
       }
     } catch {
-      toast.error("Network error. Please try again.")
+      setNotice("Network error. Please try again.")
     } finally {
       setIsSubmittingGuest(false)
     }
   }, [guestForm, pushRecentCheckIn, requireUnlock])
 
+  const switchMode = (next: "scan" | "search" | "guest") => {
+    setNotice(null)
+    setMode(next)
+  }
+
   if (authorization !== "authorized") {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-background p-6">
-        <section className="w-full max-w-md rounded-xl border bg-card p-6 shadow-sm">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <ShieldCheck className="h-6 w-6 text-primary" />
-          </div>
-          <h1 className="mt-5 text-2xl font-bold">Staff kiosk unlock</h1>
-          {authorization === "checking" ? (
-            <p className="mt-3 text-sm text-muted-foreground">Checking this kiosk session…</p>
-          ) : authorization === "unconfigured" ? (
-            <Alert className="mt-5" variant="destructive">
-              <AlertTitle>Kiosk is not configured</AlertTitle>
-              <AlertDescription>
-                Set KIOSK_ORGANIZATION_ID and a KIOSK_API_TOKEN of at least 32 characters, then reload this page.
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <form className="mt-5 space-y-4" onSubmit={handleUnlock}>
-              <p className="text-sm leading-6 text-muted-foreground">
-                A staff member must enter the server-configured kiosk credential. It is exchanged for a 12-hour, HttpOnly kiosk session and is not stored in the browser.
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="kiosk-token">Kiosk credential</Label>
-                <Input
-                  id="kiosk-token"
-                  type="password"
-                  value={unlockToken}
-                  onChange={(event) => setUnlockToken(event.target.value)}
-                  minLength={32}
-                  maxLength={512}
-                  autoComplete="off"
-                  required
-                />
-              </div>
-              {unlockError ? (
-                <Alert variant="destructive">
-                  <AlertDescription>{unlockError}</AlertDescription>
-                </Alert>
-              ) : null}
-              <Button type="submit" className="w-full" disabled={isUnlocking}>
-                {isUnlocking ? "Unlocking…" : "Unlock kiosk"}
-              </Button>
-            </form>
-          )}
-        </section>
+      <main className="sf-wrap sf-closed" style={{ maxWidth: "calc(480px + 2 * var(--sf-gutter))" }}>
+        <p className="sf-label">{brandName}</p>
+        <h1 className="sf-h1">Unlock kiosk</h1>
+        {authorization === "checking" ? (
+          <p role="status" className="sf-text-2">Checking this kiosk…</p>
+        ) : authorization === "unconfigured" ? (
+          <Banner tone="bad" title="Kiosk isn’t configured">
+            Set KIOSK_ORGANIZATION_ID and a KIOSK_API_TOKEN of at least 32 characters, then reload.
+          </Banner>
+        ) : (
+          <form className="sf-form" onSubmit={handleUnlock}>
+            <label className="sf-field" htmlFor="kiosk-token">Kiosk credential
+              <input
+                id="kiosk-token"
+                type="password"
+                value={unlockToken}
+                onChange={(event) => setUnlockToken(event.target.value)}
+                minLength={32}
+                maxLength={512}
+                autoComplete="off"
+                required
+              />
+              <small>Exchanged for a 12-hour kiosk session. Not stored in the browser.</small>
+            </label>
+            {unlockError ? <Banner tone="bad">{unlockError}</Banner> : null}
+            <button type="submit" className="sf-btn" data-size="lg" data-block disabled={isUnlocking}>
+              {isUnlocking ? "Unlocking…" : "Unlock"}
+            </button>
+          </form>
+        )}
       </main>
     )
   }
 
   return (
-    <div className="min-h-screen max-w-full overflow-x-hidden bg-background">
-      {checkInResult && (
-        <div className={`fixed inset-0 z-50 flex items-center justify-center ${checkInResult.success ? "bg-emerald-500/90" : "bg-red-500/90"}`}>
-          <div className="mx-6 max-w-2xl text-center text-white space-y-6">
+    <div className="sf-kiosk">
+      {checkInResult ? (
+        <div className="sf-kiosk-result" data-tone={checkInResult.success ? "ok" : "bad"} role="alert">
+          <div>
             {checkInResult.success ? (
               <>
-                <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full bg-white">
-                  <Check className="h-20 w-20 text-emerald-500" strokeWidth={4} />
-                </div>
-                <div>
-                  <h2 className="mb-2 text-4xl font-bold">Welcome in</h2>
-                  <p className="text-2xl">{checkInResult.memberName}</p>
-                  {checkInResult.membershipTier && <p className="mt-2 text-xl opacity-90">{checkInResult.membershipTier}</p>}
-                  {typeof checkInResult.classCreditsRemaining === "number" && (
-                    <p className="mt-2 text-sm uppercase tracking-[0.18em] opacity-80">{formatCredits(checkInResult.classCreditsRemaining)}</p>
-                  )}
-                </div>
+                <Check aria-hidden="true" strokeWidth={3} />
+                <h2>Welcome in</h2>
+                <p>{checkInResult.memberName}</p>
+                {checkInResult.membershipTier ? <p style={{ opacity: 0.85 }}>{checkInResult.membershipTier}</p> : null}
+                {typeof checkInResult.classCreditsRemaining === "number" ? <p style={{ fontSize: "1rem", opacity: 0.85 }}>{formatCredits(checkInResult.classCreditsRemaining)}</p> : null}
               </>
             ) : (
               <>
-                <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full bg-white">
-                  <X className="h-20 w-20 text-red-500" strokeWidth={4} />
-                </div>
-                <div>
-                  <h2 className="mb-2 text-4xl font-bold">Access denied</h2>
-                  <p className="text-xl">{checkInResult.error}</p>
-                </div>
+                <X aria-hidden="true" strokeWidth={3} />
+                <h2>Not checked in</h2>
+                <p>{checkInResult.error}</p>
               </>
             )}
           </div>
         </div>
-      )}
+      ) : null}
 
-      <div className="grid min-h-screen min-w-0 max-w-full lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="flex min-w-0 max-w-full flex-col p-6 md:p-8">
-          <div className="mb-8 flex min-w-0 flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">Kinetic Performance Club</p>
-              <h1 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">Kiosk check-in</h1>
-              <p className="mt-2 max-w-2xl text-muted-foreground">
-                Fast entrance flow for members and guests. Accept QR payloads from the member app, run fallback member search, and log guest access at the front desk.
-              </p>
-            </div>
-            <div className="rounded-xl border bg-card px-4 py-3 text-sm text-muted-foreground">
-              Auto-resets after 60 seconds of inactivity
-            </div>
+      <header className="sf-kiosk-bar">
+        <div className="sf-stack" data-gap="sm" style={{ gap: 0 }}>
+          <p className="sf-label">{brandName}</p>
+          <h1 className="sf-h3">Check-in</h1>
+        </div>
+        <p className="sf-meta">Resets after 60 seconds idle</p>
+      </header>
+
+      <div className="sf-kiosk-main">
+        <main className="sf-kiosk-panel">
+          <div className="sf-seg" role="group" aria-label="Check-in method">
+            <button type="button" aria-pressed={mode === "scan"} onClick={() => switchMode("scan")}>Scan code</button>
+            <button type="button" aria-pressed={mode === "search"} onClick={() => switchMode("search")}>Find member</button>
+            <button type="button" aria-pressed={mode === "guest"} onClick={() => switchMode("guest")}>Guest</button>
           </div>
 
-          <div className="mb-8 grid min-w-0 gap-4 md:grid-cols-3">
-            <Button variant={mode === "scan" ? "default" : "outline"} onClick={() => setMode("scan")} size="lg" className="h-16 justify-start gap-3 text-lg">
-              <QrCode className="h-5 w-5" />
-              Scan / paste QR
-            </Button>
-            <Button variant={mode === "search" ? "default" : "outline"} onClick={() => setMode("search")} size="lg" className="h-16 justify-start gap-3 text-lg">
-              <Search className="h-5 w-5" />
-              Find member
-            </Button>
-            <Button variant={mode === "guest" ? "default" : "outline"} onClick={() => setMode("guest")} size="lg" className="h-16 justify-start gap-3 text-lg">
-              <UserPlus className="h-5 w-5" />
-              Guest check-in
-            </Button>
-          </div>
+          {notice ? <Banner tone="bad">{notice}</Banner> : null}
 
-          <div className="min-w-0 max-w-full flex-1 overflow-hidden rounded-3xl border bg-card p-6 md:p-8">
-            {mode === "scan" && (
-              <div className="mx-auto max-w-3xl space-y-6">
-                <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-8 md:p-10">
-                  <div className="mx-auto flex max-w-xl flex-col items-center text-center">
-                    <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
-                      <QrCode className="h-10 w-10 text-primary" />
-                    </div>
-                    <h2 className="text-2xl font-bold">Scan member QR code</h2>
-                    <p className="mt-2 text-muted-foreground">
-                      If your camera scanner acts like a keyboard wedge, click the field below and scan. You can also paste the raw QR payload from a test device.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <Label htmlFor="qr-payload" className="text-sm font-medium">QR payload</Label>
-                  <Input
-                    id="qr-payload"
-                    value={scanValue}
-                    onChange={(e) => setScanValue(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleQrSubmit()}
-                    placeholder="Scan or paste encoded member QR data"
-                    className="h-16 px-5 font-mono text-base md:text-lg"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <Button onClick={handleQrSubmit} disabled={isSubmittingScan} size="lg" className="h-14 px-8 text-lg">
-                    {isSubmittingScan ? "Checking in..." : "Validate and check in"}
-                  </Button>
-                  <Button variant="outline" size="lg" className="h-14 px-8 text-lg" onClick={() => setScanValue("")}>Clear</Button>
-                </div>
-
-                <Alert>
-                  <ShieldCheck className="h-4 w-4" />
-                  <AlertTitle>Security note</AlertTitle>
-                  <AlertDescription>
-                    Member QR codes rotate every 30 seconds. Expired or tampered codes are rejected automatically.
-                  </AlertDescription>
-                </Alert>
+          {mode === "scan" ? (
+            <section className="sf-card" aria-labelledby="kiosk-scan">
+              <h2 id="kiosk-scan" className="sf-h2">Scan member code</h2>
+              <label className="sf-field" htmlFor="qr-payload">Code
+                <input
+                  id="qr-payload"
+                  value={scanValue}
+                  onChange={(e) => setScanValue(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleQrSubmit()}
+                  placeholder="Scan or paste"
+                  autoFocus
+                />
+                <small>Codes rotate every 30 seconds. Expired codes are rejected.</small>
+              </label>
+              <div className="sf-actions">
+                <button type="button" onClick={handleQrSubmit} disabled={isSubmittingScan} className="sf-btn" data-variant="accent" data-size="lg">
+                  {isSubmittingScan ? "Checking in…" : "Check in"}
+                </button>
+                <button type="button" className="sf-btn" data-variant="secondary" data-size="lg" onClick={() => setScanValue("")}>Clear</button>
               </div>
-            )}
+            </section>
+          ) : null}
 
-            {mode === "search" && (
-              <div className="mx-auto min-w-0 max-w-4xl space-y-6">
-                <div>
-                  <h2 className="text-2xl font-bold">Search member fallback</h2>
-                  <p className="mt-2 text-muted-foreground">
-                    Use this when a member forgot their phone or QR code. Search by member name, email, or phone and complete a staffed check-in.
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-4 md:flex-row">
-                  <Input
+          {mode === "search" ? (
+            <section className="sf-card" aria-labelledby="kiosk-search">
+              <h2 id="kiosk-search" className="sf-h2">Find member</h2>
+              <div className="sf-row" style={{ alignItems: "end" }}>
+                <label className="sf-field" htmlFor="kiosk-member-search" style={{ flex: "1 1 18rem" }}>Name, email or phone
+                  <input
+                    id="kiosk-member-search"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleMemberSearch()}
-                    placeholder="Search by name, email, or phone..."
-                    className="h-16 px-6 text-lg"
                     autoFocus
                   />
-                  <Button onClick={handleMemberSearch} disabled={isSearching} size="lg" className="h-16 px-8 text-lg">
-                    {isSearching ? "Searching..." : "Search"}
-                  </Button>
-                </div>
-
-                {searchResults.length > 0 ? (
-                  <div className="space-y-3">
-                    {searchResults.map((member) => {
-                      const accessAllowed = member.status === "active" && member.membershipStatus === "active"
-                      return (
-                        <button
-                          key={member.id}
-                          type="button"
-                          disabled={!accessAllowed}
-                          onClick={() => handleCheckInByMemberId(member.id)}
-                          className="w-full min-w-0 max-w-full rounded-2xl border bg-background p-5 text-left transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:bg-background"
-                        >
-                          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-3">
-                                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
-                                  <User className="h-7 w-7 text-primary" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h3 className="truncate text-xl font-bold">{member.name}</h3>
-                                  <p className="truncate text-sm text-muted-foreground">{member.email}{member.phone ? ` · ${member.phone}` : ""}</p>
-                                </div>
-                              </div>
-                              <div className="mt-4 flex flex-wrap gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                                <span className="rounded-full border px-3 py-1">Member {member.status}</span>
-                                <span className="rounded-full border px-3 py-1">Membership {member.membershipStatus || "none"}</span>
-                                {member.membershipTier && <span className="rounded-full border px-3 py-1">{member.membershipTier}</span>}
-                                <span className="rounded-full border px-3 py-1">{formatCredits(member.classCreditsRemaining)}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              {!accessAllowed && (
-                                <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
-                                  <BadgeAlert className="h-3.5 w-3.5" /> Review required
-                                </span>
-                              )}
-                              <span className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">
-                                {accessAllowed ? "Tap to check in" : "Front-desk review required"}
-                              </span>
-                            </div>
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-                    Search results will appear here.
-                  </div>
-                )}
+                </label>
+                <button type="button" onClick={handleMemberSearch} disabled={isSearching} className="sf-btn" data-size="lg">
+                  {isSearching ? "Searching…" : "Search"}
+                </button>
               </div>
-            )}
 
-            {mode === "guest" && (
-              <div className="mx-auto max-w-xl space-y-6">
-                <div>
-                  <h2 className="text-2xl font-bold">Guest check-in</h2>
-                  <p className="mt-2 text-muted-foreground">
-                    Capture a walk-in guest and optionally associate them with a host member for front-desk follow-up.
-                  </p>
+              {searchResults.length > 0 ? (
+                <div className="sf-stack" data-gap="sm">
+                  {searchResults.map((member) => {
+                    const accessAllowed = member.status === "active" && member.membershipStatus === "active"
+                    return (
+                      <button
+                        key={member.id}
+                        type="button"
+                        disabled={!accessAllowed}
+                        onClick={() => handleCheckInByMemberId(member.id)}
+                        className="sf-member-result"
+                      >
+                        <span className="sf-titleline">
+                          <strong className="sf-h3">{member.name}</strong>
+                          <span className="sf-state" data-tone={accessAllowed ? "ok" : "low"}>{accessAllowed ? "Tap to check in" : "Front desk review"}</span>
+                        </span>
+                        <span className="sf-meta sf-break">{member.email}{member.phone ? ` · ${member.phone}` : ""}</span>
+                        <span className="sf-list-plain">
+                          <span className="sf-tag">Member {member.status}</span>
+                          <span className="sf-tag">Membership {member.membershipStatus || "none"}</span>
+                          {member.membershipTier ? <span className="sf-tag">{member.membershipTier}</span> : null}
+                          <span className="sf-tag">{formatCredits(member.classCreditsRemaining)}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
+              ) : (
+                <EmptyState title="No results" />
+              )}
+            </section>
+          ) : null}
 
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <Label htmlFor="guest-name">Guest name *</Label>
-                    <Input
-                      id="guest-name"
-                      value={guestForm.name}
-                      onChange={(e) => setGuestForm({ ...guestForm, name: e.target.value })}
-                      placeholder="Full name"
-                      className="h-14 text-lg"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="guest-phone">Phone number</Label>
-                    <Input
-                      id="guest-phone"
-                      value={guestForm.phone}
-                      onChange={(e) => setGuestForm({ ...guestForm, phone: e.target.value })}
-                      placeholder="(555) 123-4567"
-                      className="h-14 text-lg"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="guest-host">Host member</Label>
-                    <Input
-                      id="guest-host"
-                      value={guestForm.hostMember}
-                      onChange={(e) => setGuestForm({ ...guestForm, hostMember: e.target.value })}
-                      placeholder="Member who invited this guest"
-                      className="h-14 text-lg"
-                    />
-                  </div>
-                </div>
-
-                <Button onClick={handleGuestCheckIn} disabled={isSubmittingGuest} size="lg" className="h-14 w-full text-lg">
-                  {isSubmittingGuest ? "Checking in guest..." : "Complete guest check-in"}
-                </Button>
+          {mode === "guest" ? (
+            <section className="sf-card" aria-labelledby="kiosk-guest">
+              <h2 id="kiosk-guest" className="sf-h2">Guest check-in</h2>
+              <div className="sf-form">
+                <label className="sf-field" htmlFor="guest-name">Guest name
+                  <input
+                    id="guest-name"
+                    value={guestForm.name}
+                    onChange={(e) => setGuestForm({ ...guestForm, name: e.target.value })}
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="sf-field" htmlFor="guest-phone">Phone (optional)
+                  <input
+                    id="guest-phone"
+                    value={guestForm.phone}
+                    onChange={(e) => setGuestForm({ ...guestForm, phone: e.target.value })}
+                    type="tel"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="sf-field" htmlFor="guest-host">Host member (optional)
+                  <input
+                    id="guest-host"
+                    value={guestForm.hostMember}
+                    onChange={(e) => setGuestForm({ ...guestForm, hostMember: e.target.value })}
+                    autoComplete="off"
+                  />
+                </label>
+                <button type="button" onClick={handleGuestCheckIn} disabled={isSubmittingGuest} className="sf-btn" data-variant="accent" data-size="lg" data-block>
+                  {isSubmittingGuest ? "Checking in…" : "Check in guest"}
+                </button>
               </div>
-            )}
-          </div>
-        </div>
+            </section>
+          ) : null}
+        </main>
 
-        <aside className="min-w-0 max-w-full border-l bg-muted/30 p-6">
-          <div className="mb-6 flex items-center gap-2">
-            <Clock className="h-5 w-5 text-muted-foreground" />
-            <h3 className="font-semibold">Recent check-ins</h3>
-          </div>
-
+        <aside className="sf-panel" aria-labelledby="kiosk-recent">
+          <h2 id="kiosk-recent" className="sf-h3">Recent</h2>
           {recentCheckIns.length === 0 ? (
-            <div className="rounded-2xl border border-dashed bg-background/60 px-4 py-8 text-center text-sm text-muted-foreground">
-              No recent activity in this kiosk session.
-            </div>
+            <p className="sf-text-2">None this session</p>
           ) : (
-            <div className="space-y-3">
+            <ul className="sf-bookings">
               {recentCheckIns.map((checkIn) => (
-                <div key={checkIn.id} className="rounded-2xl border bg-background p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <User className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{checkIn.memberName}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{checkIn.time}</p>
-                      {checkIn.membershipTier && (
-                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-muted-foreground">{checkIn.membershipTier}</p>
-                      )}
-                    </div>
+                <li key={checkIn.id} className="sf-stack" data-gap="sm" style={{ gap: 2, borderBottom: "1px solid var(--sf-line)", paddingBlock: 12 }}>
+                  <div className="sf-row" data-between>
+                    <strong>{checkIn.memberName}</strong>
+                    <span className="sf-meta sf-num">{checkIn.time}</span>
                   </div>
-                </div>
+                  {checkIn.membershipTier ? <span className="sf-meta">{checkIn.membershipTier}</span> : null}
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </aside>
       </div>

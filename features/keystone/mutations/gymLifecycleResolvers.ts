@@ -59,6 +59,18 @@ export async function markClassAttendance(
   return context.db.AttendanceRecord.findOne({ where: { id: result.id } });
 }
 
+/**
+ * The visit this authorized front-desk transition just wrote, re-read by its verified id within
+ * the actor's tenant. Staff with check-in authority need this result even when ordinary member
+ * visibility rules would hide another member's visits.
+ */
+async function authorizedCheckInResult(context: Context, checkInId: string) {
+  const organizationId = (context.session as any)?.data?.organization?.id;
+  const rows = await context.sudo().db.CheckIn.findMany({ where: { AND: [{ id: { equals: checkInId } }, { organization: { id: { equals: organizationId } } }] }, take: 1 });
+  if (!rows[0]) throw new Error("The check-in was recorded but could not be read back; refresh the front desk");
+  return rows[0];
+}
+
 export async function recordMemberCheckIn(
   root: unknown,
   args: { memberId: string; locationId?: string | null; method: string },
@@ -68,10 +80,7 @@ export async function recordMemberCheckIn(
     ...args,
     actor: await currentCheckInActor(context),
   });
-  return {
-    checkIn: await context.db.CheckIn.findOne({ where: { id: result.checkIn.id } }),
-    reused: result.reused,
-  };
+  return { checkIn: await authorizedCheckInResult(context, result.checkIn.id), reused: result.reused };
 }
 
 export async function checkOutMember(
@@ -83,8 +92,5 @@ export async function checkOutMember(
     checkInId,
     actor: await currentCheckInActor(context),
   });
-  return {
-    checkIn: await context.db.CheckIn.findOne({ where: { id: result.checkIn.id } }),
-    reused: result.reused,
-  };
+  return { checkIn: await authorizedCheckInResult(context, result.checkIn.id), reused: result.reused };
 }

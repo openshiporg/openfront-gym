@@ -25,6 +25,8 @@ export type BookClassResult =
         | "MEMBERSHIP_REQUIRED"
         | "CREDITS_REQUIRED"
         | "ALREADY_BOOKED"
+        | "SCHEDULE_CONFLICT"
+        | "PARTICIPATION_REQUIRED"
         | "BOOKING_UNAVAILABLE";
       error: string;
       actionHref?: string;
@@ -40,7 +42,7 @@ function bookingFailure(message: string, classInstanceId: string): BookClassResu
       code: "AUTH_REQUIRED",
       error: "Sign in to continue with this class booking.",
       actionHref: accountSignInPath(returnTo),
-      actionLabel: "Sign in and return",
+      actionLabel: process.env.PUBLIC_MEMBER_SIGNUPS_ALLOWED === "true" ? "Sign in or create account" : "Sign in",
     };
   }
   if (normalized.includes("no member profile") || normalized.includes("member not linked")) {
@@ -74,9 +76,67 @@ function bookingFailure(message: string, classInstanceId: string): BookClassResu
     return {
       success: false,
       code: "ALREADY_BOOKED",
-      error: "This class is already in your bookings.",
+      error: "This class is already in your bookings. Cancel it there if you can’t make it.",
       actionHref: "/account/bookings",
-      actionLabel: "View bookings",
+      actionLabel: "Your bookings",
+    };
+  }
+  if (normalized.includes("overlapping class")) {
+    return {
+      success: false,
+      code: "SCHEDULE_CONFLICT",
+      error: "You’re already booked into another class at this time. Cancel that booking first to take this one.",
+      actionHref: "/account/bookings",
+      actionLabel: "Your bookings",
+    };
+  }
+  if (normalized.includes("overlapping training appointment")) {
+    return {
+      success: false,
+      code: "SCHEDULE_CONFLICT",
+      error: "You have a personal training appointment at this time.",
+      actionHref: "/account/training",
+      actionLabel: "Personal training",
+    };
+  }
+  if (normalized.includes("concurrent booking limit")) {
+    return {
+      success: false,
+      code: "SCHEDULE_CONFLICT",
+      error: "Your plan’s limit on upcoming bookings is reached. Cancel an upcoming booking to book this class.",
+      actionHref: "/account/bookings",
+      actionLabel: "Your bookings",
+    };
+  }
+  if (normalized.includes("frozen") || normalized.includes("outside the paid membership period") || normalized.includes("freeze is being finalized")) {
+    return {
+      success: false,
+      code: "MEMBERSHIP_REQUIRED",
+      error: "Your membership doesn’t cover this class’s date.",
+      actionHref: "/account/membership",
+      actionLabel: "Review membership",
+    };
+  }
+  if (normalized.includes("waiver") || normalized.includes("verification is required") || normalized.includes("facility closure")) {
+    return {
+      success: false,
+      code: "PARTICIPATION_REQUIRED",
+      error: normalized.includes("facility closure")
+        ? "This class can’t be booked while the facility is closed."
+        : normalized.includes("waiver")
+          ? "Accept the current participation terms before you book."
+          : "The club needs to confirm your participation details before you book.",
+      actionHref: "/account/participation",
+      actionLabel: "Participation",
+    };
+  }
+  if (normalized.includes("has been cancelled") || normalized.includes("past classes")) {
+    return {
+      success: false,
+      code: "BOOKING_UNAVAILABLE",
+      error: "This class is no longer open for booking.",
+      actionHref: "/schedule",
+      actionLabel: "Back to schedule",
     };
   }
   return {

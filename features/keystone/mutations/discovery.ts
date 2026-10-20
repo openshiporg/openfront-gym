@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { GraphQLError } from "graphql";
-import { consumeAuthAttempt } from "../../../lib/authRateLimit";
+import { budgetKey, consumeAuthAttempt, releaseAuthAttempt, reserveAuthAttempt } from "../../../lib/authRateLimit";
+import { isKnownSource, requestClientSource } from "../../../lib/clientSource";
 import { createCapacityControlledBooking } from "./classCapacity";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
@@ -32,22 +33,47 @@ export async function getDiscoveryClassFeed(context: any, options: {
   locationId?: string | null;
   locationName?: string | null;
   limit?: number;
+  skip?: number;
 }) {
   const ctx = context.sudo();
   const { from, to } = resolveWindow(options?.from, options?.to);
-  const limit = Math.min(Math.max(options?.limit ?? 50, 1), 200);
+  const limit = Math.min(Math.max(options?.limit ?? 50, 1), 201);
+  const skip = Math.min(Math.max(Math.trunc(options?.skip ?? 0), 0), 5000);
+
+  // The requested site is resolved and applied before the feed limit, so its sessions are
+  // never crowded out by other sites' earlier sessions. Partners page with `skip`.
+  const activeLocations = await ctx.query.Location.findMany({
+    where: { AND: [{ organization: { id: { equals: options.organizationId } } }, { isActive: { equals: true } }] },
+    take: 100,
+    query: 'id name address phone',
+  });
+  const requestedLocationName = normalizeLocationName(options?.locationName);
+  const requestedLocation = options?.locationId
+    ? activeLocations.find((location: any) => location.id === options.locationId) ?? null
+    : requestedLocationName
+      ? activeLocations.find((location: any) => normalizeLocationName(location.name) === requestedLocationName) ?? null
+      : null;
+  if ((options?.locationId || options?.locationName) && !requestedLocation) {
+    return [];
+  }
 
   const instances = await ctx.query.ClassInstance.findMany({
     where: {
       organization: { id: { equals: options.organizationId } },
       date: { gte: from, lte: to },
       isCancelled: { equals: false },
-      ...(options?.dayOfWeek
-        ? { classSchedule: { dayOfWeek: { equals: options.dayOfWeek } } }
-        : {}),
+      classSchedule: {
+        isActive: { equals: true },
+        ...(options?.dayOfWeek ? { dayOfWeek: { equals: options.dayOfWeek } } : {}),
+      },
+      ...(requestedLocation ? { OR: [
+        { location: { id: { equals: requestedLocation.id } } },
+        { AND: [{ location: null }, { classSchedule: { location: { id: { equals: requestedLocation.id } } } }] },
+      ] } : {}),
     },
-    orderBy: [{ date: 'asc' }],
+    orderBy: [{ date: 'asc' }, { id: 'asc' }],
     take: limit,
+    skip,
     query: `
       id
       date
@@ -62,6 +88,7 @@ export async function getDiscoveryClassFeed(context: any, options: {
         startTime
         endTime
         maxCapacity
+        location { id name address phone isActive }
       }
       instructor {
         id
@@ -75,23 +102,6 @@ export async function getDiscoveryClassFeed(context: any, options: {
     `,
   });
 
-  const activeLocations = await ctx.query.Location.findMany({
-    where: { AND: [{ organization: { id: { equals: options.organizationId } } }, { isActive: { equals: true } }] },
-    take: 100,
-    query: 'id name address phone',
-  });
-
-  const requestedLocationName = normalizeLocationName(options?.locationName);
-  const requestedLocation = options?.locationId
-    ? activeLocations.find((location: any) => location.id === options.locationId) ?? null
-    : requestedLocationName
-      ? activeLocations.find((location: any) => normalizeLocationName(location.name) === requestedLocationName) ?? null
-      : null;
-
-  if ((options?.locationId || options?.locationName) && !requestedLocation) {
-    return [];
-  }
-
   return instances
     .map((instance: any) => {
     const confirmedBookings = (instance.bookings ?? []).filter((booking: any) => booking.status === 'confirmed').length;
@@ -99,7 +109,8 @@ export async function getDiscoveryClassFeed(context: any, options: {
     const maxCapacity = instance.maxCapacity ?? instance.classSchedule?.maxCapacity ?? 0;
     const spotsRemaining = Math.max(maxCapacity - confirmedBookings, 0);
 
-    const resolvedLocation = instance.location?.isActive ? instance.location : null;
+    const site = instance.location ?? instance.classSchedule?.location ?? null;
+    const resolvedLocation = site?.isActive ? site : null;
 
     if (requestedLocation && resolvedLocation?.id !== requestedLocation.id) {
       return null;
@@ -258,14 +269,24 @@ async function authorizeDiscovery(
   partner: string,
   requiredScope: "classes:read" | "bookings:create",
 ) {
+  // Invalid credentials spend a per-source failure budget; valid partners have their own budgets.
+  // An unknown source would be one shared bucket, so only known sources carry a failure budget.
+  const source = requestClientSource(context.req);
+  const failureBudget = isKnownSource(source) ? budgetKey("discovery-fail", source) : "";
+  if (failureBudget && !(await reserveAuthAttempt(context.prisma, failureBudget, 100, 60 * 1000))) throw new Error('Too many failed discovery authentication attempts');
+  // The reservation is kept for a rejected credential and given back for a valid one.
+  const rejectCredential = async (message: string) => {
+    throw new Error(message);
+  };
+  const accepted = async () => { if (failureBudget) await releaseAuthAttempt(context.prisma, failureBudget); };
   if (credential.startsWith('gym_')) {
-    if (!(await consumeAuthAttempt(context.prisma, 'discovery-auth:global', 1000, 60 * 1000))) throw new Error('Too many discovery authentication attempts');
     const digest = createHash('sha256').update(credential).digest('hex');
     const prisma = guardKeystonePrismaResults(context.prisma as any);
     const stored = await prisma.integrationCredential.findUnique({ where: { digest }, include: { organization: true } });
-    if (!stored || stored.revokedAt || !stored.expiresAt || stored.expiresAt <= new Date() || stored.organization?.status !== 'active') throw new Error('Unauthorized discovery request');
+    if (!stored || stored.revokedAt || !stored.expiresAt || stored.expiresAt <= new Date() || stored.organization?.status !== 'active') return rejectCredential('Unauthorized discovery request');
+    await accepted();
     if (stored.partner !== partner.trim() || !Array.isArray(stored.scopes) || !stored.scopes.includes(requiredScope)) throw new Error('Unauthorized discovery scope or partner');
-    if (!(await consumeAuthAttempt(context.prisma, `discovery-key:${stored.id}`, 120, 60 * 1000))) throw new Error('Too many discovery requests');
+    if (!(await consumeAuthAttempt(context.prisma, budgetKey("discovery-key", stored.id), 120, 60 * 1000))) throw new Error('Too many discovery requests');
     return { organizationId: stored.organizationId, partner: stored.partner, mode: 'managed-key' };
   }
   const configuredKey = process.env.DISCOVERY_API_KEY?.trim();
@@ -283,15 +304,13 @@ async function authorizeDiscovery(
   const normalizedPartner = partner.trim().slice(0, 120) || "authorized-partner";
   const allowlist = new Set((process.env.DISCOVERY_PARTNER_ALLOWLIST || "").split(",").map((value) => value.trim()).filter(Boolean));
   if (allowlist.size && !allowlist.has(normalizedPartner)) throw new Error("Discovery partner is not authorized");
-  if (!(await consumeAuthAttempt(context.prisma, "discovery-auth:global", 1000, 60 * 1000))) {
-    throw new Error("Too many discovery authentication attempts");
-  }
   const supplied = Buffer.from(credential || "");
   const configured = Buffer.from(configuredKey);
   if (supplied.length !== configured.length || !timingSafeEqual(supplied, configured)) {
-    throw new Error("Unauthorized discovery request");
+    return rejectCredential("Unauthorized discovery request");
   }
-  if (!(await consumeAuthAttempt(context.prisma, `discovery:${normalizedPartner}`, 120, 60 * 1000))) {
+  await accepted();
+  if (!(await consumeAuthAttempt(context.prisma, budgetKey("discovery", normalizedPartner), 120, 60 * 1000))) {
     throw new Error("Too many discovery requests");
   }
   const organization = await context.sudo().query.Organization.findMany({
@@ -314,20 +333,26 @@ export async function getDiscoveryClasses(
     locationId?: string | null;
     locationName?: string | null;
     limit?: number | null;
+    skip?: number | null;
   },
   context: any,
 ) {
   const access = await authorizeDiscovery(context, args.credential, args.partner || "", "classes:read");
-  const classes = await getDiscoveryClassFeed(context, {
+  const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
+  const skip = Math.min(Math.max(Math.trunc(args.skip ?? 0), 0), 5000);
+  // One extra row tells the partner honestly whether another page exists.
+  const page = await getDiscoveryClassFeed(context, {
     organizationId: access.organizationId,
     from: args.from,
     to: args.to,
     dayOfWeek: args.dayOfWeek,
     locationId: args.locationId,
     locationName: args.locationName,
-    limit: args.limit ?? undefined,
+    limit: limit + 1,
+    skip,
   });
-  return { source: "openfront-gym", ...access, count: classes.length, classes };
+  const classes = page.slice(0, limit);
+  return { source: "openfront-gym", ...access, count: classes.length, skip, limit, hasMore: page.length > limit, nextSkip: page.length > limit ? skip + limit : null, classes };
 }
 
 export async function bookDiscoveryClass(

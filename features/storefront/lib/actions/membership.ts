@@ -6,7 +6,23 @@ import { gql } from "graphql-request";
 import { gymClient } from "@/features/storefront/lib/config";
 import { getAuthHeaders } from "@/features/storefront/lib/data/cookies";
 import { getUser } from "@/features/storefront/lib/data/user";
-import { getBaseUrl } from "@/features/dashboard/lib/getBaseUrl";
+import { publicAppUrl } from "@/features/keystone/lib/internal-origin";
+import { customerErrorMessage } from "@/features/storefront/lib/customer-error";
+
+/**
+ * The confirmed operation's key comes from the form (rendered once per page view and carried
+ * back after an error), so a retry resumes the same billing attempt instead of starting another.
+ * The server also resumes an unresolved attempt with identical details for this membership.
+ */
+function operationKey(formData: FormData) {
+  const supplied = String(formData.get("operationKey") || "");
+  return /^[A-Za-z0-9-]{12,100}$/.test(supplied) ? supplied : crypto.randomUUID();
+}
+
+function failure(operation: string, key: string, error: unknown, fallback: string): never {
+  const message = customerErrorMessage(error, fallback);
+  redirect(`/account/membership?error=${encodeURIComponent(message)}&retryOp=${operation}&retryKey=${encodeURIComponent(key)}`);
+}
 
 async function requireUserWithMembership() {
   const user = await getUser();
@@ -20,6 +36,7 @@ async function requireUserWithMembership() {
 }
 
 export async function cancelMembershipAction(formData: FormData): Promise<void> {
+  const key = operationKey(formData);
   try {
     const user = await requireUserWithMembership();
     const reason = formData.get("reason")?.toString().trim() || undefined;
@@ -39,19 +56,19 @@ export async function cancelMembershipAction(formData: FormData): Promise<void> 
       {
         membershipId: user.membership!.id,
         reason,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: key,
       },
       headers
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to cancel membership.";
-    redirect(`/account/membership?error=${encodeURIComponent(message)}`);
+    failure("cancel", key, error, "Renewal couldn’t be cancelled. Try again, or contact the club.");
   }
 
   redirect("/account/membership?success=cancelled");
 }
 
 export async function freezeMembershipAction(formData: FormData): Promise<void> {
+  const key = operationKey(formData);
   try {
     const user = await requireUserWithMembership();
     const endDate = formData.get("endDate")?.toString();
@@ -74,19 +91,19 @@ export async function freezeMembershipAction(formData: FormData): Promise<void> 
       {
         membershipId: user.membership!.id,
         endDate: end.toISOString(),
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: key,
       },
       headers
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to freeze membership.";
-    redirect(`/account/membership?error=${encodeURIComponent(message)}`);
+    failure("freeze", key, error, "The freeze couldn’t be saved. Try again, or contact the club.");
   }
 
   redirect("/account/membership?success=frozen");
 }
 
-export async function resumeMembershipAction(_formData: FormData): Promise<void> {
+export async function resumeMembershipAction(formData: FormData): Promise<void> {
+  const key = operationKey(formData);
   try {
     const user = await requireUserWithMembership();
     const headers = await getAuthHeaders();
@@ -101,13 +118,12 @@ export async function resumeMembershipAction(_formData: FormData): Promise<void>
       `,
       {
         membershipId: user.membership!.id,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey: key,
       },
       headers
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to resume membership.";
-    redirect(`/account/membership?error=${encodeURIComponent(message)}`);
+    failure("resume", key, error, "Your membership couldn’t be resumed. Try again, or contact the club.");
   }
 
   redirect("/account/membership?success=resumed");
@@ -116,7 +132,8 @@ export async function resumeMembershipAction(_formData: FormData): Promise<void>
 export async function openBillingPortalAction(): Promise<void> {
   const user = await requireUserWithMembership();
   const headers = await getAuthHeaders();
-  const returnUrl = `${await getBaseUrl()}/account/membership`;
+  // The browser comes back to the public storefront, never the internal service origin.
+  const returnUrl = publicAppUrl("/account/membership");
 
   let portalUrl: string | undefined;
 
@@ -138,7 +155,7 @@ export async function openBillingPortalAction(): Promise<void> {
 
     portalUrl = result.getStripeBillingPortal.url;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to open billing portal.";
+    const message = customerErrorMessage(error, "The billing portal couldn’t be opened. Try again, or contact the club.");
     redirect(`/account/membership?error=${encodeURIComponent(message)}`);
   }
 

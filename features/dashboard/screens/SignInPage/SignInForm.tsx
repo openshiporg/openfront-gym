@@ -20,7 +20,7 @@ type ActionState = {
   message: string | null;
   formData: {
     email: string;
-    password: string;
+
   };
 };
 
@@ -28,7 +28,7 @@ const initialState: ActionState = {
   message: null,
   formData: {
     email: '',
-    password: ''
+
   }
 };
 
@@ -91,14 +91,12 @@ export function SignInForm({ from }: SignInFormProps) {
               autoComplete="current-password"
               placeholder="••••••••"
               className="pr-10 bg-muted/40"
-              defaultValue={state.formData.password}
+
               required
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
-              aria-controls="password"
               className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-500"
             >
               {showPassword ? (
@@ -113,7 +111,7 @@ export function SignInForm({ from }: SignInFormProps) {
       </form>
 
       {state.message && (
-        <Badge role="alert" variant="destructive" className="hover:bg-destructive/10 bg-destructive/5 flex text-base items-start gap-2 border border-destructive/50 p-4 rounded-sm mt-4">
+        <Badge variant="destructive" className="hover:bg-destructive/10 bg-destructive/5 flex text-base items-start gap-2 border border-destructive/50 p-4 rounded-sm mt-4">
           <div className="flex flex-col gap-1">
             <h2 className="uppercase tracking-wider font-semibold text-sm">Error</h2>
             <span className="break-all text-sm opacity-75 font-normal">{state.message}</span>

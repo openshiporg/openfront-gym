@@ -1,16 +1,14 @@
-import { requireDashboardManager } from '@/features/dashboard/lib/current-user'
-import { keystoneClient } from '@/features/dashboard/lib/keystoneClient'
-import { LocationsPage } from './LocationsPage'
+import { requireDashboardManager } from '@/features/platform/lib/current-user'
+import { ListPage } from '@/features/dashboard/screens/ListPage'
 
-export async function LocationsPageServer() {
+/**
+ * Locations use the shared list and item workflow: server search, filters, sort, field selection and
+ * pagination, stable item and create URLs, and the shared document and relationship editors that
+ * save only changed fields. Model access, hooks and validation stay authoritative.
+ */
+export async function LocationsPageServer({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   await requireDashboardManager()
-  const response = await keystoneClient<{ locations: any[] }>(`
-    query LocationWorkspace {
-      locations(orderBy: [{ name: asc }], take: 500) { id name address phone isActive }
-    }
-  `)
-  if (!response.success) throw new Error(response.error)
-  return <LocationsPage initialLocations={response.data.locations} />
+  return <ListPage params={Promise.resolve({ listKey: 'locations' })} searchParams={searchParams} />
 }
 
 export default LocationsPageServer

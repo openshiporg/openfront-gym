@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
+import { gymGraphql as keystoneClient } from "@/features/platform/lib/gym-graphql";
+import { staffActionError } from "@/features/platform/lib/action-error";
+import { mailDeliveryEnabled } from "@/features/keystone/lib/mail";
 
 export type InviteMemberState = {
-  status: "idle" | "sent" | "created" | "error";
+  status: "idle" | "requested" | "created" | "existing" | "error";
   message: string | null;
   email: string | null;
 };
@@ -20,10 +22,10 @@ export async function inviteMemberAction(
   };
 
   const invitation = await keystoneClient<{
-    inviteMember: { email: string };
+    inviteMember: { email: string; created: boolean };
   }>(`
     mutation InviteMember($data: InviteMemberInput!) {
-      inviteMember(data: $data) { userId memberId email }
+      inviteMember(data: $data) { userId memberId email created }
     }
   `, { data });
 
@@ -43,24 +45,38 @@ export async function inviteMemberAction(
     };
   }
 
-  const email = invitation.data.inviteMember.email;
+  const { email, created } = invitation.data.inviteMember;
+  revalidatePath("/dashboard/platform/members");
+  if (!created) {
+    return {
+      status: "existing",
+      message: "This member already has an account. No email was sent; they can use Forgot password on the storefront to choose a new password.",
+      email,
+    };
+  }
+  if (!mailDeliveryEnabled()) {
+    return {
+      status: "created",
+      message: "Member account ready. Email is turned off, so no setup email was sent. Once email is available, the member can use Forgot password on the storefront.",
+      email,
+    };
+  }
+  // The native request sends the setup link to the member's own mailbox; its answer is the same
+  // whether or not mail goes out, so it is a request, not proof of delivery.
   const reset = await keystoneClient<{ sendUserPasswordResetLink?: boolean | null }>(`
     mutation SendMemberInvite($email: String!) {
       sendUserPasswordResetLink(email: $email)
     }
   `, { email });
-  const deliveryConfirmed = reset.success && reset.data.sendUserPasswordResetLink === true;
-
-  revalidatePath("/dashboard/platform/members");
-  return deliveryConfirmed
+  return reset.success
     ? {
-        status: "sent",
-        message: "Member account ready. A secure password-setup email was sent; submitting the same address again only resends setup.",
+        status: "requested",
+        message: "Member account ready. A password-setup email was requested for this address; Gym can't confirm it reached the inbox. If it doesn't arrive, the member can use Forgot password on the storefront.",
         email,
       }
     : {
         status: "created",
-        message: "Member account ready, but setup email delivery was not confirmed. Ask the member to use Forgot password.",
+        message: "Member account ready, but the setup email could not be requested. The member can use Forgot password on the storefront once email is working.",
         email,
       };
 }

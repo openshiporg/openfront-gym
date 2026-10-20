@@ -38,13 +38,17 @@ import { TrainingPackage } from './TrainingPackage';
 import { TrainingCreditEntry } from './TrainingCreditEntry';
 import { CoachingAssignment } from './CoachingAssignment';
 import { TrainingLead } from './TrainingLead';
+import { ContactMessage } from './ContactMessage';
 import { MemberImportRecord } from './MemberImportRecord';
 import { RetailItem, RetailSale, RetailReturn, RetailStockEntry, RetailClose } from './RetailModels';
+import { CounterPaymentAttempt } from './CounterPaymentAttempt';
+import { StaffIntent } from './StaffIntent';
 
 export const models = {
-  RetailItem, RetailSale, RetailReturn, RetailStockEntry, RetailClose,
+  RetailItem, RetailSale, RetailReturn, RetailStockEntry, RetailClose, CounterPaymentAttempt, StaffIntent,
   MemberImportRecord,
   TrainingPackage, TrainingCreditEntry, CoachingAssignment, TrainingLead,
+  ContactMessage,
   MembershipCreditGrant, MembershipCreditEntry,
   OperationalNotice, ParticipationPolicy, ParticipationEvidence, OperationsCase, IntegrationCredential,
   Organization,

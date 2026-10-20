@@ -2,6 +2,7 @@ import { assertNoPendingMembershipFreeze, ensureMonthlyCreditGrant, debitBooking
 import { assertParticipationAllowed, lockParticipationPolicy } from "../lib/operational-policy";
 import { enqueueOperationalNotice } from "../lib/operational-notices";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
+import { lockActiveOrganization } from "../lib/current-actor";
 
 type CapacityMode = "waitlist" | "reject";
 
@@ -29,6 +30,25 @@ export async function lockTransactionKey(transaction: any, key: string) {
   if (result instanceof Error) throw result;
 }
 
+/**
+ * The room a session actually uses: its own resource, or — for an older occurrence created before
+ * occurrences carried their own room (no endsAt) — the room its template names. That room's
+ * capacity bounds the session even when its declared capacity is higher.
+ */
+export function effectivePhysicalResource(instance: any) {
+  if (instance?.resource) return instance.resource;
+  if (!instance?.resourceId && !instance?.endsAt) return instance?.classSchedule?.resource ?? null;
+  return null;
+}
+
+export function effectiveSessionCapacity(instance: any) {
+  const declared = instance?.maxCapacity ?? instance?.classSchedule?.maxCapacity ?? 20;
+  const room = effectivePhysicalResource(instance);
+  return room && Number.isInteger(room.capacity) ? Math.min(declared, room.capacity) : declared;
+}
+
+const PHYSICAL_RESOURCE = { select: { capacity: true, isActive: true } } as const;
+
 function boundedCapacity(value: unknown, allowNull = false): number | null {
   if (allowNull && value === null) return null;
   if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 10000) {
@@ -44,10 +64,11 @@ export async function updateCapacityControlledClassInstance(
   prisma = guardKeystonePrismaResults(prisma);
   return prisma.$transaction(async (transaction: any) => {
     await lockParticipationPolicy(transaction, input.organizationId);
+    await lockTransactionKey(transaction, `gym-scheduling:${input.organizationId}`);
     await lockTransactionKey(transaction, `class-instance:${input.classInstanceId}`);
     const instance = await transaction.classInstance.findFirst({
       where: { id: input.classInstanceId, organizationId: input.organizationId },
-      include: { classSchedule: { select: { maxCapacity: true } }, resource: { select: { capacity: true } } },
+      include: { classSchedule: { select: { maxCapacity: true, resource: PHYSICAL_RESOURCE } }, resource: PHYSICAL_RESOURCE },
     });
     if (!instance || instance.organizationId !== input.organizationId) {
       throw new Error("Class instance was not found in this organization");
@@ -55,17 +76,21 @@ export async function updateCapacityControlledClassInstance(
     const requested = boundedCapacity(input.maxCapacity, true);
     const effectiveCapacity = requested ?? instance.classSchedule?.maxCapacity;
     if (typeof effectiveCapacity !== "number") throw new Error("Class instance capacity is unavailable");
-    if (instance.resource && effectiveCapacity > instance.resource.capacity) throw new Error("Class capacity exceeds resource capacity");
+    const room = effectivePhysicalResource(instance);
+    if (room && effectiveCapacity > room.capacity) throw new Error("Class capacity exceeds the room's capacity");
     const confirmed = await transaction.classBooking.count({
       where: { classInstanceId: instance.id, organizationId: input.organizationId, status: "confirmed" },
     });
     if (effectiveCapacity < confirmed) {
       throw new Error(`Capacity cannot be lower than the ${confirmed} confirmed bookings`);
     }
-    return transaction.classInstance.update({
+    const updated = await transaction.classInstance.update({
       where: { id: instance.id },
       data: { maxCapacity: requested },
     });
+    // Added seats go to the existing waitlist first.
+    await fillReleasedSeats(transaction, instance.id, input.organizationId);
+    return updated;
   });
 }
 
@@ -119,10 +144,12 @@ export async function updateCapacityControlledClassScheduleInTransaction(
       throw new Error(`Capacity cannot be lower than the ${highestConfirmed} confirmed bookings on a class instance`);
     }
   }
-  return transaction.classSchedule.update({
+  const updated = await transaction.classSchedule.update({
     where: { id: schedule.id },
     data: { maxCapacity },
   });
+  for (const instanceId of instanceIds) await fillReleasedSeats(transaction, instanceId, input.organizationId);
+  return updated;
 }
 
 export async function updateCapacityControlledClassSchedule(
@@ -152,12 +179,28 @@ export async function createCapacityControlledBooking(
 
     const classInstance = await transaction.classInstance.findFirst({
       where: { id: input.classInstanceId, organizationId: input.actorOrganizationId },
-      include: { classSchedule: { select: { maxCapacity: true, startTime: true, endTime: true } } },
+      include: {
+        location: { select: { id: true, name: true, address: true, isActive: true } },
+        instructor: { select: { id: true, user: { select: { name: true } } } },
+        resource: PHYSICAL_RESOURCE,
+        classSchedule: {
+          select: {
+            id: true, name: true, maxCapacity: true, startTime: true, endTime: true, isActive: true, resource: PHYSICAL_RESOURCE,
+            classType: { select: { id: true, name: true } },
+            location: { select: { id: true, name: true, address: true, isActive: true } },
+            instructor: { select: { id: true, user: { select: { name: true } } } },
+          },
+        },
+      },
     });
     if (!classInstance) throw new Error("Class instance not found");
     if (classInstance.organizationId !== input.actorOrganizationId) throw new Error("Class is not in the actor's organization");
     if (classInstance.isCancelled) throw new Error("Class has been cancelled");
     if (classInstance.date.getTime() <= Date.now()) throw new Error("Past classes cannot be booked");
+    // New reservations follow publication: a paused class or a retired site takes no bookings.
+    if (!classInstance.classSchedule?.isActive) throw new Error("This class is no longer offered");
+    const site = classInstance.location ?? classInstance.classSchedule?.location ?? null;
+    if (site && !site.isActive) throw new Error("This class's location is closed for new bookings");
 
     const member = await transaction.member.findFirst({
       where: { id: input.memberId, organizationId: input.actorOrganizationId },
@@ -174,23 +217,8 @@ export async function createCapacityControlledBooking(
       throw new Error("You cannot manage bookings for another member");
     }
 
-    const membership = await transaction.membership.findFirst({
-      where: { memberId: member.user.id, organizationId: input.actorOrganizationId, status: "active" },
-      include: { tier: { select: { classCreditsPerMonth: true, maxClassBookings: true } } },
-    });
-    if (!membership) throw new Error("No active membership found");
-    await assertNoPendingMembershipFreeze(transaction, input.actorOrganizationId, membership.id);
-
-    await assertParticipationAllowed(transaction, input.actorOrganizationId, member.id, classInstance.date, classInstance.locationId);
-    const grant = await ensureMonthlyCreditGrant(transaction, membership, classInstance.date);
-    const unlimited = grant.allowance === -1;
-    const currentCredits = grant.remaining;
-    if (!unlimited && currentCredits <= 0) {
-      throw new Error("No class credits remaining");
-    }
-
-    const maximumBookings = membership.agreementSnapshot?.maxClassBookings ?? membership.tier?.maxClassBookings ?? 0;
-    if (maximumBookings > 0 && await transaction.classBooking.count({ where: { organizationId: input.actorOrganizationId, memberId: member.id, status: { in: ["confirmed", "waitlist"] }, classInstance: { date: { gt: new Date() } } } }) >= maximumBookings) throw new Error("Membership concurrent booking limit reached");
+    // Report an existing booking before membership, credit or limit checks so a
+    // member re-opening their own class gets the accurate state.
     const duplicate = await transaction.classBooking.findFirst({
       where: {
         classInstanceId: input.classInstanceId,
@@ -204,10 +232,29 @@ export async function createCapacityControlledBooking(
       throw new Error("Member already has an active booking for this class instance");
     }
 
-    const capacity =
-      classInstance.maxCapacity ??
-      classInstance.classSchedule?.maxCapacity ??
-      20;
+    const membership = await transaction.membership.findFirst({
+      where: { memberId: member.user.id, organizationId: input.actorOrganizationId, status: "active" },
+      include: { tier: { select: { classCreditsPerMonth: true, maxClassBookings: true } } },
+    });
+    if (!membership) throw new Error("No active membership found");
+    await assertNoPendingMembershipFreeze(transaction, input.actorOrganizationId, membership.id);
+
+    const participation = await assertParticipationAllowed(transaction, input.actorOrganizationId, member.id, classInstance.date, classInstance.locationId);
+    const grant = await ensureMonthlyCreditGrant(transaction, membership, classInstance.date);
+    const unlimited = grant.allowance === -1;
+    const currentCredits = grant.remaining;
+    if (!unlimited && currentCredits <= 0) {
+      throw new Error("No class credits remaining");
+    }
+
+    const maximumBookings = membership.agreementSnapshot?.maxClassBookings ?? membership.tier?.maxClassBookings ?? 0;
+    if (maximumBookings > 0 && await transaction.classBooking.count({ where: { organizationId: input.actorOrganizationId, memberId: member.id, status: { in: ["confirmed", "waitlist"] }, classInstance: { date: { gt: new Date() } } } }) >= maximumBookings) throw new Error("Membership concurrent booking limit reached");
+
+    // Released seats go to the waitlist, in order, before a new arrival can take one.
+    await fillReleasedSeats(transaction, input.classInstanceId, input.actorOrganizationId);
+
+    if (effectivePhysicalResource(classInstance)?.isActive === false) throw new Error("This class's room is closed for new bookings");
+    const capacity = effectiveSessionCapacity(classInstance);
     const confirmedCount = await transaction.classBooking.count({
       where: {
         classInstanceId: input.classInstanceId,
@@ -231,6 +278,7 @@ export async function createCapacityControlledBooking(
       : null;
     const status = atCapacity ? "waitlist" : "confirmed";
     if (status === "confirmed") await assertNoMemberServiceConflict(transaction, member.id, input.actorOrganizationId, classInstance);
+    await lockActiveOrganization(transaction, input.actorOrganizationId);
     const booking = await transaction.classBooking.create({
       data: {
         organizationId: classInstance.organizationId,
@@ -239,6 +287,7 @@ export async function createCapacityControlledBooking(
         memberName: member.user.name || member.name,
         memberEmail: member.user.email || member.email,
         memberPhone: member.phone || "",
+        serviceSnapshot: bookingServiceSnapshot(classInstance, { unlimited, status, membership, grant, participation }),
         status,
         activeBookingKey: "active",
         waitlistPosition,
@@ -260,6 +309,56 @@ export async function createCapacityControlledBooking(
         : currentCredits - (status === "confirmed" ? 1 : 0),
     };
   });
+}
+
+/** The class exactly as it is being booked; history renders this, never the mutable catalog. */
+/**
+ * What the member reserved, frozen at booking: the session as offered then, and the credit and
+ * participation terms the reservation actually relied on. Later amendments are recorded on the
+ * session (changeHistory) and shown beside this; the snapshot itself is never rewritten.
+ */
+function bookingServiceSnapshot(classInstance: any, terms: { unlimited: boolean; status: string; membership: any; grant: any; participation: { policyId: string | null; evidenceId: string | null } }) {
+  const unlimitedCredits = terms.unlimited;
+  const schedule = classInstance.classSchedule;
+  const coach = classInstance.instructor ?? schedule?.instructor ?? null;
+  const site = classInstance.location ?? schedule?.location ?? null;
+  const minutes = (value?: string) => Number(value?.slice(0, 2)) * 60 + Number(value?.slice(3));
+  const duration = minutes(schedule?.endTime) - minutes(schedule?.startTime);
+  const endsAt = classInstance.endsAt || new Date(classInstance.date.getTime() + (Number.isFinite(duration) && duration > 0 ? duration : 60) * 60000);
+  return {
+    version: 2,
+    classScheduleId: schedule?.id ?? null,
+    className: schedule?.name ?? "Class",
+    classTypeId: schedule?.classType?.id ?? null,
+    classTypeName: schedule?.classType?.name ?? null,
+    instructorId: coach?.id ?? null,
+    instructorName: coach?.user?.name ?? null,
+    locationId: site?.id ?? null,
+    locationName: site?.name ?? null,
+    locationAddress: site?.address ?? null,
+    startsAt: classInstance.date.toISOString(),
+    endsAt: new Date(endsAt).toISOString(),
+    creditTerms: unlimitedCredits ? "unlimited membership" : "one membership class credit, restored if cancelled before the class starts",
+    credit: {
+      membershipId: terms.membership.id,
+      agreementVersion: terms.membership.agreementSnapshot?.version ?? null,
+      grantId: terms.grant?.id ?? null,
+      periodStart: terms.grant?.periodStart ? new Date(terms.grant.periodStart).toISOString() : null,
+      periodEnd: terms.grant?.periodEnd ? new Date(terms.grant.periodEnd).toISOString() : null,
+      // A waitlist place reserves its credit only when it is confirmed (see the booking's credit entry).
+      basis: unlimitedCredits ? "unlimited" : terms.status === "confirmed" ? "debited_at_booking" : "debited_when_confirmed",
+    },
+    participation: terms.participation,
+  };
+}
+
+/** Promotes eligible waitlisted bookings into free seats; caller holds the policy and class locks. */
+export async function fillReleasedSeats(transaction: any, classInstanceId: string, organizationId: string) {
+  const waiting = await guardKeystonePrismaResults(transaction).classBooking.count({ where: { classInstanceId, organizationId, status: "waitlist" } });
+  for (let promoted = 0; promoted < waiting; promoted += 1) {
+    const result = await promoteCapacityControlledWaitlistBookingInTransaction(transaction, classInstanceId, organizationId, true);
+    if (!result.promoted) break;
+  }
 }
 
 export async function promoteCapacityControlledWaitlistBooking(
@@ -288,18 +387,24 @@ export async function promoteCapacityControlledWaitlistBookingInTransaction(
 
   const classInstance = await transaction.classInstance.findFirst({
     where: { id: classInstanceId, organizationId },
-    include: { classSchedule: { select: { maxCapacity: true, startTime: true, endTime: true } } },
+    include: {
+      location: { select: { isActive: true } },
+      resource: PHYSICAL_RESOURCE,
+      classSchedule: { select: { maxCapacity: true, startTime: true, endTime: true, isActive: true, location: { select: { isActive: true } }, resource: PHYSICAL_RESOURCE } },
+    },
   });
   if (!classInstance) throw new Error("Class instance not found");
   if (classInstance.organizationId !== organizationId) throw new Error("Class is not in the requested organization");
   if (classInstance.isCancelled) {
     return { promoted: false, message: "Class has been cancelled" };
   }
+  if (!classInstance.classSchedule?.isActive) return { promoted: false, message: "This class is no longer offered" };
+  if ((classInstance.location ?? classInstance.classSchedule?.location)?.isActive === false) return { promoted: false, message: "This class's location is closed" };
   if (classInstance.date.getTime() <= Date.now()) {
     return { promoted: false, message: "Past classes cannot promote a waitlist" };
   }
 
-  const capacity = classInstance.maxCapacity ?? classInstance.classSchedule?.maxCapacity ?? 20;
+  const capacity = effectiveSessionCapacity(classInstance);
   const confirmedCount = await transaction.classBooking.count({
     where: { classInstanceId, organizationId, status: "confirmed" },
   });

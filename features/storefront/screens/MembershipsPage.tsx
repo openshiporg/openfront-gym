@@ -1,43 +1,30 @@
 import MembershipTiers from "@/features/storefront/modules/memberships/components/membership-tiers";
-import MembershipFAQ from "@/features/storefront/modules/memberships/components/membership-faq";
 import { Metadata } from "next";
-import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
-import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
+import { PageHead } from "@/features/storefront/modules/common/page-head";
+import { ArrowLink, Banner } from "@/features/storefront/modules/common/ui";
+import { contactPath } from "@/features/storefront/lib/contact-config";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const config = await getStorefrontConfig();
   return {
-    title: `Membership — ${getStorefrontBrandName(config)}`,
-    description: config?.description || "Flexible plans for every training goal.",
+    title: "Memberships",
+    description: "Membership plans with price, class allowance, access hours and terms.",
   };
 }
 
-export async function MembershipsPage() {
-  const config = await getStorefrontConfig();
-
+export async function MembershipsPage({ searchParams }: { searchParams?: Promise<{ after?: string | string[] }> } = {}) {
+  const resolved = searchParams ? await searchParams : undefined;
+  const after = typeof resolved?.after === "string" ? resolved.after.slice(0, 100) : undefined;
   return (
     <div className="sf-page">
-      <div className="sf-container">
-        <header className="sf-page-header">
-          <div>
-            <p className="sf-eyebrow mb-3">Membership</p>
-            <h1 className="sf-display text-5xl sm:text-6xl">
-              Facility access
-              <br />
-              <span>with a class plan</span>
-            </h1>
-          </div>
-          <p className="sf-lead max-w-md">
-            {config?.description ||
-              "Every plan keeps pricing, class credits, access hours, and freeze terms visible before signup."}
-          </p>
-        </header>
-
-        <MembershipTiers />
-
-        <div className="mt-16 border border-[var(--sf-rule)] bg-[var(--sf-paper-2)] p-8 sm:p-10">
-          <MembershipFAQ />
-        </div>
+      <div className="sf-wrap">
+        <PageHead title="Memberships" aside={<ArrowLink href={contactPath("membership", "/memberships")} size="sm">Membership questions</ArrowLink>} />
+        <MembershipTiers after={after} />
+        <Banner
+          title="Drop-ins and trial visits"
+          action={<ArrowLink href={contactPath("trial", "/memberships")} size="sm">Ask about a visit</ArrowLink>}
+        >
+          Day passes aren’t sold online. The front desk arranges drop-in and trial visits.
+        </Banner>
       </div>
     </div>
   );

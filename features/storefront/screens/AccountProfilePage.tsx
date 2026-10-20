@@ -1,25 +1,28 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowUpRight, FileCheck2, HeartPulse } from "lucide-react";
 import { getUser } from "@/features/storefront/lib/data/user";
 import ProfileForm from "@/features/storefront/modules/account/components/profile-form";
+import { Banner } from "@/features/storefront/modules/common/ui";
 
-export default async function AccountProfilePage() {
+export default async function AccountProfilePage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await getUser();
   if (!user) notFound();
+  const emailChanged = Boolean((searchParams ? await searchParams : {}).emailChanged);
 
   return (
-    <div className="space-y-10">
-      <header className="max-w-3xl">
-        <p className="sf-eyebrow mb-3">Account details</p>
-        <h1 className="sf-display text-[var(--text-display-s)]">Profile</h1>
-        <p className="mt-4 sf-lead">
-          Keep your contact details up to date so the club can help with your bookings and membership.
-        </p>
-      </header>
+    <>
+      <h1 className="sf-h2">Profile</h1>
+      {emailChanged ? <Banner tone="ok">Your sign-in email is now {user.email}.</Banner> : null}
 
-      <section className="max-w-3xl border border-[var(--color-rule)] bg-[var(--color-surface)] p-6 sm:p-8">
+      <section className="sf-card" style={{ maxWidth: 760 }} aria-label="Account details">
         <ProfileForm user={user} />
-      </section><div className="sf-quick-grid"><Link className="sf-quick-card" href="/member/profile"><h2>Emergency and member details ↗</h2><p>Your birth date, emergency contact and optional health information.</p></Link><Link className="sf-quick-card" href="/account/participation"><h2>Participation and privacy ↗</h2><p>Manage document acceptance, health consent and privacy requests.</p></Link></div>
-    </div>
+      </section>
+
+      <nav className="sf-tiles" style={{ maxWidth: 760 }} aria-label="More member details">
+        <Link className="sf-tile" href="/member/profile"><HeartPulse aria-hidden="true" /><strong>Emergency contact and health<ArrowUpRight aria-hidden="true" /></strong></Link>
+        <Link className="sf-tile" href="/account/participation"><FileCheck2 aria-hidden="true" /><strong>Participation and privacy<ArrowUpRight aria-hidden="true" /></strong></Link>
+      </nav>
+    </>
   );
 }

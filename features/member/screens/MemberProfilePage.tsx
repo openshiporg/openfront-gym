@@ -1,17 +1,12 @@
 "use client"
 
 import Link from "next/link";
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, type ReactNode } from "react"
 import { useForm } from "react-hook-form"
-import { User, Phone, Mail, Calendar, Shield, Heart, Save, X, Edit2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Textarea } from "@/components/ui/textarea"
-import { Skeleton } from "@/components/ui/skeleton"
+import { ArrowLeft, ArrowUpRight, Pencil } from "lucide-react"
 import { toast } from "sonner"
 import { getMemberProfileAction, updateMemberProfileAction } from "../actions/member-experience"
+import { Banner } from "@/features/storefront/modules/common/ui"
 
 interface MemberProfile {
   id: string
@@ -29,6 +24,7 @@ interface MemberProfile {
   membershipLengthDays: number
   attendanceRate: number
   lastCheckIn: string | null
+  updatedAt: string | null
 }
 
 interface ProfileFormData {
@@ -86,9 +82,10 @@ export default function MemberProfilePage() {
     setIsSaving(true)
     setSaveMessage("")
     try {
-      await updateMemberProfileAction({
-        name: formData.name,
-        phone: formData.phone,
+      const result = await updateMemberProfileAction({
+        expectedUpdatedAt: profile?.updatedAt ?? null,
+        ...(dirtyFields.name ? { name: formData.name } : {}),
+        ...(dirtyFields.phone ? { phone: formData.phone } : {}),
         ...(dirtyFields.dateOfBirth ? { dateOfBirth: formData.dateOfBirth } : {}),
         ...(dirtyFields.emergencyContactName ? { emergencyContactName: formData.emergencyContactName } : {}),
         ...(dirtyFields.emergencyContactPhone ? { emergencyContactPhone: formData.emergencyContactPhone } : {}),
@@ -98,6 +95,7 @@ export default function MemberProfilePage() {
           notes: formData.healthNotes,
         } } : {}),
       })
+      if (!result.success) throw new Error(result.error)
 
       toast.success("Profile updated successfully")
       setSaveMessage("Your profile has been updated.")
@@ -113,13 +111,11 @@ export default function MemberProfilePage() {
 
   if (isLoading) {
     return (
-      <div className="sf-page" aria-label="Loading member profile">
-        <div className="sf-container max-w-4xl space-y-6">
-          <Skeleton className="h-8 w-48" />
-          <div className="grid gap-6 md:grid-cols-2">
-            <Skeleton className="h-64" />
-            <Skeleton className="h-64" />
-          </div>
+      <div className="sf-page" role="status" aria-label="Loading member details">
+        <div className="sf-wrap sf-stack" style={{ maxWidth: "calc(880px + 2 * var(--sf-gutter))" }}>
+          <div className="sf-skel" style={{ height: 40, width: 240 }} />
+          <div className="sf-skel" style={{ height: 120 }} />
+          <div className="sf-skel" style={{ height: 260 }} />
         </div>
       </div>
     )
@@ -127,13 +123,12 @@ export default function MemberProfilePage() {
 
   if (error) {
     return (
-      <div className="sf-page">
-        <Card className="sf-container max-w-md">
-          <CardContent className="pt-6 text-center">
-            <p className="text-destructive mb-4">{error}</p>
-            <Button onClick={fetchProfile}>Try Again</Button>
-          </CardContent>
-        </Card>
+      <div className="sf-wrap">
+        <div className="sf-outcome">
+          <h1 className="sf-h2">Member details couldn’t load</h1>
+          <Banner tone="bad">{error}</Banner>
+          <div className="sf-actions"><button type="button" className="sf-btn" onClick={fetchProfile}>Try again</button><Link href="/account" className="sf-btn" data-variant="secondary">Account</Link></div>
+        </div>
       </div>
     )
   }
@@ -143,278 +138,120 @@ export default function MemberProfilePage() {
   const getInitials = (name: string) => {
     return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
   }
+  const statusTone = profile.status === "active" ? "ok" : profile.status === "suspended" ? "low" : "bad"
+  const readValue = (value: ReactNode) => <p className="sf-strong" style={{ fontWeight: 500 }}>{value}</p>
 
   return (
     <div className="sf-page">
-      <div className="sf-container max-w-4xl space-y-8"><Link href="/account/profile" className="sf-link">← Account profile</Link>{saveMessage && <p role="status" className="sf-notice">{saveMessage}</p>}
-        <div className="flex flex-col gap-5 border-b border-[var(--sf-border)] pb-8 sm:flex-row sm:items-end sm:justify-between">
-          <div><p className="sf-eyebrow mb-3">Member details</p><h1 className="sf-display text-5xl sm:text-6xl">My profile</h1></div>
-          {!isEditing ? (
-            <Button onClick={() => setIsEditing(true)} variant="outline" className="gap-2">
-              <Edit2 className="w-4 h-4" />
-              Edit Profile
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button disabled={isSaving} onClick={() => { setIsEditing(false); fetchProfile() }} variant="outline" className="gap-2">
-                <X className="w-4 h-4" />
-                Cancel
-              </Button>
-              <Button onClick={handleSubmit(onSubmit)} disabled={isSaving} className="gap-2">
-                <Save className="w-4 h-4" />
-                {isSaving ? "Saving..." : "Save Changes"}
-              </Button>
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <Card className="border-[var(--sf-border)] bg-[var(--sf-surface)] shadow-none">
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-6">
-                <div className="relative">
-                  <Avatar className="w-24 h-24">
-                    <AvatarImage src={profile.profilePhotoUrl || undefined} alt={profile.name} />
-                    <AvatarFallback className="text-2xl">{getInitials(profile.name)}</AvatarFallback>
-                  </Avatar>
-
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
-                    <h2 className="text-xl font-semibold">{profile.name}</h2>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      profile.status === "active" ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" :
-                      profile.status === "suspended" ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" :
-                      "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                    }`}>
-                      {profile.status}
-                    </span>
-                  </div>
-                  {profile.membershipTier && (
-                    <p className="text-muted-foreground">
-                      {profile.membershipTier.name} Member
-                    </p>
-                  )}
-                  <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                    <span>Member for {profile.membershipLengthDays} days</span>
-                    <span>|</span>
-                    <span>{profile.attendanceRate}% attendance rate</span>
-                  </div>
-                </div>
+      <div className="sf-wrap sf-stack" data-gap="lg" style={{ maxWidth: "calc(880px + 2 * var(--sf-gutter))" }}>
+        <div>
+          <Link href="/account/profile" className="sf-crumb"><ArrowLeft aria-hidden="true" />Profile</Link>
+          <div className="sf-row" data-between>
+            <h1 className="sf-h1">Member details</h1>
+            {!isEditing ? (
+              <button type="button" onClick={() => setIsEditing(true)} className="sf-btn" data-variant="secondary">
+                <Pencil aria-hidden="true" />
+                Edit
+              </button>
+            ) : (
+              <div className="sf-actions">
+                <button type="button" disabled={isSaving} onClick={() => { setIsEditing(false); fetchProfile() }} className="sf-btn" data-variant="secondary">
+                  Cancel
+                </button>
+                <button type="button" onClick={handleSubmit(onSubmit)} disabled={isSaving} className="sf-btn">
+                  {isSaving ? "Saving…" : "Save"}
+                </button>
               </div>
-            </CardHeader>
-          </Card>
-
-          <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <User className="w-5 h-5" />
-                  Personal Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label htmlFor="profile-name" className="text-sm font-medium text-muted-foreground">Full Name</label>
-                  {isEditing ? (
-                    <Input
-                      id="profile-name" {...register("name", { required: "Name is required" })}
-                      className="mt-1"
-                    />
-                  ) : (
-                    <p className="mt-1">{profile.name}</p>
-                  )}
-                  {errors.name && <p className="text-sm text-destructive mt-1">{errors.name.message}</p>}
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <Mail className="w-4 h-4" />
-                    Email
-                  </label>
-                  <p className="mt-1">{profile.email}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Manage your email in Account → Profile</p>
-                </div>
-
-                <div>
-                  <label htmlFor="profile-phone" className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <Phone className="w-4 h-4" />
-                    Phone
-                  </label>
-                  {isEditing ? (
-                    <Input
-                      id="profile-phone" {...register("phone")}
-                      type="tel"
-                      className="mt-1"
-                    />
-                  ) : (
-                    <p className="mt-1">{profile.phone || "Not provided"}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="profile-dateOfBirth" className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    Date of Birth
-                  </label>
-                  {isEditing ? (
-                    <Input
-                      id="profile-dateOfBirth" {...register("dateOfBirth")}
-                      type="date"
-                      className="mt-1"
-                    />
-                  ) : (
-                    <p className="mt-1">
-                      {profile.dateOfBirth
-                        ? new Date(profile.dateOfBirth).toLocaleDateString()
-                        : "Not provided"}
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Shield className="w-5 h-5" />
-                  Emergency Contact
-                </CardTitle>
-                <CardDescription>
-                  Who should we contact in case of emergency?
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label htmlFor="profile-emergencyContactName" className="text-sm font-medium text-muted-foreground">Contact Name</label>
-                  {isEditing ? (
-                    <Input
-                      id="profile-emergencyContactName" {...register("emergencyContactName")}
-                      className="mt-1"
-                      placeholder="Jane Doe"
-                    />
-                  ) : (
-                    <p className="mt-1">{profile.emergencyContactName || "Not provided"}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="profile-emergencyContactPhone" className="text-sm font-medium text-muted-foreground">Contact Phone</label>
-                  {isEditing ? (
-                    <Input
-                      id="profile-emergencyContactPhone" {...register("emergencyContactPhone")}
-                      type="tel"
-                      className="mt-1"
-                    />
-                  ) : (
-                    <p className="mt-1">{profile.emergencyContactPhone || "Not provided"}</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            )}
           </div>
+        </div>
+        {saveMessage ? <Banner tone={saveMessage === "Your profile has been updated." ? "ok" : "bad"}>{saveMessage}</Banner> : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Heart className="w-5 h-5" />
-                Health Information
-              </CardTitle>
-              <CardDescription>
-                Optional. Review the club’s purpose and record health consent before sharing information.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4"><Link href="/account/participation" className="sf-link">Review health consent and privacy →</Link>
-              <div>
-                <label htmlFor="profile-healthConditions" className="text-sm font-medium text-muted-foreground">
-                  Medical Conditions (comma-separated)
-                </label>
-                {isEditing ? (
-                  <Input
-                    id="profile-healthConditions" {...register("healthConditions")}
-                    className="mt-1"
-                    placeholder="e.g., Asthma, Diabetes"
-                  />
-                ) : (
-                  <p className="mt-1">
-                    {profile.healthNotes?.conditions?.length
-                      ? profile.healthNotes.conditions.join(", ")
-                      : "None listed"}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="profile-healthInjuries" className="text-sm font-medium text-muted-foreground">
-                  Current Injuries (comma-separated)
-                </label>
-                {isEditing ? (
-                  <Input
-                    id="profile-healthInjuries" {...register("healthInjuries")}
-                    className="mt-1"
-                    placeholder="e.g., Lower back pain, Knee injury"
-                  />
-                ) : (
-                  <p className="mt-1">
-                    {profile.healthNotes?.injuries?.length
-                      ? profile.healthNotes.injuries.join(", ")
-                      : "None listed"}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="profile-healthNotes" className="text-sm font-medium text-muted-foreground">
-                  Additional Notes
-                </label>
-                {isEditing ? (
-                  <Textarea
-                    id="profile-healthNotes" {...register("healthNotes")}
-                    className="mt-1"
-                    rows={3}
-                    placeholder="Any other health information trainers should know..."
-                  />
-                ) : (
-                  <p className="mt-1">
-                    {profile.healthNotes?.notes || "None"}
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Membership Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-3">
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Current Plan</label>
-                  <p className="mt-1 font-medium">
-                    {profile.membershipTier?.name || "No active membership"}
-                  </p>
-                  {profile.membershipTier && (
-                    <p className="text-sm text-muted-foreground">
-                      <Link href="/account/membership" className="sf-link">View accepted price and terms</Link>
-                    </p>
-                  )}
+        <form onSubmit={handleSubmit(onSubmit)} className="sf-stack" data-gap="lg">
+          <section className="sf-card" aria-label="Member">
+            <div className="sf-row">
+              {profile.profilePhotoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profile.profilePhotoUrl} alt={profile.name} style={{ width: 64, height: 64, borderRadius: 999, objectFit: "cover" }} />
+              ) : (
+                <span className="sf-avatar" style={{ width: 64, height: 64, fontSize: "1.25rem" }} aria-hidden="true">{getInitials(profile.name)}</span>
+              )}
+              <div className="sf-stack" data-gap="sm" style={{ gap: 2 }}>
+                <div className="sf-titleline">
+                  <h2 className="sf-h3">{profile.name}</h2>
+                  <span className="sf-state" data-tone={statusTone} style={{ textTransform: "capitalize" }}>{profile.status}</span>
                 </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Member Since</label>
-                  <p className="mt-1">{new Date(profile.joinDate).toLocaleDateString()}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-muted-foreground">Last Check-in</label>
-                  <p className="mt-1">
-                    {profile.lastCheckIn
-                      ? new Date(profile.lastCheckIn).toLocaleDateString()
-                      : "Never"}
-                  </p>
-                </div>
+                {profile.membershipTier ? <p className="sf-meta">{profile.membershipTier.name}</p> : null}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+            <dl className="sf-facts" data-plain>
+              <div><dt>Member since</dt><dd>{new Date(profile.joinDate).toLocaleDateString()}</dd></div>
+              <div><dt>Membership length</dt><dd className="sf-num">{profile.membershipLengthDays} days</dd></div>
+              <div><dt>Attendance</dt><dd className="sf-num">{profile.attendanceRate}%</dd></div>
+              <div><dt>Last check-in</dt><dd>{profile.lastCheckIn ? new Date(profile.lastCheckIn).toLocaleDateString() : "Never"}</dd></div>
+              <div><dt>Plan</dt><dd>{profile.membershipTier?.name || "No active membership"}</dd></div>
+            </dl>
+            {profile.membershipTier ? <div><Link href="/account/membership" className="sf-link" data-size="sm">Membership<ArrowUpRight aria-hidden="true" /></Link></div> : null}
+          </section>
+
+          <section className="sf-card" aria-labelledby="personal-info">
+            <h2 id="personal-info" className="sf-h3">Personal</h2>
+            <div className="sf-form-row">
+              <div className="sf-field">
+                <label htmlFor="profile-name">Full name</label>
+                {isEditing ? <input id="profile-name" {...register("name", { required: "Name is required" })} aria-invalid={errors.name ? true : undefined} /> : readValue(profile.name)}
+                {errors.name ? <p className="sf-field-error" role="alert">{errors.name.message}</p> : null}
+              </div>
+              <div className="sf-field">
+                <span>Email</span>
+                {readValue(profile.email)}
+                <small>Change it in Profile</small>
+              </div>
+              <div className="sf-field">
+                <label htmlFor="profile-phone">Phone</label>
+                {isEditing ? <input id="profile-phone" {...register("phone")} type="tel" /> : readValue(profile.phone || "Not provided")}
+              </div>
+              <div className="sf-field">
+                <label htmlFor="profile-dateOfBirth">Date of birth</label>
+                {isEditing ? <input id="profile-dateOfBirth" {...register("dateOfBirth")} type="date" /> : readValue(profile.dateOfBirth ? new Date(profile.dateOfBirth).toLocaleDateString() : "Not provided")}
+              </div>
+            </div>
+          </section>
+
+          <section className="sf-card" aria-labelledby="emergency-contact">
+            <h2 id="emergency-contact" className="sf-h3">Emergency contact</h2>
+            <div className="sf-form-row">
+              <div className="sf-field">
+                <label htmlFor="profile-emergencyContactName">Name</label>
+                {isEditing ? <input id="profile-emergencyContactName" {...register("emergencyContactName")} /> : readValue(profile.emergencyContactName || "Not provided")}
+              </div>
+              <div className="sf-field">
+                <label htmlFor="profile-emergencyContactPhone">Phone</label>
+                {isEditing ? <input id="profile-emergencyContactPhone" {...register("emergencyContactPhone")} type="tel" /> : readValue(profile.emergencyContactPhone || "Not provided")}
+              </div>
+            </div>
+          </section>
+
+          <section className="sf-card" aria-labelledby="health-info">
+            <div className="sf-row" data-between>
+              <h2 id="health-info" className="sf-h3">Health (optional)</h2>
+              <Link href="/account/participation" className="sf-link" data-size="sm">Consent and privacy<ArrowUpRight aria-hidden="true" /></Link>
+            </div>
+            <div className="sf-form-row">
+              <div className="sf-field">
+                <label htmlFor="profile-healthConditions">Conditions (comma-separated)</label>
+                {isEditing ? <input id="profile-healthConditions" {...register("healthConditions")} /> : readValue(profile.healthNotes?.conditions?.length ? profile.healthNotes.conditions.join(", ") : "None listed")}
+              </div>
+              <div className="sf-field">
+                <label htmlFor="profile-healthInjuries">Injuries (comma-separated)</label>
+                {isEditing ? <input id="profile-healthInjuries" {...register("healthInjuries")} /> : readValue(profile.healthNotes?.injuries?.length ? profile.healthNotes.injuries.join(", ") : "None listed")}
+              </div>
+            </div>
+            <div className="sf-field">
+              <label htmlFor="profile-healthNotes">Notes</label>
+              {isEditing ? <textarea id="profile-healthNotes" {...register("healthNotes")} rows={3} /> : readValue(profile.healthNotes?.notes || "None")}
+            </div>
+          </section>
         </form>
       </div>
     </div>

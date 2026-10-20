@@ -1,7 +1,9 @@
 import { list } from "@keystone-6/core";
 import { denyAll } from "@keystone-6/core/access";
-import { integer, relationship, select, text, timestamp } from "@keystone-6/core/fields";
+import { integer, json, relationship, select, text, timestamp } from "@keystone-6/core/fields";
 import { requiredRelationshipDb } from "./tenantRelationships";
+import { trackingFields } from "./trackingFields";
+import { trackingBasisField } from "./trackingBasis";
 
 export const OnboardingRun = list({
   access: {
@@ -39,5 +41,10 @@ export const OnboardingRun = list({
     completedAt: timestamp({ access: { read: denyAll, create: denyAll, update: denyAll } }),
     leaseUntil: timestamp({ access: { read: denyAll, create: denyAll, update: denyAll } }),
     leaseToken: text({ access: { read: denyAll, create: denyAll, update: denyAll } }),
+    // Starter records this run created or adopted, their seeded values, the placeholder coach
+    // accounts it created and the requested configuration: the provenance retries rely on.
+    manifest: json({ access: { read: denyAll, create: denyAll, update: denyAll } }),
+    ...trackingFields,
+    trackingBasis: trackingBasisField,
   },
 });

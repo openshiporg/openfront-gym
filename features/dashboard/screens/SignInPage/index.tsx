@@ -20,9 +20,18 @@ export async function SignInPage({ searchParams }: SignInPageProps) {
         <div className="flex items-center space-x-1.5">
           <Logo aria-hidden="true" />
         </div>
-        <h1 className="mt-6 text-lg font-semibold text-foreground dark:text-foreground">
+        <h3 className="mt-6 text-lg font-semibold text-foreground dark:text-foreground">
           Sign in to your account
-        </h1>
+        </h3>
+        <p className="mt-2 text-sm text-muted-foreground dark:text-muted-foreground">
+          Don&apos;t have an account?
+          <Link
+            href="/dashboard/signup"
+            className="ml-1 font-medium text-primary hover:text-primary/90 dark:text-primary hover:dark:text-primary/90"
+          >
+            Sign up
+          </Link>
+        </p>
         <SignInForm from={from} />
         <p className="mt-6 text-sm text-muted-foreground dark:text-muted-foreground">
           Forgot your password?

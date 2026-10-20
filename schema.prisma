@@ -138,6 +138,40 @@ model RetailClose {
   @@index([recordedById])
 }
 
+model CounterPaymentAttempt {
+  id                 String       @id @default(cuid())
+  organization       Organization @relation("CounterPaymentAttempt_organization", fields: [organizationId], references: [id])
+  organizationId     String       @map("organization")
+  location           Location     @relation("CounterPaymentAttempt_location", fields: [locationId], references: [id])
+  locationId         String       @map("location")
+  purpose            String
+  requestKey         String       @default("")
+  requestHash        String       @default("")
+  status             String       @default("reserved")
+  amount             Int
+  currencyCode       String       @default("USD")
+  quote              Json?        @default("{}")
+  providerId         String       @default("")
+  providerKey        String       @default("")
+  providerCheckoutId String       @default("")
+  providerPaymentId  String       @default("")
+  providerRefundId   String       @default("")
+  claimToken         String       @default("")
+  result             Json?        @default("{}")
+  lastError          String       @default("")
+  expiresAt          DateTime?
+  resolvedAt         DateTime?
+  recordedBy         User?        @relation("CounterPaymentAttempt_recordedBy", fields: [recordedById], references: [id])
+  recordedById       String?      @map("recordedBy")
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @default(now()) @updatedAt
+
+  @@unique([organizationId, requestKey])
+  @@index([organizationId])
+  @@index([locationId])
+  @@index([recordedById])
+}
+
 model MemberImportRecord {
   id             String       @id @default(cuid())
   organization   Organization @relation("MemberImportRecord_organization", fields: [organizationId], references: [id])
@@ -272,6 +306,27 @@ model TrainingLead {
   @@index([memberId])
 }
 
+model ContactMessage {
+  id             String       @id @default(cuid())
+  organization   Organization @relation("ContactMessage_organization", fields: [organizationId], references: [id])
+  organizationId String       @map("organization")
+  subject        String       @default("")
+  reference      String       @default("")
+  name           String       @default("")
+  email          String       @default("")
+  phone          String       @default("")
+  topic          String       @default("")
+  message        String       @default("")
+  sourcePath     String       @default("")
+  status         String       @default("new")
+  staffNotes     String       @default("")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
+
+  @@index([organizationId])
+  @@index([reference])
+}
+
 model MembershipCreditGrant {
   id                               String                  @id @default(cuid())
   organization                     Organization?           @relation("MembershipCreditGrant_organization", fields: [organizationId], references: [id])
@@ -337,6 +392,7 @@ model ParticipationPolicy {
   organizationId                    String                  @map("organization")
   version                           String                  @default("")
   documentReference                 String                  @default("")
+  documentText                      String                  @default("")
   enforceWaiver                     Boolean                 @default(true)
   adultOnly                         Boolean                 @default(true)
   healthPurpose                     String                  @default("")
@@ -461,11 +517,13 @@ model Organization {
   from_RetailReturn_organization          RetailReturn[]             @relation("RetailReturn_organization")
   from_RetailStockEntry_organization      RetailStockEntry[]         @relation("RetailStockEntry_organization")
   from_RetailClose_organization           RetailClose[]              @relation("RetailClose_organization")
+  from_CounterPaymentAttempt_organization CounterPaymentAttempt[]    @relation("CounterPaymentAttempt_organization")
   from_MemberImportRecord_organization    MemberImportRecord[]       @relation("MemberImportRecord_organization")
   from_TrainingPackage_organization       TrainingPackage[]          @relation("TrainingPackage_organization")
   from_TrainingCreditEntry_organization   TrainingCreditEntry[]      @relation("TrainingCreditEntry_organization")
   from_CoachingAssignment_organization    CoachingAssignment[]       @relation("CoachingAssignment_organization")
   from_TrainingLead_organization          TrainingLead[]             @relation("TrainingLead_organization")
+  from_ContactMessage_organization        ContactMessage[]           @relation("ContactMessage_organization")
   from_MembershipCreditGrant_organization MembershipCreditGrant[]    @relation("MembershipCreditGrant_organization")
   from_MembershipCreditEntry_organization MembershipCreditEntry[]    @relation("MembershipCreditEntry_organization")
   from_OperationalNotice_organization     OperationalNotice[]        @relation("OperationalNotice_organization")
@@ -476,37 +534,38 @@ model Organization {
 }
 
 model User {
-  id                                 String                @id @default(cuid())
-  organization                       Organization?         @relation("User_organization", fields: [organizationId], references: [id])
-  organizationId                     String?               @map("organization")
-  name                               String                @default("")
-  email                              String                @unique @default("")
-  password                           String
-  role                               Role?                 @relation("User_role", fields: [roleId], references: [id])
-  roleId                             String?               @map("role")
-  membership                         Membership?           @relation("Membership_member")
-  payments                           MembershipPayment[]   @relation("MembershipPayment_member")
-  paymentSessions                    PaymentSession[]      @relation("PaymentSession_user")
-  stripeCustomerId                   String                @default("")
-  phone                              String                @default("")
-  emergencyContact                   String                @default("")
-  onboardingStatus                   String                @default("not_started")
-  createdAt                          DateTime              @default(now())
-  updatedAt                          DateTime              @default(now()) @updatedAt
-  passwordResetToken                 String?
-  passwordResetIssuedAt              DateTime?
-  passwordResetRedeemedAt            DateTime?
-  from_RetailSale_recordedBy         RetailSale[]          @relation("RetailSale_recordedBy")
-  from_RetailReturn_recordedBy       RetailReturn[]        @relation("RetailReturn_recordedBy")
-  from_RetailStockEntry_recordedBy   RetailStockEntry[]    @relation("RetailStockEntry_recordedBy")
-  from_RetailClose_recordedBy        RetailClose[]         @relation("RetailClose_recordedBy")
-  from_TrainingPackage_recordedBy    TrainingPackage[]     @relation("TrainingPackage_recordedBy")
-  from_TrainingCreditEntry_actor     TrainingCreditEntry[] @relation("TrainingCreditEntry_actor")
-  from_TrainingLead_owner            TrainingLead[]        @relation("TrainingLead_owner")
-  from_Member_user                   Member[]              @relation("Member_user")
-  from_MembershipPayment_processedBy MembershipPayment[]   @relation("MembershipPayment_processedBy")
-  from_AttendanceRecord_markedBy     AttendanceRecord[]    @relation("AttendanceRecord_markedBy")
-  from_Instructor_user               Instructor[]          @relation("Instructor_user")
+  id                                    String                  @id @default(cuid())
+  organization                          Organization?           @relation("User_organization", fields: [organizationId], references: [id])
+  organizationId                        String?                 @map("organization")
+  name                                  String                  @default("")
+  email                                 String                  @unique @default("")
+  password                              String
+  role                                  Role?                   @relation("User_role", fields: [roleId], references: [id])
+  roleId                                String?                 @map("role")
+  membership                            Membership?             @relation("Membership_member")
+  payments                              MembershipPayment[]     @relation("MembershipPayment_member")
+  paymentSessions                       PaymentSession[]        @relation("PaymentSession_user")
+  stripeCustomerId                      String                  @default("")
+  phone                                 String                  @default("")
+  emergencyContact                      String                  @default("")
+  onboardingStatus                      String                  @default("not_started")
+  createdAt                             DateTime                @default(now())
+  updatedAt                             DateTime                @default(now()) @updatedAt
+  passwordResetToken                    String?
+  passwordResetIssuedAt                 DateTime?
+  passwordResetRedeemedAt               DateTime?
+  from_RetailSale_recordedBy            RetailSale[]            @relation("RetailSale_recordedBy")
+  from_RetailReturn_recordedBy          RetailReturn[]          @relation("RetailReturn_recordedBy")
+  from_RetailStockEntry_recordedBy      RetailStockEntry[]      @relation("RetailStockEntry_recordedBy")
+  from_RetailClose_recordedBy           RetailClose[]           @relation("RetailClose_recordedBy")
+  from_CounterPaymentAttempt_recordedBy CounterPaymentAttempt[] @relation("CounterPaymentAttempt_recordedBy")
+  from_TrainingPackage_recordedBy       TrainingPackage[]       @relation("TrainingPackage_recordedBy")
+  from_TrainingCreditEntry_actor        TrainingCreditEntry[]   @relation("TrainingCreditEntry_actor")
+  from_TrainingLead_owner               TrainingLead[]          @relation("TrainingLead_owner")
+  from_Member_user                      Member[]                @relation("Member_user")
+  from_MembershipPayment_processedBy    MembershipPayment[]     @relation("MembershipPayment_processedBy")
+  from_AttendanceRecord_markedBy        AttendanceRecord[]      @relation("AttendanceRecord_markedBy")
+  from_Instructor_user                  Instructor[]            @relation("Instructor_user")
 
   @@index([organizationId])
   @@index([roleId])
@@ -898,27 +957,28 @@ model CheckIn {
 }
 
 model Location {
-  id                             String                @id @default(cuid())
-  organization                   Organization          @relation("Location_organization", fields: [organizationId], references: [id])
-  organizationId                 String                @map("organization")
-  name                           String                @default("")
-  address                        String                @default("")
-  phone                          String                @default("")
-  isActive                       Boolean               @default(true)
-  resources                      GymResource[]         @relation("GymResource_location")
-  trainerAvailability            TrainerAvailability[] @relation("TrainerAvailability_location")
-  trainerAppointments            TrainerAppointment[]  @relation("TrainerAppointment_location")
-  createdAt                      DateTime              @default(now())
-  updatedAt                      DateTime              @default(now()) @updatedAt
-  from_RetailItem_location       RetailItem[]          @relation("RetailItem_location")
-  from_RetailSale_location       RetailSale[]          @relation("RetailSale_location")
-  from_RetailReturn_location     RetailReturn[]        @relation("RetailReturn_location")
-  from_RetailStockEntry_location RetailStockEntry[]    @relation("RetailStockEntry_location")
-  from_RetailClose_location      RetailClose[]         @relation("RetailClose_location")
-  from_TrainingPackage_location  TrainingPackage[]     @relation("TrainingPackage_location")
-  from_CheckIn_location          CheckIn[]             @relation("CheckIn_location")
-  from_ClassSchedule_location    ClassSchedule[]       @relation("ClassSchedule_location")
-  from_ClassInstance_location    ClassInstance[]       @relation("ClassInstance_location")
+  id                                  String                  @id @default(cuid())
+  organization                        Organization            @relation("Location_organization", fields: [organizationId], references: [id])
+  organizationId                      String                  @map("organization")
+  name                                String                  @default("")
+  address                             String                  @default("")
+  phone                               String                  @default("")
+  isActive                            Boolean                 @default(true)
+  resources                           GymResource[]           @relation("GymResource_location")
+  trainerAvailability                 TrainerAvailability[]   @relation("TrainerAvailability_location")
+  trainerAppointments                 TrainerAppointment[]    @relation("TrainerAppointment_location")
+  createdAt                           DateTime                @default(now())
+  updatedAt                           DateTime                @default(now()) @updatedAt
+  from_RetailItem_location            RetailItem[]            @relation("RetailItem_location")
+  from_RetailSale_location            RetailSale[]            @relation("RetailSale_location")
+  from_RetailReturn_location          RetailReturn[]          @relation("RetailReturn_location")
+  from_RetailStockEntry_location      RetailStockEntry[]      @relation("RetailStockEntry_location")
+  from_RetailClose_location           RetailClose[]           @relation("RetailClose_location")
+  from_CounterPaymentAttempt_location CounterPaymentAttempt[] @relation("CounterPaymentAttempt_location")
+  from_TrainingPackage_location       TrainingPackage[]       @relation("TrainingPackage_location")
+  from_CheckIn_location               CheckIn[]               @relation("CheckIn_location")
+  from_ClassSchedule_location         ClassSchedule[]         @relation("ClassSchedule_location")
+  from_ClassInstance_location         ClassInstance[]         @relation("ClassInstance_location")
 
   @@unique([organizationId, name])
   @@index([organizationId])
@@ -931,6 +991,7 @@ model GymSettings {
   name                  String       @default("")
   tagline               String       @default("")
   logoIcon              String       @default("")
+  logoColor             String       @default("0")
   brandHue              Int          @default(16)
   description           String       @default("")
   address               String       @default("")
@@ -957,6 +1018,7 @@ model GymSettings {
   facilityHighlights    Json?        @default("[]")
   heroStats             Json?        @default("[]")
   contactTopics         Json?        @default("[]")
+  participationTerms    String       @default("")
   rating                Decimal?     @default("4.8") @postgresql.Decimal(2, 1)
   reviewCount           Int?         @default(0)
   createdAt             DateTime     @default(now())
@@ -1138,6 +1200,7 @@ model ClassBooking {
   memberName                         String                  @default("")
   memberEmail                        String                  @default("")
   memberPhone                        String                  @default("")
+  serviceSnapshot                    Json?
   eligibilityReviewReason            String                  @default("")
   notes                              String                  @default("")
   activeBookingKey                   String?
@@ -1226,6 +1289,7 @@ model GymResource {
   cleanupBufferMinutes        Int?                 @default(0)
   notes                       String               @default("")
   metadata                    Json?                @default("{}")
+  allocationHistory           Json?                @default("[]")
   appointments                TrainerAppointment[] @relation("TrainerAppointment_resource")
   createdAt                   DateTime             @default(now())
   updatedAt                   DateTime             @default(now()) @updatedAt
@@ -1324,6 +1388,9 @@ model OnboardingRun {
   completedAt    DateTime?
   leaseUntil     DateTime?
   leaseToken     String       @default("")
+  manifest       Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
 
   @@unique([organizationId], map: "OnboardingRun_organization_key")
   @@index([organizationId])
@@ -1341,9 +1408,12 @@ model GymRefundAttempt {
   startingRefundAmount Int          @default(0)
   status               String?      @default("processing")
   providerRefundId     String       @default("")
+  reservation          Json?
   lastError            String       @default("")
   requestedAt          DateTime?
   completedAt          DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @default(now()) @updatedAt
 
   @@unique([organizationId, requestKey], map: "GymRefundAttempt_organization_request_key")
   @@index([organizationId])
@@ -1366,6 +1436,8 @@ model MembershipBillingAttempt {
   lastError      String       @default("")
   requestedAt    DateTime     @default(now())
   completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
 
   @@unique([organizationId, membershipId, operation, idempotencyKey], map: "MembershipBillingAttempt_scope_operation_key")
   @@index([organizationId])
@@ -1374,10 +1446,12 @@ model MembershipBillingAttempt {
 }
 
 model AuthRateLimitBucket {
-  id      String    @id @default(cuid())
-  key     String
-  count   Int       @default(0)
-  resetAt DateTime?
+  id        String    @id @default(cuid())
+  key       String
+  count     Int       @default(0)
+  resetAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
 
   @@unique([key], map: "AuthRateLimitBucket_key")
 }

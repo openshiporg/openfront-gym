@@ -13,18 +13,56 @@ import {
 import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
+import { guardKeystonePrismaResults } from '../lib/prisma-result';
+import { memberHasHistory } from '../lib/lifecycle-guards';
+import { lockTransactionKey } from '../mutations/classCapacity';
 
 function sensitiveMemberRead({ session, item }: any) {
   return Boolean(session?.itemId && session?.data?.organization?.id === item?.organizationId &&
     (session.data?.role?.canManageAllRecords || session.data?.role?.canManagePeople || item?.userId === session.itemId));
 }
 
+/**
+ * The member record is the contact authority for its linked account (the login email never
+ * changes here). Its current name/phone are copied to the account under the identity lock
+ * whenever the two differ, so concurrent saves converge on the latest member values and saving
+ * again repairs a copy that failed. Name and phone carry no uniqueness, so the copy cannot collide.
+ */
+async function syncAccountContact({ operation, item, context }: any) {
+  if (operation !== "update" || !item?.userId) return;
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  try {
+    await prisma.$transaction(async (tx: any) => {
+      await lockTransactionKey(tx, `identity:${item.userId}`);
+      const [member, user] = await Promise.all([
+        tx.member.findUnique({ where: { id: item.id }, select: { name: true, phone: true } }),
+        tx.user.findFirst({ where: { id: item.userId, organizationId: item.organizationId }, select: { id: true, name: true, phone: true } }),
+      ]);
+      if (!member || !user) return;
+      if (user.name !== member.name || (user.phone || "") !== (member.phone || "")) {
+        await tx.user.update({ where: { id: user.id }, data: { name: member.name, phone: member.phone || "" } });
+      }
+    });
+  } catch {
+    throw new Error("The member's details were saved, but copying the name and phone to their sign-in account failed. Save again to retry the copy.");
+  }
+}
+
 export const Member = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, userId") },
-  hooks: { validateInput: validateTenantOwnership([
-    { field: "user", list: "user" },
-    { field: "membershipTier", list: "membershipTier" },
-  ]) },
+  hooks: {
+    validateInput: validateTenantOwnership([
+      { field: "user", list: "user" },
+      { field: "membershipTier", list: "membershipTier" },
+    ]),
+    afterOperation: syncAccountContact,
+    // Paid membership, bookings, visits and consent stay attached to their member identity.
+    async validateDelete({ item, context, addValidationError }: any) {
+      if (await memberHasHistory(context, item.organizationId, item.id, item.userId)) {
+        addValidationError("Members with bookings, visits, payments or agreements can't be deleted; close the account from Members instead (history is kept)");
+      }
+    },
+  },
   access: {
     operation: {
       query: isSignedIn, create: permissions.canManagePeople, update: isSignedIn,
@@ -32,7 +70,7 @@ export const Member = list({
     },
     filter: {
       query: rules.canReadOwnMember,
-      update: rules.canReadOwnMember,
+      update: rules.canUpdateMember,
       delete: rules.canDeletePeople,
     },
   },
@@ -69,9 +107,10 @@ export const Member = list({
       },
     }),
 
+    // A projection of the account's login email; it changes only through the account.
     email: text({
       isIndexed: 'unique',
-      access: { update: permissions.canManagePeople },
+      access: { update: denyAll },
       validation: { isRequired: true },
       ui: {
         description: 'Member email address',
@@ -108,15 +147,17 @@ export const Member = list({
       },
     }),
 
+    // Emergency contact is sensitive and erasable: it changes only through the member's own
+    // profile service (current version + participation lock), never through generic edits.
     emergencyContactName: text({
-      access: { read: sensitiveMemberRead },
+      access: { read: sensitiveMemberRead, create: denyAll, update: denyAll },
       ui: {
         description: 'Emergency contact full name',
       },
     }),
 
     emergencyContactPhone: text({
-      access: { read: sensitiveMemberRead },
+      access: { read: sensitiveMemberRead, create: denyAll, update: denyAll },
       ui: {
         description: 'Emergency contact phone number',
       },
@@ -125,7 +166,6 @@ export const Member = list({
     healthNotes: json({
       access: { read: sensitiveMemberRead, create: denyAll, update: denyAll },
       ui: {
-        views: './fields/json-view',
         description: 'Medical conditions, injuries, or health considerations (stored as JSON)',
       },
       defaultValue: { conditions: [], injuries: [], notes: '' },

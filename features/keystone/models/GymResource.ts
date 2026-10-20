@@ -71,6 +71,13 @@ export const GymResource = list({
     cleanupBufferMinutes: integer({ defaultValue: 0, validation: { min: 0, max: 240 } }),
     notes: text({ ui: { displayMode: "textarea" } }),
     metadata: json({ defaultValue: {} }),
+    // Who changed capacity/exclusivity/buffers/activity and why; written only by the controlled
+    // resource service, never by generic edits (descriptive metadata stays editable).
+    allocationHistory: json({
+      defaultValue: [],
+      access: { create: denyAll, update: denyAll },
+      ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "read" } },
+    }),
     appointments: relationship({
       ref: "TrainerAppointment.resource",
       many: true,

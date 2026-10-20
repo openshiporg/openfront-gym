@@ -1,6 +1,6 @@
 'use server';
 
-import { keystoneClient } from '@/features/dashboard/lib/keystoneClient';
+import { gymGraphql as keystoneClient } from '@/features/platform/lib/gym-graphql';
 
 export type OperatorSummary = {
   activeMembers: number;

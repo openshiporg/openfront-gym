@@ -1,36 +1,58 @@
-import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from 'date-fns';
+import { addDays, endOfDay, format, startOfMonth, startOfWeek } from 'date-fns';
 import { PageContainer } from '@/features/dashboard/components/PageContainer';
-import { requireDashboardUser } from '@/features/dashboard/lib/current-user';
+import { PlatformHeader } from '@/features/platform/components/platform-ui';
+import { requireDashboardUser } from '@/features/platform/lib/current-user';
 import { toPlainData } from '@/features/platform/lib/serialization';
 import { getSchedulingWorkspaceData } from '../actions/scheduling';
 import { SchedulingClient } from './SchedulingClient';
 import { schedulingWorkspaceOptions } from '../lib/scope';
 
-export async function SchedulingPage() {
+/** Six calendar weeks always cover a full month grid and a 14-day agenda. */
+const WINDOW_DAYS = 42;
+
+function parseDay(value?: string | string[]) {
+  const text = Array.isArray(value) ? value[0] : value;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text || '');
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export async function SchedulingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ from?: string | string[] }>;
+}) {
   const user = await requireDashboardUser();
-  const now = new Date();
-  const start = startOfWeek(startOfMonth(now));
-  const end = endOfWeek(endOfMonth(now));
+  const params = searchParams ? await searchParams : {};
+  const requested = parseDay(params.from);
+  const windowStart = startOfWeek(requested ?? startOfMonth(new Date()));
+  const windowEnd = addDays(windowStart, WINDOW_DAYS - 1);
   const { canManageWorkspace, isInstructorOnly, userId } = schedulingWorkspaceOptions(user);
 
-  const workspace = await getSchedulingWorkspaceData(start, end, {
+  // Pad a day on each side so gym-local days at the edges survive the server/gym offset.
+  const workspace = await getSchedulingWorkspaceData(addDays(windowStart, -1), addDays(endOfDay(windowEnd), 1), {
     userId,
     isInstructorOnly,
   });
 
   const header = (
-    <div className="flex flex-col">
-      <h1 className="text-lg font-semibold md:text-2xl">Scheduling Command Center</h1>
-      <p className="text-muted-foreground">
-        {isInstructorOnly
-          ? 'Review your teaching calendar and move into rosters quickly.'
-          : 'Monitor class capacity and instructor availability'}
-      </p>
-    </div>
+    <PlatformHeader
+      eyebrow="Class operations"
+      title="Scheduling"
+      description={
+        isInstructorOnly
+          ? 'Your teaching calendar. Open any session to review its roster.'
+          : 'Run recurring templates, dated sessions, capacity, and instructor assignments from one calendar.'
+      }
+    />
   );
 
   const breadcrumbs = [
     { type: 'link' as const, label: 'Dashboard', href: '/dashboard' },
+    { type: 'page' as const, label: 'Platform' },
     { type: 'page' as const, label: 'Scheduling' }
   ];
 
@@ -47,6 +69,10 @@ export async function SchedulingPage() {
         timeZone={workspace.timeZone}
         isInstructor={isInstructorOnly}
         canManageWorkspace={canManageWorkspace}
+        loadedWindow={{ from: format(windowStart, 'yyyy-MM-dd'), to: format(windowEnd, 'yyyy-MM-dd') }}
+        windowComplete={workspace.eventsComplete !== false}
+        truncatedOptions={workspace.truncated}
+        initialDate={requested ? format(requested, 'yyyy-MM-dd') : undefined}
       />
     </PageContainer>
   );

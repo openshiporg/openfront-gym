@@ -1,6 +1,8 @@
 import { getKioskOrganizationId, isKioskTokenValid } from "../../kiosk/auth";
 import { validateQRCode } from "../../../lib/qrcode";
-import { consumeAuthAttempt } from "../../../lib/authRateLimit";
+import { budgetKey, releaseAuthAttempt, reserveAuthAttempt } from "../../../lib/authRateLimit";
+import { isKnownSource, requestClientSource } from "../../../lib/clientSource";
+import { assertActiveOrganization } from "../security/tenant-status";
 import {
   recordCapacityControlledMemberCheckIn,
   recordControlledGuestCheckIn,
@@ -20,10 +22,15 @@ export async function authorizeKioskSession(
   { credential, organizationId }: { credential: string; organizationId: string },
   context: any,
 ) {
-  if (!(await consumeAuthAttempt(context.prisma, "kiosk-session:global", 30, 15 * 60 * 1000))) {
-    throw new Error("Too many kiosk unlock attempts");
-  }
+  // Only failures spend budget, and only for the device that failed: each attempt is reserved
+  // first and given back when the credential is right.
+  // An unknown source would be one shared bucket, so it is not budgeted (the kiosk secret is long).
+  const source = requestClientSource(context.req);
+  const budget = isKnownSource(source) ? budgetKey("kiosk-fail", source) : "";
+  if (budget && !(await reserveAuthAttempt(context.prisma, budget, 30, 15 * 60 * 1000))) throw new Error("Too many kiosk unlock attempts from this device; wait 15 minutes");
   kioskTenant(credential, organizationId);
+  if (budget) await releaseAuthAttempt(context.prisma, budget);
+  await assertActiveOrganization(context, organizationId);
   return true;
 }
 
@@ -71,6 +78,7 @@ export async function kioskRecordMemberCheckIn(
   context: any,
 ) {
   const tenantId = kioskTenant(args.credential, args.organizationId);
+  await assertActiveOrganization(context, tenantId);
   const memberId = args.memberId?.trim() || "";
   const qrCode = args.qrCode?.trim() || "";
   const locationId = args.locationId?.trim() || "";
@@ -136,6 +144,7 @@ export async function kioskRecordGuestCheckIn(
   context: any,
 ) {
   const tenantId = kioskTenant(args.credential, args.organizationId);
+  await assertActiveOrganization(context, tenantId);
   const name = args.name.trim();
   const phone = args.phone?.trim() || "";
   const hostQuery = args.hostMember?.trim() || "";

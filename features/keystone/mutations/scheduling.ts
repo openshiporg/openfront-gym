@@ -2,9 +2,11 @@ import { currentRoleActor } from "../access/currentRoleActor";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { refreshScopedMembership } from "../lib/membership-credits";
 import { lockParticipationPolicy } from "../lib/operational-policy";
-import { lockTransactionKey } from "./classCapacity";
+import { fillReleasedSeats, lockTransactionKey } from "./classCapacity";
+import { lockCurrentActor } from "../lib/current-actor";
 import { saveControlledOccurrence, scheduleDuration } from "../lib/class-scheduling";
-import { futureLocalOccurrence, localWeekdayAtOffset, resolveGymTimeZone } from "../../../lib/timezone";
+import { futureLocalOccurrence, localWeekdayAtOffset } from "../../../lib/timezone";
+import { businessTimeZone } from "../lib/business-time-zone";
 import {
   updateCapacityControlledClassInstance,
   updateCapacityControlledClassSchedule,
@@ -63,17 +65,7 @@ export async function generateUpcomingClassInstances(
   const { organizationId } = await schedulingManager(context);
   const prisma = guardKeystonePrismaResults(context.prisma as any);
   const sudo = context.sudo();
-  const [settings, organization] = await Promise.all([
-    prisma.gymSettings.findUnique({
-      where: { organizationId },
-      select: { timezone: true },
-    }),
-    prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { timezone: true },
-    }),
-  ]);
-  const timeZone = resolveGymTimeZone(settings?.timezone, organization?.timezone);
+  const timeZone = await businessTimeZone(prisma, organizationId);
   const schedules = await sudo.query.ClassSchedule.findMany({
     where: {
       AND: [
@@ -94,6 +86,7 @@ export async function generateUpcomingClassInstances(
     isCancelled: boolean;
   }> = [];
 
+  let skippedNonexistent = 0;
   for (const schedule of schedules as any[]) {
     if (schedule.organization?.id !== organizationId) throw new Error("Schedule tenant mismatch");
     const targetDay = DAY_MAP[schedule.dayOfWeek];
@@ -104,6 +97,8 @@ export async function generateUpcomingClassInstances(
     for (let offset = 0; offset <= weeks * 7; offset += 1) {
       if (localWeekdayAtOffset(now, timeZone, offset) !== targetDay) continue;
       const date = futureLocalOccurrence(now, timeZone, offset, hours, minutes);
+      // A wall time skipped by a daylight-saving change has no session; it is reported, not shifted.
+      if (!date) { skippedNonexistent += 1; continue; }
       if (date <= now) continue;
 
       pendingInstances.push({
@@ -134,7 +129,7 @@ export async function generateUpcomingClassInstances(
     }
     return count;
   }, { timeout: 30000 });
-  return { success: true, createdCount };
+  return { success: true, createdCount, skippedNonexistent };
 }
 
 /** Full edits share the class/PT allocation lock; generated CRUD cannot bypass them. */
@@ -185,7 +180,13 @@ export async function saveGymClassSchedule(_root: unknown, { id, data }: { id?: 
       const conflicts = await tx.classSchedule.findMany({ where: { organizationId, isActive: true, dayOfWeek: merged.dayOfWeek, ...(id ? { id: { not: id } } : {}) } });
       if (conflicts.some((other: any) => other.startTime < merged.endTime && other.endTime > merged.startTime && ((merged.instructorId && other.instructorId === merged.instructorId) || (merged.resourceId && other.resourceId === merged.resourceId)))) throw new Error("Recurring instructor or resource allocation overlaps another schedule");
     }
-    return existing ? tx.classSchedule.update({ where: { id: existing.id }, data: next }) : tx.classSchedule.create({ data: next });
+    const saved = existing ? await tx.classSchedule.update({ where: { id: existing.id }, data: next }) : await tx.classSchedule.create({ data: next });
+    // Seats added by a larger template capacity go to each inheriting session's waitlist first.
+    if (existing && merged.maxCapacity > (existing.maxCapacity ?? 0)) {
+      const inheriting = await tx.classInstance.findMany({ where: { organizationId, classScheduleId: existing.id, maxCapacity: null, isCancelled: false, date: { gt: new Date() } }, select: { id: true }, orderBy: { id: "asc" } });
+      for (const instance of inheriting) await fillReleasedSeats(tx, instance.id, organizationId);
+    }
+    return saved;
   });
 }
 
@@ -217,9 +218,14 @@ export async function reconcileGymEntitlements(_root: unknown, { afterId, limit 
 }
 
 /** Resource allocation settings are immutable through raw CRUD. Resolve dependent
- * sessions first, then amend/retire the resource with an accountable reason. */
+ * sessions first, then amend/retire the resource with an accountable reason. Rooms and
+ * equipment belong to facilities management: a same-tenant facilities manager (or an all-record
+ * operator) may do this, re-checked from the current role under the allocation locks. */
 export async function updateGymResource(_root: unknown, { id, data }: { id: string; data: any }, context: any) {
-  const { organizationId, userId } = await schedulingManager(context);
+  const session = context.session as any;
+  const organizationId = session?.data?.organization?.id ? String(session.data.organization.id) : "";
+  const userId = session?.itemId ? String(session.itemId) : "";
+  if (!organizationId || !userId) throw new Error("Authentication required");
   const prisma = guardKeystonePrismaResults(context.prisma as any);
   const reason = typeof data?.reason === "string" ? data.reason.trim() : "";
   if (reason.length < 3 || reason.length > 1000) throw new Error("Resource change reason must be 3 to 1000 characters");
@@ -236,6 +242,8 @@ export async function updateGymResource(_root: unknown, { id, data }: { id: stri
   return prisma.$transaction(async (tx: any) => {
     await lockParticipationPolicy(tx, organizationId);
     await lockTransactionKey(tx, `gym-scheduling:${organizationId}`);
+    const actor = await lockCurrentActor(tx, userId, organizationId, []);
+    if (!actor.role.canManageFacilities && !actor.role.canManageAllRecords) throw new Error("Facilities management permission required");
     const resource = await tx.gymResource.findFirst({ where: { id, organizationId } });
     if (!resource) throw new Error("Resource not found in this organization");
     const changed = Object.keys(values).some((key) => resource[key] !== values[key]);
@@ -265,10 +273,13 @@ export async function updateGymResource(_root: unknown, { id, data }: { id: stri
       ],
     }, select: { id: true } });
     if (classDependency || trainingDependency) throw new Error("Cancel or reassign upcoming/in-progress classes and appointments before changing this resource");
-    const history = Array.isArray(resource.metadata?.allocationHistory) ? resource.metadata.allocationHistory : [];
+    // Append-only, in its own protected field, holding only events this service recorded. Older
+    // entries in the editable metadata stay there as unverified legacy notes; they are never
+    // promoted into this accountable history.
+    const history = Array.isArray(resource.allocationHistory) ? resource.allocationHistory : [];
     if (history.length >= 500) throw new Error("Resource allocation history requires archival review");
     const before = Object.fromEntries(Object.keys(values).map((key) => [key, resource[key]]));
-    await tx.gymResource.update({ where: { id }, data: { ...values, metadata: { ...resource.metadata, allocationHistory: [...history, { at: now.toISOString(), actorId: userId, reason, before, after: values }] } } });
+    await tx.gymResource.update({ where: { id }, data: { ...values, allocationHistory: [...history, { at: now.toISOString(), actorId: userId, reason, before, after: values }] } });
     return { id, reused: false };
   });
 }

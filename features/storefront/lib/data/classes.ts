@@ -1,5 +1,6 @@
 import { gql } from "graphql-request";
 import { gymClient } from "@/features/storefront/lib/config";
+import { PUBLIC_PAGE_SIZE, collectPublicPages, publicCatalogPage } from "./pages";
 
 export type ClassTypeData = {
   id: string;
@@ -76,11 +77,21 @@ async function schedules(args?: { dayOfWeek?: string; instructorId?: string; lim
 }
 
 export async function getClassTypes(): Promise<ClassTypeData[]> {
-  const result = await gymClient.request<{ publicGymClassTypes: ClassTypeData[] }>(gql`
+  const { items } = await collectPublicPages(async (skip) => (await gymClient.request<{ publicGymClassTypes: ClassTypeData[] }>(gql`
     ${CLASS_TYPE_FIELDS}
-    query StorefrontClassTypes { publicGymClassTypes(limit: 500) { ...StorefrontClassType } }
-  `);
-  return result.publicGymClassTypes;
+    query StorefrontClassTypes($skip: Int, $limit: Int) { publicGymClassTypes(limit: $limit, skip: $skip) { ...StorefrontClassType } }
+  `, { skip, limit: PUBLIC_PAGE_SIZE })).publicGymClassTypes);
+  return items;
+}
+
+/** One page of class formats matching search, level and length, filtered by the server. */
+export async function getClassTypePage(filters: { q?: string; difficulty?: string; duration?: string; after?: string }) {
+  return publicCatalogPage(async (limit) => (await gymClient.request<{ publicGymClassTypes: ClassTypeData[] }>(gql`
+    ${CLASS_TYPE_FIELDS}
+    query StorefrontClassTypePage($limit: Int, $after: ID, $q: String, $difficulty: String, $duration: String) {
+      publicGymClassTypes(limit: $limit, after: $after, q: $q, difficulty: $difficulty, duration: $duration) { ...StorefrontClassType }
+    }
+  `, { limit, after: filters.after || null, q: filters.q || null, difficulty: filters.difficulty || null, duration: filters.duration || null })).publicGymClassTypes);
 }
 
 export async function getClassSchedules(): Promise<ClassScheduleData[]> {
@@ -104,6 +115,7 @@ export async function getClassSchedulesByDay(dayCode: string): Promise<ClassSche
 type PublicInstance = {
   id: string;
   startsAt: string;
+  location?: { id: string; name: string; address?: string | null } | null;
   schedule?: PublicSchedule | null;
   instructor?: { id: string; name: string } | null;
   availability: {
@@ -126,14 +138,13 @@ export type ClassOccurrenceData = {
   maxCapacity: number;
   classType: ClassTypeData | null;
   instructor: { id: string; name: string } | null;
+  location: { id: string; name: string; address: string | null } | null;
   availability: PublicInstance["availability"];
 };
 
-async function instances(
-  from: string,
-  to?: string,
-  scheduleId?: string,
-  instructorId?: string,
+async function instancePage(
+  filters: { from: string; to?: string; scheduleId?: string; instructorId?: string; classTypeId?: string; locationId?: string; search?: string },
+  skip: number,
 ) {
   const result = await gymClient.request<{ publicGymClassInstances: PublicInstance[] }>(gql`
     ${CLASS_TYPE_FIELDS}
@@ -144,6 +155,10 @@ async function instances(
       $to: DateTime
       $scheduleId: ID
       $instructorId: ID
+      $classTypeId: ID
+      $locationId: ID
+      $search: String
+      $skip: Int
       $limit: Int
     ) {
       publicGymClassInstances(
@@ -151,43 +166,60 @@ async function instances(
         to: $to
         scheduleId: $scheduleId
         instructorId: $instructorId
+        classTypeId: $classTypeId
+        locationId: $locationId
+        search: $search
+        skip: $skip
         limit: $limit
       ) {
         id
         startsAt
         schedule { ...StorefrontSchedule }
         instructor { ...StorefrontScheduleInstructor }
+        location { id name address }
         availability { maxCapacity confirmedBookings waitlistCount spotsRemaining state }
       }
     }
-  `, { from, to, scheduleId, instructorId, limit: 100 });
+  `, { ...filters, skip, limit: PUBLIC_PAGE_SIZE });
   return result.publicGymClassInstances;
+}
+
+/**
+ * Upcoming sessions with class, coach, site and search filters applied by the server before
+ * paging. When the bounded read stops before the end of the window, `loadedThrough` is the
+ * last session it reached, so a caller can continue from there instead of showing false gaps.
+ */
+export async function getUpcomingClassOccurrencePage(options?: {
+  days?: number;
+  from?: string;
+  classTypeId?: string;
+  instructorId?: string;
+  locationId?: string;
+  search?: string;
+  limit?: number;
+}): Promise<{ occurrences: ClassOccurrenceData[]; truncated: boolean; loadedThrough: string | null }> {
+  const now = new Date();
+  const requested = options?.from ? new Date(options.from) : now;
+  const start = Number.isFinite(requested.getTime()) && requested > now ? requested : now;
+  const days = Math.min(Math.max(Math.trunc(options?.days ?? 7), 1), 90);
+  const to = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
+  const maxItems = Math.min(Math.max(options?.limit ?? 1000, 1), 1000);
+  const { items, truncated } = await collectPublicPages(
+    (skip) => instancePage({ from: start.toISOString(), to: to.toISOString(), instructorId: options?.instructorId, classTypeId: options?.classTypeId, locationId: options?.locationId, search: options?.search }, skip),
+    maxItems,
+  );
+  const cut = truncated || (items.length >= maxItems && maxItems < 1000);
+  return { occurrences: items.filter((instance) => instance.schedule).map(occurrenceShape), truncated: cut, loadedThrough: cut ? items.at(-1)?.startsAt ?? null : null };
 }
 
 export async function getUpcomingClassOccurrences(options?: {
   days?: number;
   classTypeId?: string;
   instructorId?: string;
+  locationId?: string;
   limit?: number;
 }): Promise<ClassOccurrenceData[]> {
-  const now = new Date();
-  const days = Math.min(Math.max(Math.trunc(options?.days ?? 7), 1), 90);
-  const to = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-  const records = await instances(
-    now.toISOString(),
-    to.toISOString(),
-    undefined,
-    options?.instructorId,
-  );
-
-  return records
-    .filter((instance) => {
-      if (!instance.schedule) return false;
-      if (options?.instructorId && (instance.instructor ?? instance.schedule.instructor)?.id !== options.instructorId) return false;
-      return !options?.classTypeId || instance.schedule.classType?.id === options.classTypeId;
-    })
-    .slice(0, Math.min(Math.max(options?.limit ?? 100, 1), 100))
-    .map(occurrenceShape);
+  return (await getUpcomingClassOccurrencePage(options)).occurrences;
 }
 
 function occurrenceShape(instance: PublicInstance): ClassOccurrenceData {
@@ -206,6 +238,7 @@ function occurrenceShape(instance: PublicInstance): ClassOccurrenceData {
     instructor: instructor
       ? { id: instructor.id, name: instructor.name }
       : null,
+    location: instance.location ? { id: instance.location.id, name: instance.location.name, address: instance.location.address ?? null } : null,
     availability: instance.availability,
   };
 }
@@ -231,7 +264,7 @@ export async function getAvailableSpots(instanceId: string | null, capacity: num
 }
 
 export async function getSchedulesWithAvailability() {
-  const [allSchedules, upcoming] = await Promise.all([schedules(), instances(new Date().toISOString())]);
+  const [allSchedules, upcoming] = await Promise.all([schedules(), instancePage({ from: new Date().toISOString() }, 0)]);
   return allSchedules.map((schedule) => {
     const next = upcoming.find((instance) => instance.schedule?.id === schedule.id);
     return {
@@ -271,7 +304,7 @@ export async function getTodaysClasses() {
   const end = new Date(today); end.setHours(23, 59, 59, 999);
   const [todaySchedules, todayInstances] = await Promise.all([
     schedules({ dayOfWeek: dayCodes[today.getDay()] }),
-    instances(start.toISOString(), end.toISOString()),
+    collectPublicPages((skip) => instancePage({ from: start.toISOString(), to: end.toISOString() }, skip)).then((page) => page.items),
   ]);
   return todaySchedules.map((schedule) => {
     const concrete = todayInstances.find((instance) => instance.schedule?.id === schedule.id);
@@ -302,7 +335,7 @@ export async function getClassOccurrenceById(id: string): Promise<ClassOccurrenc
     ${SCHEDULE_FIELDS}
     query StorefrontSelectedOccurrence($id: ID!) {
       publicGymClassInstance(id: $id) {
-        id startsAt schedule { ...StorefrontSchedule } instructor { ...StorefrontScheduleInstructor }
+        id startsAt schedule { ...StorefrontSchedule } instructor { ...StorefrontScheduleInstructor } location { id name address }
         availability { maxCapacity confirmedBookings waitlistCount spotsRemaining state }
       }
     }

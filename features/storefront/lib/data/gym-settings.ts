@@ -3,9 +3,12 @@ import { gymClient } from "@/features/storefront/lib/config";
 
 export type GymSettingsData = {
   id: string;
+  /** False while the club is suspended: accounts, history and recovery stay open; new sales don't. */
+  salesOpen: boolean;
   name: string;
   tagline?: string | null;
   logoIcon?: string | null;
+  logoColor?: string | null;
   brandHue: number;
   description?: string | null;
   address?: string | null;
@@ -15,7 +18,7 @@ export type GymSettingsData = {
   locale?: string | null;
   timezone?: string | null;
   countryCode?: string | null;
-  hours?: Record<string, string> | null;
+  hours?: Record<string, unknown> | null;
   heroEyebrow?: string | null;
   heroHeadline?: string | null;
   heroSubheadline?: string | null;
@@ -32,17 +35,19 @@ export type GymSettingsData = {
   facilityHighlights?: any[] | null;
   heroStats?: any[] | null;
   contactTopics?: any[] | null;
+  /** Published participation terms, or null. `acceptanceRequired` is false for the onboarding placeholder. */
+  participationTerms?: { policyId: string; version: string; text: string; acceptanceRequired: boolean } | null;
 };
 
 export async function getGymSettings(): Promise<GymSettingsData | null> {
   const result = await gymClient.request<{ publicGymSettings: (Omit<GymSettingsData, "heroImageUrl"> & { heroImagePath?: string | null }) | null }>(gql`
     query StorefrontGymSettings {
       publicGymSettings {
-        id name tagline logoIcon brandHue description address phone email currencyCode locale timezone countryCode hours
+        id salesOpen name tagline logoIcon logoColor brandHue description address phone email currencyCode locale timezone countryCode hours
         heroEyebrow heroHeadline heroSubheadline heroImagePath
         heroPrimaryCtaLabel heroPrimaryCtaHref heroSecondaryCtaLabel heroSecondaryCtaHref
         promoBanner footerTagline copyrightName facilityHeadline facilityDescription
-        facilityHighlights heroStats contactTopics
+        facilityHighlights heroStats contactTopics participationTerms
       }
     }
   `);

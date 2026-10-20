@@ -21,6 +21,13 @@ import { MAX_GRAPHQL_LIST_TAKE } from "./graphql-limits";
 
 /** Bounds multiplicative work along nested Keystone list selections. */
 export const MAX_GRAPHQL_LIST_PATH_MULTIPLIER = MAX_GRAPHQL_LIST_TAKE;
+/**
+ * The shared dashboard selects many-relationship columns without `take` inside a paged list
+ * (e.g. `members(take: 50) { bookings { id } }`). Such a nested list is counted as one level of
+ * open fan-out instead of the maximum page size; at most this many may be stacked on one path,
+ * and every explicit `take` still multiplies against the budget.
+ */
+export const MAX_OPEN_NESTED_LISTS_PER_PATH = 2;
 
 function isListOutputType(type: GraphQLOutputType): boolean {
   let current = type;
@@ -64,6 +71,9 @@ export function graphqlListPathMultiplierError(
   const limitError = () => new GraphQLError(
     `Nested GraphQL list selections exceed the maximum multiplier (${maxMultiplier})`,
   );
+  const openListError = () => new GraphQLError(
+    `Give nested lists an explicit take: at most ${MAX_OPEN_NESTED_LISTS_PER_PATH} nested lists without one are allowed on a selection path`,
+  );
   const offsetError = () => new GraphQLError(
     `GraphQL list offset exceeds the maximum (${MAX_GRAPHQL_LIST_SKIP})`,
   );
@@ -73,6 +83,8 @@ export function graphqlListPathMultiplierError(
     selectionSet: NonNullable<typeof operation.selectionSet>,
     multiplier: number,
     fragmentStack: Set<string>,
+    openLists = 0,
+    depth = 0,
   ): GraphQLError | undefined => {
     for (const selection of selectionSet.selections) {
       if (selection.kind === Kind.FIELD) {
@@ -80,6 +92,7 @@ export function graphqlListPathMultiplierError(
         if (!field) continue;
 
         let childMultiplier = multiplier;
+        let childOpenLists = openLists;
         const isListField = isListOutputType(field.type);
         if (isListField) {
           const listArguments = getArgumentValues(field, selection, variables.coerced);
@@ -93,7 +106,10 @@ export function graphqlListPathMultiplierError(
           }
 
           const takeArgument = field.args.find((argument) => argument.name === "take");
-          if (takeArgument) {
+          if (takeArgument && listArguments.take == null && depth > 0) {
+            childOpenLists += 1;
+            if (childOpenLists > MAX_OPEN_NESTED_LISTS_PER_PATH) return openListError();
+          } else if (takeArgument) {
             const requestedTake: unknown = listArguments.take;
             const take = requestedTake == null ? MAX_GRAPHQL_LIST_TAKE : requestedTake;
             if (typeof take !== "number" || !Number.isSafeInteger(take)) return limitError();
@@ -107,14 +123,14 @@ export function graphqlListPathMultiplierError(
         if (selection.selectionSet) {
           const childType = getNamedType(field.type);
           if (isCompositeType(childType)) {
-            const error = inspect(childType, selection.selectionSet, childMultiplier, fragmentStack);
+            const error = inspect(childType, selection.selectionSet, childMultiplier, fragmentStack, childOpenLists, depth + 1);
             if (error) return error;
           }
         }
       } else if (selection.kind === Kind.INLINE_FRAGMENT) {
         const type = selection.typeCondition ? schema.getType(selection.typeCondition.name.value) : parentType;
         if (type && isCompositeType(type)) {
-          const error = inspect(type, selection.selectionSet, multiplier, fragmentStack);
+          const error = inspect(type, selection.selectionSet, multiplier, fragmentStack, openLists, depth);
           if (error) return error;
         }
       } else if (!fragmentStack.has(selection.name.value)) {
@@ -123,7 +139,7 @@ export function graphqlListPathMultiplierError(
         if (fragment && type && isCompositeType(type)) {
           const nextStack = new Set(fragmentStack);
           nextStack.add(selection.name.value);
-          const error = inspect(type, fragment.selectionSet, multiplier, nextStack);
+          const error = inspect(type, fragment.selectionSet, multiplier, nextStack, openLists, depth);
           if (error) return error;
         }
       }

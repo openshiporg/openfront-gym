@@ -33,7 +33,7 @@ export async function getReportsDashboard(_root: unknown, _args: unknown, contex
   const timeZone = resolveGymTimeZone(settings?.timezone, organization?.timezone);
   const reportCurrency = String(settings?.currencyCode || "USD").toUpperCase();
   if (reportCurrency !== "USD" || String(organization?.defaultCurrency || "USD").toUpperCase() !== reportCurrency) {
-    throw new Error("Report currency settings do not match the supported USD contract; reconcile Organization and Gym Settings before reporting.");
+    throw new Error("Report currency settings do not match the supported USD contract; reconcile Organization and Store Settings before reporting.");
   }
   const receiptCurrencies = await prisma.membershipPayment.groupBy({ by: ["currencyCode"], where: { organizationId, status: { in: ["completed", "refunded"] } }, _count: { _all: true } });
   if (receiptCurrencies.some((row: any) => String(row.currencyCode || "").toUpperCase() !== reportCurrency)) {
@@ -98,7 +98,7 @@ export async function getReportsDashboard(_root: unknown, _args: unknown, contex
       where: { ...organizationWhere, date: { gte: now.toISOString() }, isCancelled: { equals: false } },
       take: 12,
       orderBy: [{ date: "asc" }],
-      query: "id date maxCapacity classSchedule { id name maxCapacity } instructor { user { name } } bookings { id status }",
+      query: "id date maxCapacity classSchedule { id name maxCapacity instructor { user { name } } } instructor { user { name } } bookings { id status }",
     }),
     sudo.query.Member.findMany({
       where: { ...organizationWhere, status: { equals: "active" }, user: { membership: { status: { equals: "active" } } } },
@@ -118,7 +118,8 @@ export async function getReportsDashboard(_root: unknown, _args: unknown, contex
     return {
       id: instance.id,
       name: instance.classSchedule?.name ?? "Class",
-      instructorName: instance.instructor?.user?.name ?? "Instructor TBD",
+      // A dated session without its own coach runs with its template's coach (same rule as rosters).
+      instructorName: instance.instructor?.user?.name ?? instance.classSchedule?.instructor?.user?.name ?? "Instructor TBD",
       nextSessionDate: instance.date ?? null,
       maxCapacity,
       confirmedBookings,

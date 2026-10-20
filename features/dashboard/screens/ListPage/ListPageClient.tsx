@@ -28,7 +28,6 @@ import { useSort } from '../../hooks/useSort'
 import { useListItemsQuery } from '../../hooks/useListItems.query'
 import { buildOrderByClause } from '../../lib/buildOrderByClause'
 import { buildWhereClause } from '../../lib/buildWhereClause'
-import { normalizeDashboardListPagination } from '@/lib/list-pagination'
 
 interface ListPageClientProps {
   list: any
@@ -89,10 +88,8 @@ export function ListPageClient({
     return params
   }, [searchParams])
 
-  const pagination = normalizeDashboardListPagination(currentSearchParams.page, currentSearchParams.pageSize, list.pageSize)
-  const currentPage = pagination.page
-  const pageSize = pagination.pageSize
-  const skip = pagination.skip
+  const currentPage = parseInt(currentSearchParams.page || '1', 10) || 1
+  const pageSize = parseInt(currentSearchParams.pageSize || list.pageSize?.toString() || '50', 10)
   const searchString = currentSearchParams.search || ''
 
   // Build query variables from current search params
@@ -116,10 +113,10 @@ export function ListPageClient({
     return {
       where,
       take: pageSize,
-      skip,
+      skip: (currentPage - 1) * pageSize,
       orderBy
     }
-  }, [list, currentSearchParams, pageSize, skip, searchString])
+  }, [list, currentSearchParams, currentPage, pageSize, searchString])
 
   // Build selected fields from URL or defaults
   const querySelectedFields = useMemo(() => {

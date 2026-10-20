@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
+import { gymGraphql as keystoneClient } from "@/features/platform/lib/gym-graphql";
+import { staffActionError } from "@/features/platform/lib/action-error";
 import {
   MARK_CLASS_ATTENDANCE_DOCUMENT,
   PROMOTE_FROM_WAITLIST_DOCUMENT,
@@ -15,18 +16,19 @@ function revalidateRosterViews(classInstanceId: string) {
   revalidatePath("/account/instructor");
 }
 
-export async function getUpcomingRosterSessions() {
-  const response = await keystoneClient<{ rosterSessions: any[] }>(
-    ROSTER_SESSIONS_DOCUMENT,
-  );
-  if (!response.success) throw new Error(response.error);
-  return response.data.rosterSessions;
+export type RosterQuery = { q?: string; state?: string; from?: string; to?: string; sort?: string; skip?: number };
+
+/** One page of the roster queue; a failed load is returned as an error, never as an empty queue. */
+export async function getRosterSessionPage(query: RosterQuery) {
+  const response = await keystoneClient<{ rosterSessions: any }>(ROSTER_SESSIONS_DOCUMENT, query);
+  if (!response.success) return { ok: false as const, error: staffActionError(response, "Rosters could not be loaded. Refresh to try again.") };
+  return { ok: true as const, data: response.data.rosterSessions };
 }
 
-export async function getRosterDetail(classInstanceId: string) {
+export async function getRosterDetail(classInstanceId: string, pages: { confirmedSkip?: number; waitlistSkip?: number; otherSkip?: number } = {}) {
   const response = await keystoneClient<{ rosterDetail: any | null }>(
     ROSTER_DETAIL_DOCUMENT,
-    { classInstanceId },
+    { classInstanceId, confirmedSkip: pages.confirmedSkip ?? 0, waitlistSkip: pages.waitlistSkip ?? 0, otherSkip: pages.otherSkip ?? 0 },
   );
   if (!response.success) throw new Error(response.error);
   return response.data.rosterDetail;

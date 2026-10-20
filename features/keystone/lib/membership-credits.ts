@@ -98,10 +98,31 @@ export async function restoreBookingCredit(tx: any, bookingId: string) {
   if (await tx.membershipCreditEntry.findUnique({ where: { key } })) return false;
   const grant = await tx.membershipCreditGrant.findUnique({ where: { id: debit.grantId } });
   if (!grant) throw new Error("Credit source grant is missing");
-  if (debit.delta < 0) await tx.membershipCreditGrant.update({ where: { id: grant.id }, data: { remaining: { increment: -debit.delta } } });
+  // A grant reset by a plan change can be unlimited or smaller than the debit's
+  // original allowance; a restoration never exceeds the grant's current allowance.
+  const restores = debit.delta < 0 && grant.allowance !== -1;
+  if (restores) await tx.membershipCreditGrant.update({ where: { id: grant.id }, data: { remaining: Math.min(grant.allowance, grant.remaining - debit.delta) } });
   await tx.membershipCreditEntry.create({ data: { key, organizationId: grant.organizationId, grantId: grant.id, bookingId, delta: -debit.delta, kind: "restoration" } });
   await updateCurrentCreditDisplay(tx, grant.membershipId);
-  return debit.delta < 0;
+  return restores;
+}
+
+/**
+ * Operator-reviewed plan change: the current service-month grant takes the new
+ * plan allowance now (-1 is unlimited). Later months grant from the new agreement.
+ * Called inside the caller's member-locked transaction.
+ */
+export async function applyPlanAllowanceToCurrentGrant(tx: any, membership: any, at: Date) {
+  tx = guardKeystonePrismaResults(tx);
+  const allowance = membership.agreementSnapshot?.classCreditsPerMonth ?? membership.tier?.classCreditsPerMonth;
+  if (!Number.isInteger(allowance) || allowance < -1) throw new Error("Membership credit allowance requires review");
+  let period: { periodStart: Date; periodEnd: Date };
+  try { period = monthlyServicePeriod(membership, at); } catch { return null; }
+  const grant = await tx.membershipCreditGrant.findUnique({ where: { key: `${membership.id}:${period.periodStart.toISOString()}` } });
+  if (!grant) return null;
+  const updated = await tx.membershipCreditGrant.update({ where: { id: grant.id }, data: { allowance, remaining: allowance } });
+  await updateCurrentCreditDisplay(tx, membership.id);
+  return updated;
 }
 
 async function updateCurrentCreditDisplay(tx: any, membershipId: string) {

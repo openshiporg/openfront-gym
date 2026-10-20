@@ -11,7 +11,9 @@ import {
   Settings,
   History,
   Sparkles,
-  Building2
+  Building2,
+  Inbox,
+  KeyRound
 } from 'lucide-react';
 
 export interface PlatformNavItem {
@@ -35,6 +37,8 @@ export const platformNavItems: PlatformNavItem[] = [
   { title: 'Contact imports', href: '/platform/imports', color: 'cyan', description: 'Preview contact imports and resolve identity conflicts without changing financial history.', icon: Users, group: 'management' },
   { title: 'Training', href: '/platform/training', color: 'violet', description: 'Reserve personal training, operate prepaid service credits and review coaching assignments.', icon: Dumbbell, group: 'management' },
   { title: 'Operations follow-up', href: '/platform/operations', color: 'amber', description: 'Resolve notices, waiver verification, safety closures, privacy and financial exceptions.', icon: UserCheck, group: 'standalone' },
+  { title: 'Messages', href: '/contact-messages', color: 'blue', description: 'Read storefront contact messages and track each reply.', icon: Inbox, group: 'standalone' },
+  { title: 'Your account', href: '/platform/account', color: 'slate', description: 'Change your own sign-in email and password.', icon: KeyRound, group: 'standalone' },
   // Standalone Items
   {
     title: 'Billing',
@@ -61,7 +65,7 @@ export const platformNavItems: PlatformNavItem[] = [
     group: 'standalone'
   },
   {
-    title: 'Gym Settings',
+    title: 'Store Settings',
     href: '/platform/store-settings',
     color: 'slate',
     description: 'Maintain public identity, locale, timezone, facility copy, and opening hours.',
@@ -98,7 +102,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Membership Plans',
     href: '/platform/membership-plans',
     color: 'emerald',
-    description: 'Configure pricing, enforced class credits and freezes, plus provider mappings.',
+    description: 'Configure paid plans, enforced class credits, freezes, access hours and provider prices.',
     icon: CreditCard,
     group: 'management'
   },
@@ -106,7 +110,7 @@ export const platformNavItems: PlatformNavItem[] = [
     title: 'Instructors',
     href: '/platform/instructors',
     color: 'violet',
-    description: 'Manage coach identity, assignments, descriptive specialties, and account claims.',
+    description: 'Maintain coach profiles, specialties, qualifications, and active status.',
     icon: Dumbbell,
     group: 'management'
   },
@@ -139,7 +143,12 @@ export const platformNavGroups: PlatformNavGroup[] = [
   }
 ];
 
+/**
+ * The shared Sidebar calls this without a user, as in E-commerce: every platform page is listed
+ * and each page enforces its own permissions server-side. A caller with a user gets role filtering.
+ */
 export function getPlatformNavItemsWithBasePath(basePath: string, user?: any) {
+  if (!user) return platformNavItems.map(item => ({ ...item, href: `${basePath}${item.href}` }));
   const isInstructor = user?.role?.isInstructor;
   const canManageAll = user?.role?.canManageAllRecords;
   const canCheckIn = canManageAll || user?.role?.canManageCheckIns || user?.role?.canManageFacilities;
@@ -150,6 +159,7 @@ export function getPlatformNavItemsWithBasePath(basePath: string, user?: any) {
       if (item.title === 'Retail' && !canManageAll) return false;
       if (item.title === 'Contact imports' && !canManageAll && !user?.role?.canManagePeople) return false;
       if (item.title === 'Operations follow-up' && !canManageAll) return false;
+      if (item.title === 'Messages' && !canManageAll && !user?.role?.canManageCommunications) return false;
       if (item.title === 'Check-in' && !canCheckIn) return false;
       // Filter logic
       if (isInstructor && !canManageAll) {

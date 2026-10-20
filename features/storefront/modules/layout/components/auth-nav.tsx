@@ -1,16 +1,11 @@
 "use client";
 
+import { useRef } from "react";
 import Link from "next/link";
-import { Calendar, ChevronDown, GraduationCap, LayoutDashboard, LogOut, User } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { CalendarDays, ChevronDown, GraduationCap, LayoutDashboard, LogOut, QrCode, UserRound } from "lucide-react";
 import { signOut } from "@/features/storefront/lib/data/user";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { initials, firstName } from "@/features/storefront/lib/presentation";
 
 type AuthNavProps = {
   user?: {
@@ -22,91 +17,53 @@ type AuthNavProps = {
   joinCta?: { label: string; href: string } | null;
 };
 
+/** Desktop header account controls (from 1080px). */
 export default function AuthNav({ user, joinCta }: AuthNavProps) {
+  const signOutForm = useRef<HTMLFormElement>(null);
+
   if (!user) {
     return (
-      <div className="sf-auth-nav">
-        <Link
-          href="/account"
-          className="sf-nav-link hidden sm:inline-flex"
-        >
-          Sign in
-        </Link>
-        {joinCta ? (
-          <Link href={joinCta.href} className="sf-header-cta">
-            {joinCta.label}
-          </Link>
-        ) : null}
-      </div>
+      <>
+        <Link href="/account" className="sf-btn sf-desktop-only" data-variant="ghost" data-size="sm">Sign in</Link>
+        {joinCta ? <Link href={joinCta.href} className="sf-btn sf-desktop-only" data-size="sm">{joinCta.label}</Link> : null}
+      </>
     );
   }
 
-  const initials = user.name
-    .split(" ")
-    .map((name) => name[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
   return (
-    <div className="sf-auth-nav">
-      <Link href="/schedule" className="sf-btn-secondary hidden px-4 lg:inline-flex">
-        Book class
-      </Link>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 transition hover:text-[var(--sf-accent)]">
-            <span className="flex h-9 w-9 items-center justify-center border border-[var(--sf-rule)] bg-[var(--sf-paper-2)] text-xs font-semibold">
-              {initials}
-            </span>
-            <span className="hidden text-sm font-medium md:block">{user.name.split(" ")[0]}</span>
-            <ChevronDown className="h-4 w-4 text-[var(--sf-ink-muted)]" />
+    <>
+      <Link href="/schedule" className="sf-btn sf-desktop-only" data-size="sm">Book a class</Link>
+      <form ref={signOutForm} action={signOut} hidden />
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <button type="button" className="sf-avatar-btn sf-desktop-only" aria-label={`Account menu for ${user.name}`}>
+            <span className="sf-avatar" aria-hidden="true">{initials(user.name)}</span>
+            <span>{firstName(user.name, "Account")}</span>
+            <ChevronDown aria-hidden="true" />
           </button>
-        </DropdownMenuTrigger>
-
-        <DropdownMenuContent align="end" className="sf-floating-surface w-64 rounded-[2px] border-[var(--sf-border)] bg-[var(--sf-surface)] text-[var(--sf-foreground)] shadow-none">
-          <DropdownMenuLabel className="font-normal">
-            <p className="font-semibold">{user.name}</p>
-            <p className="mt-1 text-xs text-[var(--sf-ink-muted)]">{user.email}</p>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem asChild>
-            <Link href="/account">
-              <User className="mr-2 h-4 w-4" /> My account
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/account/bookings">
-              <Calendar className="mr-2 h-4 w-4" /> My bookings
-            </Link>
-          </DropdownMenuItem>
-          {user.role?.isInstructor ? (
-            <DropdownMenuItem asChild>
-              <Link href="/account/instructor">
-                <GraduationCap className="mr-2 h-4 w-4" /> Instructor console
-              </Link>
-            </DropdownMenuItem>
-          ) : null}
-          {user.role?.canAccessDashboard ? (
-            <DropdownMenuItem asChild>
-              <Link href="/dashboard">
-                <LayoutDashboard className="mr-2 h-4 w-4" /> Admin dashboard
-              </Link>
-            </DropdownMenuItem>
-          ) : null}
-
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <form action={signOut} className="w-full">
-              <button type="submit" className="flex w-full items-center text-sm text-[var(--sf-accent)]">
-                <LogOut className="mr-2 h-4 w-4" /> Sign out
-              </button>
-            </form>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content align="end" sideOffset={10} className="sf-portal sf-menu">
+            <div className="sf-menu-head">
+              <strong>{user.name}</strong>
+              <span>{user.email}</span>
+            </div>
+            <DropdownMenu.Item asChild className="sf-menu-item"><Link href="/account"><UserRound aria-hidden="true" />Account</Link></DropdownMenu.Item>
+            <DropdownMenu.Item asChild className="sf-menu-item"><Link href="/account/bookings"><CalendarDays aria-hidden="true" />Bookings</Link></DropdownMenu.Item>
+            <DropdownMenu.Item asChild className="sf-menu-item"><Link href="/member/check-in-code"><QrCode aria-hidden="true" />Check-in code</Link></DropdownMenu.Item>
+            {user.role?.isInstructor ? (
+              <DropdownMenu.Item asChild className="sf-menu-item"><Link href="/account/instructor"><GraduationCap aria-hidden="true" />Coach workspace</Link></DropdownMenu.Item>
+            ) : null}
+            {user.role?.canAccessDashboard ? (
+              <DropdownMenu.Item asChild className="sf-menu-item"><Link href="/dashboard"><LayoutDashboard aria-hidden="true" />Dashboard</Link></DropdownMenu.Item>
+            ) : null}
+            <DropdownMenu.Separator className="sf-menu-sep" />
+            <DropdownMenu.Item className="sf-menu-item" onSelect={() => signOutForm.current?.requestSubmit()}>
+              <LogOut aria-hidden="true" />Sign out
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </>
   );
 }

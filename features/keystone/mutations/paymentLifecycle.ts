@@ -2,34 +2,17 @@ import crypto from "node:crypto";
 import type { Context } from ".keystone/types";
 import { initiateMembershipCheckoutForUser } from "../../integrations/payment/membership-checkout-core";
 import { provisionMembershipFromCheckoutSession } from "../../integrations/payment/provision-membership";
+import { replayDeferredInvoiceEvents } from "./paymentWebhook";
 import { getAdapterForProvider } from "../utils/paymentProviderAdapter";
 import { requirePrismaAffectedCount, withKeystonePrismaTransaction } from "../lib/prisma-result";
-import { assertExactProviderRefund, assertSameRefundReservation, providerRefundOperationKey, readRefundReservation, type RefundReservation } from "../lib/refund-reservation";
+import { assertExactProviderRefund, assertSameRefundReservation, providerRefundOperationKey, readRefundReservation, reconcileProviderRefundCumulative, type RefundReservation } from "../lib/refund-reservation";
+export { reconcileProviderRefundCumulative };
 
 const PROVIDER_CODE = "pp_stripe";
 
 export async function acquireRefundAdvisoryLock(transaction: any, paymentId: string) {
   const lockResult = await transaction.$queryRaw`SELECT true AS locked FROM (SELECT pg_advisory_xact_lock(hashtextextended(${`refund:${paymentId}`}, 0))) AS acquired`;
   if (lockResult instanceof Error) throw lockResult;
-}
-
-export function reconcileProviderRefundCumulative(
-  paymentAmount: number,
-  currentRefundAmount: number | null,
-  startingRefundAmount: number,
-  attemptAmount: number,
-) {
-  const intendedCumulativeRefund = startingRefundAmount + attemptAmount;
-  const totalRefunded = Math.max(currentRefundAmount ?? 0, intendedCumulativeRefund);
-  if (
-    ![paymentAmount, currentRefundAmount ?? 0, startingRefundAmount, attemptAmount, totalRefunded].every(Number.isInteger) ||
-    startingRefundAmount < 0 ||
-    attemptAmount <= 0 ||
-    totalRefunded > paymentAmount
-  ) {
-    throw new Error("Cumulative refund exceeds the payment total");
-  }
-  return totalRefunded;
 }
 
 function requireSession(context: Context) {
@@ -81,7 +64,9 @@ export async function completeMembershipCheckout(
     query: "id",
   });
   if (!owned[0]) throw new Error("Checkout session was not found for this account");
-  return provisionMembershipFromCheckoutSession(normalizedSessionId, organizationId, context);
+  const provisioned = await provisionMembershipFromCheckoutSession(normalizedSessionId, organizationId, context);
+  await replayDeferredInvoiceEvents(context, organizationId, provisioned.subscriptionId);
+  return provisioned;
 }
 
 export async function refundGymPayment(
@@ -99,7 +84,8 @@ export async function refundGymPayment(
   if (normalizedReason.length > 500) throw new Error("Refund reason must be 500 characters or fewer");
   if (requestId.length < 12 || requestId.length > 200) throw new Error("A unique refund idempotency key is required");
   const requestKey = `gym-refund:${paymentId}:${requestId}`;
-  const { provider, adapter } = await getAdapterForProvider(context, PROVIDER_CODE, organizationId);
+  // Refunds reconcile an existing payment, so they stay available when new checkout is off.
+  const { provider, adapter } = await getAdapterForProvider(context, PROVIDER_CODE, organizationId, "reconcile");
   const deadline = Date.now() + 30_000;
   let claim: any;
 

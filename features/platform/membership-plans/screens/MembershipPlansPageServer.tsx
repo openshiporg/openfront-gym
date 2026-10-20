@@ -1,33 +1,14 @@
-import { requireDashboardManager } from '@/features/dashboard/lib/current-user'
-import { keystoneClient } from '@/features/dashboard/lib/keystoneClient'
-import { MembershipPlansPage } from './MembershipPlansPage'
+import { requireDashboardManager } from '@/features/platform/lib/current-user'
+import { ListPage } from '@/features/dashboard/screens/ListPage'
 
-export async function MembershipPlansPageServer() {
+/**
+ * Membership plans use the shared list and item workflow: server search, filters, sort, field selection and
+ * pagination, stable item and create URLs, and the shared document and relationship editors that
+ * save only changed fields. Model access, hooks and validation stay authoritative.
+ */
+export async function MembershipPlansPageServer({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   await requireDashboardManager()
-  const response = await keystoneClient<{
-    membershipTiers: any[];
-    gymSettings: Array<{ currencyCode?: string | null }>;
-    paymentProviders: Array<{ isInstalled: boolean }>;
-  }>(`
-    query MembershipPlanWorkspace {
-      membershipTiers(orderBy: [{ monthlyPrice: asc }], take: 200) {
-        id name description { document } monthlyPrice annualPrice classCreditsPerMonth
-        accessHours guestPasses personalTrainingSessions freezeAllowed contractLength
-        billingInterval features maxClassBookings hasGuestPrivileges
-        stripeMonthlyPriceId stripeAnnualPriceId stripeProductId
-      }
-      gymSettings: gymSettingsItems(take: 1) { currencyCode }
-      paymentProviders(where: { code: { equals: "pp_stripe" } }, take: 1) { isInstalled }
-    }
-  `)
-  if (!response.success) throw new Error(response.error)
-  return (
-    <MembershipPlansPage
-      initialPlans={response.data.membershipTiers}
-      currencyCode={response.data.gymSettings[0]?.currencyCode || 'USD'}
-      stripeProviderInstalled={Boolean(response.data.paymentProviders[0]?.isInstalled)}
-    />
-  )
+  return <ListPage params={Promise.resolve({ listKey: 'membership-tiers' })} searchParams={searchParams} />
 }
 
 export default MembershipPlansPageServer

@@ -1,9 +1,11 @@
+import { qualificationSummary } from "@/features/keystone/mutations/trainerQualifications";
 import Link from "next/link";
+import type { LucideIcon } from "lucide-react";
 import {
   AlertCircle,
   ArrowUpRight,
   CalendarDays,
-  Clock3,
+  CalendarX2,
   GraduationCap,
   ShieldAlert,
   Users,
@@ -14,6 +16,10 @@ import { gymClient } from "@/features/storefront/lib/config";
 import { getAuthHeaders } from "@/features/storefront/lib/data/cookies";
 import { instructorTools } from "@/features/storefront/lib/instructor-tools";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
+import { formatOccurrenceDate, formatOccurrenceTime } from "@/features/storefront/lib/class-occurrence";
+import { humanizeLabel, isClubToday } from "@/features/storefront/lib/presentation";
+import { SessionState, SessionTime } from "@/features/storefront/modules/common/training";
+import { EmptyState } from "@/features/storefront/modules/common/ui";
 
 type BookingSummary = {
   id: string;
@@ -66,17 +72,6 @@ async function getInstructorProfile(_userId: string, _organizationId: string): P
 
 const WEEK_DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
-function formatDateTime(value: string, timeZone: string) {
-  return new Date(value).toLocaleString("en-US", {
-    timeZone,
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function getSessionStatus(sessionDate: string) {
   const diffMs = new Date(sessionDate).getTime() - Date.now();
 
@@ -84,6 +79,12 @@ function getSessionStatus(sessionDate: string) {
   if (diffMs <= 60 * 60 * 1000) return "Starts within 1 hour";
   if (diffMs <= 3 * 60 * 60 * 1000) return "Starts this block";
   return "Upcoming";
+}
+
+function statusTone(label: string) {
+  if (label === "Started") return "neutral";
+  if (label === "Upcoming") return "ok";
+  return "accent";
 }
 
 function prepareSessions(instructor: InstructorProfile): PreparedSession[] {
@@ -125,13 +126,25 @@ function prepareSessions(instructor: InstructorProfile): PreparedSession[] {
     });
 }
 
-function AccountState({ title, message }: { title: string; message: string }) {
+/** Roster fill for a coach: the published capacity state, or the booked count when no capacity is set. */
+function RosterFill({ session }: { session: PreparedSession }) {
+  if (session.capacity > 0) {
+    return <SessionState spots={session.openSpots} capacity={session.capacity} waitlist={session.waitlistCount} />;
+  }
+  return <span className="sf-state" data-tone="neutral">{session.confirmedBookings} booked</span>;
+}
+
+function AccountState({ title, icon: Icon = AlertCircle }: { title: string; icon?: LucideIcon }) {
   return (
-    <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-14 text-center">
-      <AlertCircle aria-hidden="true" className="mx-auto h-8 w-8 text-[var(--color-ink-faint)]" />
-      <h1 className="mt-4 text-xl font-semibold text-[var(--color-ink)]">{title}</h1>
-      <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[var(--color-ink-muted)]">{message}</p>
-    </section>
+    <>
+      <h1 className="sf-h2">Coach workspace</h1>
+      <EmptyState
+        headingLevel={2}
+        icon={<Icon aria-hidden="true" />}
+        title={title}
+        action={<div className="sf-actions"><Link href="/account" className="sf-btn" data-variant="secondary" data-size="sm">Account</Link><Link href="/contact" className="sf-btn" data-variant="ghost" data-size="sm">Contact</Link></div>}
+      />
+    </>
   );
 }
 
@@ -140,57 +153,41 @@ export async function InstructorAccountPage() {
   const timeZone = config?.timezone || "UTC";
 
   if (!user) {
-    return <AccountState title="Sign in required" message="Sign in to access your instructor workspace." />;
+    return <AccountState title="Sign in required" />;
   }
 
   if (!user.role?.isInstructor) {
-    return (
-      <AccountState
-        title="Instructor access required"
-        message="This account is not configured as an instructor. Contact the front desk if your coaching access is missing."
-      />
-    );
+    return <AccountState icon={ShieldAlert} title="This account isn’t set up as a coach" />;
   }
 
   let instructor: InstructorProfile | null;
   try {
     if (!user.organization?.id) {
-      return <AccountState title="Organization required" message="Your account is not assigned to an organization." />;
+      return <AccountState title="This account has no organization" />;
     }
     instructor = await getInstructorProfile(user.id, user.organization.id);
   } catch (error) {
     console.error("Instructor account data could not be loaded:", error);
-    return (
-      <AccountState
-        title="Instructor workspace unavailable"
-        message="Teaching data could not be loaded right now. Try again shortly or contact the front desk."
-      />
-    );
+    return <AccountState title="Teaching data couldn’t be loaded" />;
   }
 
   if (!instructor) {
-    return (
-      <AccountState
-        title="No instructor profile found"
-        message="Ask an operator to link this account to an active instructor profile."
-      />
-    );
+    return <AccountState icon={GraduationCap} title="No coach profile is linked to this account" />;
   }
 
   const specialties = Array.isArray(instructor.specialties) ? instructor.specialties.map(String) : [];
-  const certifications = Array.isArray(instructor.certifications) ? instructor.certifications.map(String) : [];
+  // The coach's own qualifications by name and current standing; evidence details stay private.
+  const certifications = (Array.isArray(instructor.certifications) ? instructor.certifications : [])
+    .map((entry) => qualificationSummary(entry))
+    .filter((entry): entry is NonNullable<ReturnType<typeof qualificationSummary>> => Boolean(entry))
+    .map((entry) => entry.status === "listed" || entry.status === "current" ? entry.name : `${entry.name} (${entry.status})`);
   const schedules = instructor.classSchedules ?? [];
   const upcomingInstances = prepareSessions(instructor);
-  const totalBooked = upcomingInstances.reduce((sum, session) => sum + session.confirmedBookings, 0);
-  const totalWaitlist = upcomingInstances.reduce((sum, session) => sum + session.waitlistCount, 0);
-  const sessionsStartingSoon = upcomingInstances.filter((session) => {
-    // This server-rendered account view intentionally evaluates the current instant.
-    const diff = new Date(session.date).getTime() - Date.now();
-    return diff >= 0 && diff <= 90 * 60 * 1000;
-  }).length;
   const weeklySchedule = WEEK_DAYS.map((day) => ({
     day,
-    items: schedules.filter((schedule) => schedule.dayOfWeek === day),
+    items: schedules
+      .filter((schedule) => schedule.dayOfWeek === day)
+      .sort((left, right) => left.startTime.localeCompare(right.startTime)),
   }));
   const nextSession = upcomingInstances[0] ?? null;
   const atRiskSessions = upcomingInstances
@@ -205,215 +202,174 @@ export async function InstructorAccountPage() {
     graduation: GraduationCap,
   };
 
-  return (
-    <div className="space-y-12">
-      <header className="max-w-3xl">
-        <p className="sf-eyebrow mb-3">Coach workspace</p>
-        <h1 className="sf-display text-[var(--text-display-s)]">Your teaching day</h1>
-        <p className="mt-4 sf-lead">
-          Start with your next session, review the roster and prepare for the members joining you.
-        </p>
-      </header>
+  // Group the dated sessions by club-local day for the teaching calendar.
+  const days: Array<{ key: string; sessions: PreparedSession[] }> = [];
+  for (const session of upcomingInstances) {
+    const key = formatOccurrenceDate(session.date, timeZone);
+    const group = days.find((entry) => entry.key === key);
+    if (group) group.sessions.push(session);
+    else days.push({ key, sessions: [session] });
+  }
 
-      <nav className="sf-segmented" aria-label="Teaching sections"><a href="#next-teaching-session">Next session</a><a href="#upcoming-calendar-heading">Teaching calendar</a><a href="#teaching-tools">Your tools</a><a href="#coach-profile">Coach profile</a></nav>
-      <section aria-label="Instructor summary" className="grid gap-px border border-[var(--color-rule)] bg-[var(--color-rule)] sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          ["Upcoming sessions", upcomingInstances.length],
-          ["Booked members", totalBooked],
-          ["Waitlisted members", totalWaitlist],
-          ["Starting soon", sessionsStartingSoon],
-        ].map(([label, value]) => (
-          <div key={label} className="bg-[var(--color-surface)] p-5 sm:p-6">
-            <p className="sf-label">{label}</p>
-            <p className="sf-display mt-3 text-4xl text-[var(--color-ink)]">{value}</p>
-          </div>
-        ))}
+  return (
+    <>
+      <div className="sf-row" data-between>
+        <h1 className="sf-h2">Coach workspace</h1>
+        <span className="sf-meta">Times in {timeZone}</span>
+      </div>
+
+      <section className="sf-next sf-on-night" aria-labelledby="next-teaching-title">
+        <p className="sf-label">Next session</p>
+        {nextSession ? (
+          <>
+            <div className="sf-titleline">
+              <h2 id="next-teaching-title" className="sf-next-title">{nextSession.classSchedule?.name ?? "Class session"}</h2>
+              <span className="sf-state" data-tone={statusTone(nextSession.statusLabel)}>{nextSession.statusLabel}</span>
+            </div>
+            <div className="sf-next-when">
+              <time dateTime={nextSession.date}>{formatOccurrenceTime(nextSession.date, timeZone)}</time>
+              <span>{formatOccurrenceDate(nextSession.date, timeZone)}</span>
+            </div>
+            <dl className="sf-facts" data-plain>
+              <div><dt>Confirmed</dt><dd className="sf-num">{nextSession.confirmedBookings}</dd></div>
+              <div><dt>Open spaces</dt><dd className="sf-num">{nextSession.capacity > 0 ? nextSession.openSpots : "Capacity not set"}</dd></div>
+              <div><dt>Waitlist</dt><dd className="sf-num">{nextSession.waitlistCount}</dd></div>
+            </dl>
+            {canOpenOperations ? (
+              <div className="sf-actions">
+                <Link href={`/dashboard/platform/rosters/${nextSession.id}`} className="sf-btn" data-variant="light">
+                  Open roster<ArrowUpRight aria-hidden="true" />
+                </Link>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <h2 id="next-teaching-title" className="sf-next-title">No upcoming sessions</h2>
+        )}
       </section>
 
-      <div className="grid gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-        <div className="space-y-10">
-          <section id="next-teaching-session" className="sf-next-session">
-            <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="sf-eyebrow">Next roster</p>
-                <h2 className="sf-display mt-3 text-3xl sm:text-4xl">
-                  {nextSession?.classSchedule?.name ?? "No upcoming session"}
-                </h2>
-                <p className="mt-3 text-sm text-[var(--color-ink-muted)]">
-                  {nextSession
-                    ? `${formatDateTime(nextSession.date, timeZone)} · ${nextSession.statusLabel}`
-                    : "Your next scheduled class will appear here."}
-                </p>
-              </div>
-              {nextSession && canOpenOperations ? (
-                <Link href={`/dashboard/platform/rosters/${nextSession.id}`} className="sf-btn-secondary inline-flex shrink-0">
-                  Open next roster
-                </Link>
-              ) : null}
-            </div>
+      <div className="sf-detail">
+        <section aria-labelledby="upcoming-calendar-heading" className="sf-stack">
+          <div className="sf-row" data-between>
+            <h2 id="upcoming-calendar-heading" className="sf-h3">Teaching calendar</h2>
+            {canOpenOperations ? <Link href="/dashboard/platform/scheduling" className="sf-link" data-size="sm">Scheduling<ArrowUpRight aria-hidden="true" /></Link> : null}
+          </div>
 
-            {nextSession ? (
-              <dl className="mt-8 grid gap-px border border-[var(--color-rule)] bg-[var(--color-rule)] sm:grid-cols-3">
-                {[
-                  ["Confirmed", nextSession.confirmedBookings],
-                  ["Open spots", nextSession.openSpots],
-                  ["Waitlist", nextSession.waitlistCount],
-                ].map(([label, value]) => (
-                  <div key={label} className="bg-[var(--color-paper)] p-4">
-                    <dt className="sf-label">{label}</dt>
-                    <dd className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            ) : null}
-          </section>
-
-          <section aria-labelledby="upcoming-calendar-heading">
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <p className="sf-eyebrow mb-2">Teaching calendar</p>
-                <h2 id="upcoming-calendar-heading" className="text-2xl font-semibold">Upcoming sessions</h2>
-              </div>
-              {canOpenOperations ? (
-                <Link href="/dashboard/platform/scheduling" className="text-sm font-medium text-[var(--color-accent)] hover:underline">
-                  Scheduling center
-                </Link>
-              ) : null}
-            </div>
-
-            {upcomingInstances.length === 0 ? (
-              <div className="border border-[var(--color-rule)] bg-[var(--color-surface)] px-6 py-14 text-center text-sm text-[var(--color-ink-muted)]">
-                No upcoming sessions are assigned to this instructor profile.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {upcomingInstances.map((session) => (
-                  <article key={session.id} className="grid gap-5 border border-[var(--color-rule)] bg-[var(--color-surface)] p-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                    <div>
-                      <p className="sf-eyebrow">{session.statusLabel}</p>
-                      <h3 className="mt-2 text-xl font-semibold">{session.classSchedule?.name ?? "Class session"}</h3>
-                      <p className="mt-2 text-sm text-[var(--color-ink-muted)]">{formatDateTime(session.date, timeZone)}</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-5 md:justify-end">
-                      <div>
-                        <p className="sf-label">Occupancy</p>
-                        <p className="mt-1 text-lg font-semibold">{session.confirmedBookings}/{session.capacity}</p>
+          {upcomingInstances.length === 0 ? (
+            <EmptyState icon={<CalendarX2 aria-hidden="true" />} title="No sessions assigned" />
+          ) : (
+            days.map(({ key, sessions }) => (
+              <div key={key} className="sf-day">
+                <div className="sf-day-head"><h3>{key}</h3><span>{sessions.length} {sessions.length === 1 ? "session" : "sessions"}</span></div>
+                <div className="sf-sessions">
+                  {sessions.map((session) => (
+                    <article key={session.id} className="sf-session">
+                      <div className="sf-session-time">
+                        <SessionTime value={formatOccurrenceTime(session.date, timeZone)} dateTime={session.date} />
+                        {session.classSchedule ? <span>{session.classSchedule.startTime}–{session.classSchedule.endTime}</span> : null}
                       </div>
-                      <div>
-                        <p className="sf-label">Waitlist</p>
-                        <p className="mt-1 text-lg font-semibold">{session.waitlistCount}</p>
+                      <div className="sf-session-body">
+                        <div className="sf-titleline">
+                          <h3>{session.classSchedule?.name ?? "Class session"}</h3>
+                          <RosterFill session={session} />
+                        </div>
+                        <div className="sf-session-meta">
+                          <span>{session.confirmedBookings} confirmed</span>
+                          <span>{session.waitlistCount} waitlisted</span>
+                          <span>{session.statusLabel}</span>
+                        </div>
                       </div>
-                      {canOpenOperations ? (
-                        <Link href={`/dashboard/platform/rosters/${session.id}`} className="sf-btn-secondary inline-flex px-4 py-2 text-xs">
-                          View roster
-                        </Link>
-                      ) : null}
-                    </div>
-                  </article>
-                ))}
+                      <div className="sf-session-action">
+                        {canOpenOperations ? (
+                          <Link href={`/dashboard/platform/rosters/${session.id}`} className="sf-btn" data-variant="secondary" data-size="sm">
+                            Roster<span className="sr-only"> for {session.classSchedule?.name ?? "class session"}</span>
+                          </Link>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
               </div>
-            )}
-          </section>
-        </div>
+            ))
+          )}
+        </section>
 
-        <aside className="space-y-6">
-          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
-            <div className="flex items-center gap-2">
-              <Users aria-hidden="true" className="h-4 w-4 text-[var(--color-accent)]" />
-              <h2 id="teaching-tools" className="text-xl font-semibold">Teaching tools</h2>
-            </div>
+        <aside className="sf-stack">
+          <section className="sf-card" aria-labelledby="teaching-tools">
+            <h2 id="teaching-tools" className="sf-h3">Tools</h2>
             {teachingTools.length ? (
-              <div className="mt-5 space-y-2">
+              <div className="sf-stack" data-gap="sm">
                 {teachingTools.map((tool) => {
                   const ToolIcon = teachingToolIcons[tool.icon];
                   return (
-                    <Link key={tool.href} href={tool.href} className="flex items-center justify-between border-b border-[var(--color-rule)] py-3 text-sm font-medium last:border-b-0 hover:text-[var(--color-accent)]">
-                      <span>{tool.label}</span>
-                      <ToolIcon aria-hidden="true" className="h-4 w-4" />
+                    <Link key={tool.href} href={tool.href} className="sf-btn" data-variant="secondary" data-block style={{ justifyContent: "flex-start" }}>
+                      <ToolIcon aria-hidden="true" />
+                      {tool.label}
                     </Link>
                   );
                 })}
               </div>
             ) : (
-              <p className="mt-4 text-sm leading-6 text-[var(--color-ink-muted)]">
-                Roster and scheduling tools are not enabled for this role. Contact an operator if operational access is required.
-              </p>
+              <p className="sf-text-2">No roster or scheduling access on this role.</p>
             )}
           </section>
 
-          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
-            <div className="flex items-center gap-2">
-              <ShieldAlert aria-hidden="true" className="h-4 w-4 text-[var(--color-accent)]" />
-              <h2 className="text-xl font-semibold">Session watchlist</h2>
+          <section className="sf-card" aria-labelledby="watchlist-heading">
+            <div className="sf-titleline">
+              <h2 id="watchlist-heading" className="sf-h3">Full or waitlisted</h2>
+              {atRiskSessions.length ? <span className="sf-state" data-tone="low">{atRiskSessions.length}</span> : null}
             </div>
             {atRiskSessions.length === 0 ? (
-              <p className="mt-4 text-sm leading-6 text-[var(--color-ink-muted)]">No full sessions or active waitlists need attention.</p>
+              <p className="sf-text-2">None</p>
             ) : (
-              <div className="mt-5 space-y-4">
+              <ul className="sf-bookings">
                 {atRiskSessions.map((session) => (
-                  <article key={session.id} className="border-t border-[var(--color-rule)] pt-4 first:border-t-0 first:pt-0">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-semibold">{session.classSchedule?.name ?? "Class session"}</h3>
-                        <p className="mt-1 text-xs text-[var(--color-ink-muted)]">{formatDateTime(session.date, timeZone)}</p>
-                      </div>
-                      <Clock3 aria-hidden="true" className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" />
-                    </div>
-                    <p className="mt-3 text-sm text-[var(--color-ink-muted)]">
-                      {session.confirmedBookings}/{session.capacity} confirmed · {session.waitlistCount} waitlisted
-                    </p>
+                  <li key={session.id} className="sf-stack" data-gap="sm" style={{ borderBottom: "1px solid var(--sf-line)", paddingBlock: 12 }}>
+                    <strong>{session.classSchedule?.name ?? "Class session"}</strong>
+                    <span className="sf-meta">{formatOccurrenceDate(session.date, timeZone)} · {formatOccurrenceTime(session.date, timeZone)}</span>
+                    <span className="sf-meta">{session.confirmedBookings}/{session.capacity} confirmed · {session.waitlistCount} waitlisted</span>
                     {canOpenOperations ? (
-                      <Link href={`/dashboard/platform/rosters/${session.id}`} className="mt-3 inline-flex text-sm font-medium text-[var(--color-accent)] hover:underline">
-                        Open roster
+                      <Link href={`/dashboard/platform/rosters/${session.id}`} className="sf-link" data-size="sm">
+                        Open roster<span className="sr-only"> for {session.classSchedule?.name ?? "class session"}</span><ArrowUpRight aria-hidden="true" />
                       </Link>
                     ) : null}
-                  </article>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </section>
 
-          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
-            <h2 className="text-xl font-semibold">Recurring teaching week</h2>
-            <div className="mt-5 space-y-4">
+          <section className="sf-card" aria-labelledby="teaching-week-heading">
+            <h2 id="teaching-week-heading" className="sf-h3">Weekly classes</h2>
+            <dl className="sf-hours">
               {weeklySchedule.map(({ day, items }) => (
-                <div key={day} className="border-t border-[var(--color-rule)] pt-4 first:border-t-0 first:pt-0">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="sf-label capitalize">{day}</h3>
-                    <span className="text-xs text-[var(--color-ink-muted)]">{items.length} {items.length === 1 ? "session" : "sessions"}</span>
-                  </div>
-                  <div className="mt-2 space-y-2">
+                <div key={day} data-today={isClubToday(day, timeZone) || undefined}>
+                  <dt>{day.charAt(0).toUpperCase() + day.slice(1, 3)}</dt>
+                  <dd>
                     {items.length === 0 ? (
-                      <p className="text-sm text-[var(--color-ink-faint)]">No recurring class</p>
+                      <span className="sf-meta">None</span>
                     ) : (
                       items.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between gap-4 text-sm">
-                          <span className="font-medium">{item.name}</span>
-                          <span className="shrink-0 text-[var(--color-ink-muted)]">{item.startTime}–{item.endTime}</span>
-                        </div>
+                        <span key={item.id} style={{ display: "block" }}>
+                          <b className="sf-num">{item.startTime}–{item.endTime}</b> {item.name}
+                        </span>
                       ))
                     )}
-                  </div>
+                  </dd>
                 </div>
               ))}
-            </div>
+            </dl>
           </section>
 
-          <section className="border border-[var(--color-rule)] bg-[var(--color-surface)] p-6">
-            <h2 id="coach-profile" className="text-xl font-semibold">Coach profile</h2>
-            <dl className="mt-5 space-y-5 text-sm">
-              <div>
-                <dt className="sf-label">Specialties</dt>
-                <dd className="mt-2 leading-6 text-[var(--color-ink)]">{specialties.join(" · ") || "Not listed"}</dd>
-              </div>
-              <div>
-                <dt className="sf-label">Certifications</dt>
-                <dd className="mt-2 leading-6 text-[var(--color-ink)]">{certifications.join(" · ") || "Not listed"}</dd>
-              </div>
+          <section className="sf-card" aria-labelledby="coach-profile">
+            <h2 id="coach-profile" className="sf-h3">Profile</h2>
+            <dl className="sf-facts" data-plain>
+              <div><dt>Specialties</dt><dd>{specialties.length ? specialties.map(humanizeLabel).join(", ") : "None listed"}</dd></div>
+              <div><dt>Certifications</dt><dd>{certifications.length ? certifications.join(", ") : "None listed"}</dd></div>
             </dl>
           </section>
         </aside>
       </div>
-    </div>
+    </>
   );
 }

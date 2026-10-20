@@ -1,7 +1,9 @@
 import { enqueueOperationalNotice } from "../lib/operational-notices";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { lockTransactionKey } from "./classCapacity";
+import { lockActiveOrganization } from "../lib/current-actor";
 import { hashTrainerAppointmentRequest } from "./trainerAppointmentEvidence";
+import { confirmedIntentResult, recordIntentResult } from "./staffIntents";
 import { assertTrainingActor, assertTrainingTenant, trainingInteger, trainingText, unusedPackageRefundAmount, type TrainingActor } from "./trainingPolicy";
 
 function throwOnKeystonePrismaError<T>(result: T): T {
@@ -9,10 +11,9 @@ function throwOnKeystonePrismaError<T>(result: T): T {
   return result;
 }
 
-export async function recordSettledTrainingPackage(prisma: any, input: any, actor: TrainingActor, now = new Date()) {
-  prisma = guardKeystonePrismaResults(prisma);
-  assertTrainingActor(actor);
-  if (!actor.canManageAppointments) throw new Error("Training management permission required");
+type PackageRecorder = { userId: string; organizationId: string };
+
+function settledPackageTerms(input: any, now: Date) {
   const purchaseReference = trainingText(input.purchaseReference, "External settled payment reference", 200);
   const serviceName = trainingText(input.serviceName, "Service name", 200);
   const amount = trainingInteger(input.amount, "Paid amount in cents", 1, 100_000_000);
@@ -21,22 +22,55 @@ export async function recordSettledTrainingPackage(prisma: any, input: any, acto
   const expiresAt = new Date(input.expiresAt), purchasedAt = new Date(input.purchasedAt);
   if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= now || !Number.isFinite(purchasedAt.getTime()) || purchasedAt > now || expiresAt <= purchasedAt) throw new Error("Purchase/expiry dates are invalid");
   if (input.currencyCode !== "USD") throw new Error("Training package recording currently supports USD only");
-  const terms = { serviceName, durationMinutes, totalCredits, amount, currencyCode: "USD", memberId: input.memberId, locationId: input.locationId, purchasedAt: purchasedAt.toISOString(), expiresAt: expiresAt.toISOString(), cancellationPolicy: "Cancel before the appointment starts to restore its original package credit; expired credits do not become current credits.", refundPolicy: "Unused unreserved units only; external refund must already be settled and separately referenced." };
+  const terms = { serviceName, durationMinutes, totalCredits, amount, currencyCode: "USD", memberId: input.memberId, locationId: input.locationId, purchasedAt: purchasedAt.toISOString(), expiresAt: expiresAt.toISOString(), cancellationPolicy: "Cancel before the appointment starts to restore its original package credit; expired credits do not become current credits.", refundPolicy: input.cardPayment === true ? "Unused unreserved units only; refunded to the original card." : "Unused unreserved units only; external refund must already be settled and separately referenced.", ...(input.cardPayment === true ? { tender: "card" } : {}) };
+  return { purchaseReference, serviceName, amount, totalCredits, durationMinutes, expiresAt, purchasedAt, terms };
+}
+
+/** Why an accepted package can no longer be issued now, or null when it can. Reads only. */
+export async function settledPackageProblem(tx: any, input: any, organizationId: string, now = new Date()) {
+  try { settledPackageTerms(input, now); } catch (error) { return error instanceof Error ? error.message : "Package terms are invalid"; }
+  const member = await tx.member.findUnique({ where: { id: input.memberId } });
+  const location = await tx.location.findUnique({ where: { id: input.locationId } });
+  if (!member || member.organizationId !== organizationId || !location || location.organizationId !== organizationId) return "Member or location no longer belongs to this organization";
+  if (member.status !== "active") return "The member is no longer active";
+  if (!location.isActive) return "The location is no longer active";
+  return null;
+}
+
+/** Issues a settled package inside the caller's transaction; callers hold the permission. */
+export async function createSettledTrainingPackage(tx: any, input: any, recorder: PackageRecorder, now = new Date()) {
+  const { purchaseReference, serviceName, amount, totalCredits, durationMinutes, expiresAt, purchasedAt, terms } = settledPackageTerms(input, now);
+  await lockTransactionKey(tx, `training-purchase:${recorder.organizationId}:${purchaseReference}`);
+  const member = await tx.member.findUnique({ where: { id: input.memberId } });
+  const location = await tx.location.findUnique({ where: { id: input.locationId } });
+  assertTrainingTenant(member, recorder as TrainingActor, "Member"); assertTrainingTenant(location, recorder as TrainingActor, "Location");
+  if (member.status !== "active" || !location.isActive) throw new Error("Active member and location required");
+  const existing = await tx.trainingPackage.findFirst({ where: { organizationId: recorder.organizationId, purchaseReference } });
+  if (existing) {
+    if (hashTrainerAppointmentRequest(existing.terms) !== hashTrainerAppointmentRequest(terms)) throw new Error("Payment reference already records a different package");
+    return { id: existing.id, reused: true };
+  }
+  const pack = throwOnKeystonePrismaError(await tx.trainingPackage.create({ data: { organizationId: recorder.organizationId, memberId: member.id, locationId: location.id, serviceName, durationMinutes, totalCredits, creditsRemaining: totalCredits, amount, currencyCode: "USD", purchaseReference, purchasedAt, expiresAt, recordedById: recorder.userId || null, status: "active", terms } }));
+  throwOnKeystonePrismaError(await tx.trainingCreditEntry.create({ data: { organizationId: recorder.organizationId, trainingPackageId: pack.id, eventKey: `issued:${pack.id}`, kind: "issued", quantity: totalCredits, balanceAfter: totalCredits, actorId: recorder.userId || null, reason: purchaseReference } }));
+  throwOnKeystonePrismaError(await enqueueOperationalNotice(tx, { organizationId: recorder.organizationId, memberId: member.id, key: `training-package:${pack.id}`, kind: "training", message: `${totalCredits} ${serviceName} credits were recorded from your settled purchase. Review the service, expiry and cancellation terms in Account → Training.` }));
+  return { id: pack.id, reused: false };
+}
+
+export async function recordSettledTrainingPackage(prisma: any, input: any, actor: TrainingActor, now = new Date()) {
+  prisma = guardKeystonePrismaResults(prisma);
+  assertTrainingActor(actor);
+  if (!actor.canManageAppointments) throw new Error("Training management permission required");
+  // Card packages are issued only by the counter payment service from a verified payment.
+  if (input?.cardPayment === true) throw new Error("Card packages are recorded from their verified card checkout");
+  settledPackageTerms(input, now);
   return prisma.$transaction(async (tx: any) => {
-    await lockTransactionKey(tx, `training-purchase:${actor.organizationId}:${purchaseReference}`);
-    const member = await tx.member.findUnique({ where: { id: input.memberId } });
-    const location = await tx.location.findUnique({ where: { id: input.locationId } });
-    assertTrainingTenant(member, actor, "Member"); assertTrainingTenant(location, actor, "Location");
-    if (member.status !== "active" || !location.isActive) throw new Error("Active member and location required");
-    const existing = await tx.trainingPackage.findFirst({ where: { organizationId: actor.organizationId, purchaseReference } });
-    if (existing) {
-      if (hashTrainerAppointmentRequest(existing.terms) !== hashTrainerAppointmentRequest(terms)) throw new Error("Payment reference already records a different package");
-      return { id: existing.id, reused: true };
-    }
-    const pack = throwOnKeystonePrismaError(await tx.trainingPackage.create({ data: { organizationId: actor.organizationId, memberId: member.id, locationId: location.id, serviceName, durationMinutes, totalCredits, creditsRemaining: totalCredits, amount, currencyCode: "USD", purchaseReference, purchasedAt, expiresAt, recordedById: actor.userId, status: "active", terms } }));
-    throwOnKeystonePrismaError(await tx.trainingCreditEntry.create({ data: { organizationId: actor.organizationId, trainingPackageId: pack.id, eventKey: `issued:${pack.id}`, kind: "issued", quantity: totalCredits, balanceAfter: totalCredits, actorId: actor.userId, reason: purchaseReference } }));
-    throwOnKeystonePrismaError(await enqueueOperationalNotice(tx, { organizationId: actor.organizationId, memberId: member.id, key: `training-package:${pack.id}`, kind: "training", message: `${totalCredits} ${serviceName} credits were recorded from your settled purchase. Review the service, expiry and cancellation terms in Account → Training.` }));
-    return { id: pack.id, reused: false };
+    // The form's request key: a confirmed recording is replayed, never repeated.
+    const confirmed = await confirmedIntentResult(tx, actor.organizationId, input?.requestKey);
+    if (confirmed?.packageId) return { id: confirmed.packageId, reused: true };
+    await lockActiveOrganization(tx, actor.organizationId);
+    const recorded = await createSettledTrainingPackage(tx, { ...input, cardPayment: false }, actor, now);
+    await recordIntentResult(tx, actor.organizationId, input?.requestKey, { packageId: recorded.id });
+    return recorded;
   });
 }
 
@@ -46,10 +80,13 @@ export async function recordTrainingPackageRefund(prisma: any, input: any, actor
   if (!actor.canManageAppointments) throw new Error("Training management permission required");
   const reference = trainingText(input.refundReference, "External settled refund reference", 200);
   return prisma.$transaction(async (tx: any) => {
+    const confirmed = await confirmedIntentResult(tx, actor.organizationId, input?.requestKey);
+    if (confirmed?.refundedPackageId) return { id: confirmed.refundedPackageId, reused: true };
     await lockTransactionKey(tx, `training-refund:${actor.organizationId}:${reference}`);
     await lockTransactionKey(tx, `training-package:${input.packageId}`);
     const pack = await tx.trainingPackage.findUnique({ where: { id: input.packageId } });
     assertTrainingTenant(pack, actor, "Training package");
+    if (pack.terms?.tender === "card" && pack.status !== "refunded") throw new Error("Card packages are refunded to the original card from Training");
     if (pack.status === "refunded") {
       if (pack.refundReference !== reference || pack.refundAmount !== input.amount) throw new Error("Package already has different refund evidence");
       return { id: pack.id, reused: true };
@@ -63,6 +100,7 @@ export async function recordTrainingPackageRefund(prisma: any, input: any, actor
     throwOnKeystonePrismaError(await tx.trainingCreditEntry.create({ data: { organizationId: actor.organizationId, trainingPackageId: pack.id, eventKey: `refunded:${pack.id}`, kind: "refunded", quantity: -pack.creditsRemaining, balanceAfter: 0, actorId: actor.userId, reason: reference } }));
     throwOnKeystonePrismaError(await tx.trainingPackage.update({ where: { id: pack.id }, data: { status: "refunded", refundAmount: amount, refundReference: reference, refundedAt: new Date(), creditsRemaining: 0 } }));
     throwOnKeystonePrismaError(await enqueueOperationalNotice(tx, { organizationId: actor.organizationId, memberId: pack.memberId, key: `training-package-refund:${pack.id}`, kind: "training", message: `The studio recorded an external ${pack.currencyCode} ${(amount / 100).toFixed(2)} refund for unused ${pack.serviceName} credits. The remaining package credits are retired.` }));
+    await recordIntentResult(tx, actor.organizationId, input?.requestKey, { refundedPackageId: pack.id });
     return { id: pack.id, amount, reused: false };
   });
 }

@@ -2,7 +2,11 @@ import type { Context } from ".keystone/types";
 import { currentRoleActor } from "../access/currentRoleActor";
 import { getAdapterForProvider } from "../utils/paymentProviderAdapter";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
+import { lockTransactionKey } from "./classCapacity";
+import type { PaymentProviderPurpose } from "../utils/paymentProviderAdapter";
+import { applyPlanAllowanceToCurrentGrant } from "../lib/membership-credits";
 import {
+  adoptPendingMembershipBillingKey,
   claimMembershipBillingAttempt,
   failMembershipBillingAttempt,
   finishMembershipBillingAttempt,
@@ -12,6 +16,7 @@ import {
 } from "./membershipBillingAttempts";
 
 import { membershipTierChangeCurrency, snapshotMembershipAgreement, tierAmountMinor } from "../../integrations/payment/commercial-agreement";
+import { mapStripeStatusToMembership } from "../../integrations/payment/lifecycle";
 
 const PROVIDER_CODE = "pp_stripe";
 
@@ -28,7 +33,7 @@ async function getAuthorizedMembership(context: Context, membershipId: string, c
   const memberships = await context.sudo().query.Membership.findMany({
     where: { AND: [{ id: { equals: membershipId } }, { organization: { id: { equals: organizationId } } }] },
     take: 1,
-    query: "id agreementSnapshot agreementHistory organization { id defaultCurrency } stripeSubscriptionId billingCycle status autoRenew nextBillingDate member { id stripeCustomerId organization { id } } tier { id freezeAllowed organization { id } }",
+    query: "id agreementSnapshot agreementHistory organization { id defaultCurrency } stripeSubscriptionId billingCycle status autoRenew nextBillingDate creditPeriodStart creditPeriodEnd member { id stripeCustomerId organization { id } } tier { id freezeAllowed organization { id } }",
   });
   const membership = memberships[0] as any;
   if (!membership || membership.organization?.id !== organizationId || membership.member?.organization?.id !== organizationId) {
@@ -38,8 +43,9 @@ async function getAuthorizedMembership(context: Context, membershipId: string, c
   return { membership, actor };
 }
 
-async function getAdapter(context: Context, organizationId: string) {
-  return getAdapterForProvider(context, PROVIDER_CODE, organizationId);
+/** Plan changes and new payment methods are new charges; the rest manage an existing subscription. */
+async function getAdapter(context: Context, organizationId: string, purpose: PaymentProviderPurpose = "reconcile") {
+  return getAdapterForProvider(context, PROVIDER_CODE, organizationId, purpose);
 }
 
 function billingAttemptScope(
@@ -78,7 +84,7 @@ export async function createStripeSetupIntent(
   const user = users[0] as any;
   if (!user?.stripeCustomerId || user.organization?.id !== organizationId) throw new Error("User not found or not a Stripe customer");
 
-  const { adapter } = await getAdapter(context, organizationId);
+  const { adapter } = await getAdapter(context, organizationId, "charge");
   const intent = await adapter.createSetupIntent(user.stripeCustomerId);
   if (!intent.clientSecret) throw new Error("Payment provider did not return a setup client secret");
   return { clientSecret: intent.clientSecret, setupIntentId: intent.id };
@@ -93,7 +99,7 @@ export async function cancelMembership(
   const organizationId = actor.organizationId;
   const normalizedReason = reason?.trim() || "";
   if (normalizedReason.length > 500) throw new Error("Cancellation reason must be 500 characters or fewer");
-  const scope = billingAttemptScope(organizationId, membershipId, "cancel", idempotencyKey, { reason: normalizedReason });
+  const scope = await adoptPendingMembershipBillingKey(context, billingAttemptScope(organizationId, membershipId, "cancel", idempotencyKey, { reason: normalizedReason }));
   if (await isCompletedMembershipBillingAttempt(context, scope)) {
     return { membership: await currentMembership(context, membershipId), message: "Membership renewal cancellation already completed" };
   }
@@ -106,8 +112,10 @@ export async function cancelMembership(
     stripeSubscriptionId: membership.stripeSubscriptionId,
   });
   if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership cancellation already completed" };
+  let providerExecutionStarted = false;
   try {
     const { adapter } = await getAdapter(context, organizationId);
+    providerExecutionStarted = true;
     const providerSubscription = await adapter.cancelSubscriptionAtPeriodEnd(
       membership.stripeSubscriptionId,
       attempt.providerIdempotencyKey,
@@ -122,7 +130,12 @@ export async function cancelMembership(
       cancelledAt: null,
     });
     return { membership: await currentMembership(context, membershipId), message: "Membership renewal cancelled at the end of the paid period" };
-  } catch (error) { await failMembershipBillingAttempt(context, attempt, error); throw error; }
+  } catch (error) {
+    // After the provider call starts, a lost response does not prove failure: keep the attempt
+    // pending so the same key reconciles it before any other billing change.
+    await failMembershipBillingAttempt(context, attempt, error, providerExecutionStarted ? "unknown" : "definite");
+    throw error;
+  }
 }
 
 export async function freezeMembership(
@@ -134,7 +147,7 @@ export async function freezeMembership(
   const organizationId = actor.organizationId;
   const endsAt = new Date(endDate);
   if (Number.isNaN(endsAt.getTime())) throw new Error("Freeze end date must be in the future");
-  const scope = billingAttemptScope(organizationId, membershipId, "freeze", idempotencyKey, { endDate: endsAt.toISOString() });
+  const scope = await adoptPendingMembershipBillingKey(context, billingAttemptScope(organizationId, membershipId, "freeze", idempotencyKey, { endDate: endsAt.toISOString() }));
   if (await isCompletedMembershipBillingAttempt(context, scope)) {
     return { membership: await currentMembership(context, membershipId), message: "Membership freeze already completed" };
   }
@@ -180,7 +193,7 @@ export async function unfreezeMembership(
 ) {
   const { membership, actor } = await getAuthorizedMembership(context, membershipId);
   const organizationId = actor.organizationId;
-  const scope = billingAttemptScope(organizationId, membershipId, "unfreeze", idempotencyKey, {});
+  const scope = await adoptPendingMembershipBillingKey(context, billingAttemptScope(organizationId, membershipId, "unfreeze", idempotencyKey, {}));
   if (await isCompletedMembershipBillingAttempt(context, scope)) {
     return { membership: await currentMembership(context, membershipId), message: "Membership resume already completed" };
   }
@@ -191,12 +204,35 @@ export async function unfreezeMembership(
     stripeSubscriptionId: membership.stripeSubscriptionId,
   });
   if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership resume already completed" };
+  let providerExecutionStarted = false;
   try {
     const { adapter } = await getAdapter(context, organizationId);
-    await adapter.resumeSubscription(membership.stripeSubscriptionId, attempt.providerIdempotencyKey);
-    await finishMembershipBillingAttempt(context, attempt, { status: "active", freezeStartDate: null, freezeEndDate: null });
-    return { membership: await currentMembership(context, membershipId), message: "Membership resumed successfully" };
-  } catch (error) { await failMembershipBillingAttempt(context, attempt, error); throw error; }
+    providerExecutionStarted = true;
+    const resumed = await adapter.resumeSubscription(membership.stripeSubscriptionId, attempt.providerIdempotencyKey);
+    if (resumed?.id !== membership.stripeSubscriptionId) throw new Error("The provider returned a different subscription; reconcile it before resuming");
+    // The same provider-state mapping the subscription webhook uses: only an active, unpaused
+    // subscription can restore service. A response that is still paused is not a completed resume.
+    const providerStatus = mapStripeStatusToMembership(resumed.status, Boolean(resumed.pause_collection));
+    if (providerStatus === "frozen") throw new Error("The provider still reports this subscription as paused; check again before resuming");
+    let restored = false;
+    await finishMembershipBillingAttempt(context, attempt, (current) => {
+      // Service returns only within the period a positive paid invoice covers, read under the fence.
+      const now = new Date();
+      const paidPeriodActive = Boolean(current?.creditPeriodStart && current.creditPeriodEnd &&
+        new Date(current.creditPeriodStart) <= now && now < new Date(current.creditPeriodEnd));
+      restored = providerStatus === "active" && paidPeriodActive;
+      return { status: providerStatus === "active" ? (paidPeriodActive ? "active" : "past-due") : providerStatus, freezeStartDate: null, freezeEndDate: null };
+    });
+    return {
+      membership: await currentMembership(context, membershipId),
+      message: restored ? "Membership resumed successfully"
+        : providerStatus === "active" || providerStatus === "past-due" ? "Membership resumed; access returns when the next payment succeeds"
+        : "The provider reports this subscription as ended, so the membership was not reactivated",
+    };
+  } catch (error) {
+    await failMembershipBillingAttempt(context, attempt, error, providerExecutionStarted ? "unknown" : "definite");
+    throw error;
+  }
 }
 
 export async function changeMembershipTier(
@@ -208,7 +244,7 @@ export async function changeMembershipTier(
   if (!actor.canManageAllRecords) throw new Error("Contact the front desk to change membership tiers");
   const { membership, actor: authorizedActor } = await getAuthorizedMembership(context, membershipId, actor);
   const organizationId = authorizedActor.organizationId;
-  const scope = billingAttemptScope(organizationId, membershipId, "tier-change", idempotencyKey, { newTierId });
+  const scope = await adoptPendingMembershipBillingKey(context, billingAttemptScope(organizationId, membershipId, "tier-change", idempotencyKey, { newTierId }));
   if (await isCompletedMembershipBillingAttempt(context, scope)) {
     return { membership: await currentMembership(context, membershipId), message: "Membership tier change already completed" };
   }
@@ -238,6 +274,7 @@ export async function changeMembershipTier(
   // legacy agreements remain unmarked and keep their scalar-balance reconciliation.
   const newAgreementSnapshot = snapshotMembershipAgreement(newTier, membership.billingCycle, contractCurrency, {
     initialCreditLedger: membership.agreementSnapshot?.creditLedgerPolicy === "monthly-grant-v1",
+    providerPriceId: newPriceId, providerProductId: newTier.stripeProductId || null,
   });
   const attempt = await claimMembershipBillingAttempt(context, scope, {
     status: membership.status,
@@ -248,7 +285,7 @@ export async function changeMembershipTier(
   if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership tier change already completed" };
   let providerExecutionStarted = false;
   try {
-    const { adapter } = await getAdapter(context, organizationId);
+    const { adapter } = await getAdapter(context, organizationId, "charge");
     await adapter.validateMembershipPrice({
       priceId: newPriceId,
       productId: newTier.stripeProductId,
@@ -267,14 +304,15 @@ export async function changeMembershipTier(
       tierId: newTierId,
       agreementSnapshot: newAgreementSnapshot,
       agreementHistory: [...(Array.isArray(membership.agreementHistory) ? membership.agreementHistory : []), membership.agreementSnapshot],
-    }, async (transaction: any) => {
+    }, async (transaction: any, updatedMembership: any) => {
       const memberUpdate = await transaction.member.updateMany({
         where: { organizationId, userId: membership.member.id },
         data: { membershipTierId: newTierId },
       });
       if (memberUpdate.count !== 1) throw new Error("Membership owner projection changed while finalizing the tier change");
+      await applyPlanAllowanceToCurrentGrant(transaction, updatedMembership, new Date());
     });
-    return { membership: await currentMembership(context, membershipId), message: "Membership tier updated; included class allowance applies from the next service month" };
+    return { membership: await currentMembership(context, membershipId), message: "Plan changed. This month's class credits now match the new plan; Stripe adds the prorated difference to the next invoice." };
   } catch (error) {
     await failMembershipBillingAttempt(context, attempt, error, providerExecutionStarted ? "unknown" : "definite");
     throw error;
@@ -308,8 +346,7 @@ export async function markPaymentRecoveryContacted(
   if (!membership) throw new Error("Membership not found");
   const prisma = guardKeystonePrismaResults(context.prisma as any);
   return prisma.$transaction(async (tx: any) => {
-    const lockResult = await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`membership-recovery:${organizationId}:${membershipId}`}, 0))`;
-    if (lockResult instanceof Error) throw lockResult;
+    await lockTransactionKey(tx, `membership-recovery:${organizationId}:${membershipId}`);
     const current = await tx.membership.findFirst({ where: { id: membershipId, organizationId } });
     if (!current) throw new Error("Membership not found");
     return tx.membership.update({ where: { id: membershipId }, data: {

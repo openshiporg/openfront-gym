@@ -589,6 +589,150 @@ input RetailCloseCreateInput {
   updatedAt: DateTime
 }
 
+type CounterPaymentAttempt {
+  id: ID!
+  organization: Organization
+  location: Location
+  purpose: String
+  requestKey: String
+  requestHash: String
+  status: String
+  amount: Int
+  currencyCode: String
+  quote: JSON
+  providerId: String
+  providerKey: String
+  providerCheckoutId: String
+  providerPaymentId: String
+  providerRefundId: String
+  claimToken: String
+  result: JSON
+  lastError: String
+  expiresAt: DateTime
+  resolvedAt: DateTime
+  recordedBy: User
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input CounterPaymentAttemptWhereUniqueInput {
+  id: ID
+}
+
+input CounterPaymentAttemptWhereInput {
+  AND: [CounterPaymentAttemptWhereInput!]
+  OR: [CounterPaymentAttemptWhereInput!]
+  NOT: [CounterPaymentAttemptWhereInput!]
+  id: IDFilter
+  organization: OrganizationWhereInput
+  location: LocationWhereInput
+  purpose: StringFilter
+  requestKey: StringFilter
+  requestHash: StringFilter
+  status: StringFilter
+  amount: IntFilter
+  currencyCode: StringFilter
+  providerId: StringFilter
+  providerKey: StringFilter
+  providerCheckoutId: StringFilter
+  providerPaymentId: StringFilter
+  providerRefundId: StringFilter
+  claimToken: StringFilter
+  lastError: StringFilter
+  expiresAt: DateTimeNullableFilter
+  resolvedAt: DateTimeNullableFilter
+  recordedBy: UserWhereInput
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
+}
+
+input DateTimeNullableFilter {
+  equals: DateTime
+  in: [DateTime!]
+  notIn: [DateTime!]
+  lt: DateTime
+  lte: DateTime
+  gt: DateTime
+  gte: DateTime
+  not: DateTimeNullableFilter
+}
+
+input CounterPaymentAttemptOrderByInput {
+  id: OrderDirection
+  purpose: OrderDirection
+  requestKey: OrderDirection
+  requestHash: OrderDirection
+  status: OrderDirection
+  amount: OrderDirection
+  currencyCode: OrderDirection
+  providerId: OrderDirection
+  providerKey: OrderDirection
+  providerCheckoutId: OrderDirection
+  providerPaymentId: OrderDirection
+  providerRefundId: OrderDirection
+  claimToken: OrderDirection
+  lastError: OrderDirection
+  expiresAt: OrderDirection
+  resolvedAt: OrderDirection
+  createdAt: OrderDirection
+  updatedAt: OrderDirection
+}
+
+input CounterPaymentAttemptUpdateInput {
+  organization: OrganizationRelateToOneForUpdateInput
+  location: LocationRelateToOneForUpdateInput
+  purpose: String
+  requestKey: String
+  requestHash: String
+  status: String
+  amount: Int
+  currencyCode: String
+  quote: JSON
+  providerId: String
+  providerKey: String
+  providerCheckoutId: String
+  providerPaymentId: String
+  providerRefundId: String
+  claimToken: String
+  result: JSON
+  lastError: String
+  expiresAt: DateTime
+  resolvedAt: DateTime
+  recordedBy: UserRelateToOneForUpdateInput
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input CounterPaymentAttemptUpdateArgs {
+  where: CounterPaymentAttemptWhereUniqueInput!
+  data: CounterPaymentAttemptUpdateInput!
+}
+
+input CounterPaymentAttemptCreateInput {
+  organization: OrganizationRelateToOneForCreateInput
+  location: LocationRelateToOneForCreateInput
+  purpose: String
+  requestKey: String
+  requestHash: String
+  status: String
+  amount: Int
+  currencyCode: String
+  quote: JSON
+  providerId: String
+  providerKey: String
+  providerCheckoutId: String
+  providerPaymentId: String
+  providerRefundId: String
+  claimToken: String
+  result: JSON
+  lastError: String
+  expiresAt: DateTime
+  resolvedAt: DateTime
+  recordedBy: UserRelateToOneForCreateInput
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
 type MemberImportRecord {
   id: ID!
   organization: Organization
@@ -640,17 +784,6 @@ input StringNullableFilter {
   endsWith: String
   mode: QueryMode
   not: StringNullableFilter
-}
-
-input DateTimeNullableFilter {
-  equals: DateTime
-  in: [DateTime!]
-  notIn: [DateTime!]
-  lt: DateTime
-  lte: DateTime
-  gt: DateTime
-  gte: DateTime
-  not: DateTimeNullableFilter
 }
 
 input MemberImportRecordOrderByInput {
@@ -1145,6 +1278,100 @@ input TrainingLeadCreateInput {
   updatedAt: DateTime
 }
 
+type ContactMessage {
+  id: ID!
+  organization: Organization!
+  subject: String
+  reference: String
+  name: String
+  email: String
+  phone: String
+  topic: String
+  message: String
+  sourcePath: String
+  status: String
+  staffNotes: String
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input ContactMessageWhereUniqueInput {
+  id: ID
+}
+
+input ContactMessageWhereInput {
+  AND: [ContactMessageWhereInput!]
+  OR: [ContactMessageWhereInput!]
+  NOT: [ContactMessageWhereInput!]
+  id: IDFilter
+  organization: OrganizationWhereInput
+  subject: StringFilter
+  reference: StringFilter
+  name: StringFilter
+  email: StringFilter
+  phone: StringFilter
+  topic: StringFilter
+  message: StringFilter
+  sourcePath: StringFilter
+  status: StringFilter
+  staffNotes: StringFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
+}
+
+input ContactMessageOrderByInput {
+  id: OrderDirection
+  subject: OrderDirection
+  reference: OrderDirection
+  name: OrderDirection
+  email: OrderDirection
+  phone: OrderDirection
+  topic: OrderDirection
+  message: OrderDirection
+  sourcePath: OrderDirection
+  status: OrderDirection
+  staffNotes: OrderDirection
+  createdAt: OrderDirection
+  updatedAt: OrderDirection
+}
+
+input ContactMessageUpdateInput {
+  organization: OrganizationRelateToOneForUpdateInput
+  subject: String
+  reference: String
+  name: String
+  email: String
+  phone: String
+  topic: String
+  message: String
+  sourcePath: String
+  status: String
+  staffNotes: String
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input ContactMessageUpdateArgs {
+  where: ContactMessageWhereUniqueInput!
+  data: ContactMessageUpdateInput!
+}
+
+input ContactMessageCreateInput {
+  organization: OrganizationRelateToOneForCreateInput
+  subject: String
+  reference: String
+  name: String
+  email: String
+  phone: String
+  topic: String
+  message: String
+  sourcePath: String
+  status: String
+  staffNotes: String
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
 type MembershipCreditGrant {
   id: ID!
   organization: Organization
@@ -1412,6 +1639,7 @@ type ParticipationPolicy {
   organization: Organization
   version: String
   documentReference: String
+  documentText: String
   enforceWaiver: Boolean
   adultOnly: Boolean
   healthPurpose: String
@@ -1433,6 +1661,7 @@ input ParticipationPolicyWhereInput {
   organization: OrganizationWhereInput
   version: StringFilter
   documentReference: StringFilter
+  documentText: StringFilter
   enforceWaiver: BooleanFilter
   adultOnly: BooleanFilter
   healthPurpose: StringFilter
@@ -1446,6 +1675,7 @@ input ParticipationPolicyOrderByInput {
   id: OrderDirection
   version: OrderDirection
   documentReference: OrderDirection
+  documentText: OrderDirection
   enforceWaiver: OrderDirection
   adultOnly: OrderDirection
   healthPurpose: OrderDirection
@@ -1459,6 +1689,7 @@ input ParticipationPolicyUpdateInput {
   organization: OrganizationRelateToOneForUpdateInput
   version: String
   documentReference: String
+  documentText: String
   enforceWaiver: Boolean
   adultOnly: Boolean
   healthPurpose: String
@@ -1477,6 +1708,7 @@ input ParticipationPolicyCreateInput {
   organization: OrganizationRelateToOneForCreateInput
   version: String
   documentReference: String
+  documentText: String
   enforceWaiver: Boolean
   adultOnly: Boolean
   healthPurpose: String
@@ -4355,6 +4587,7 @@ type GymSettings {
   name: String
   tagline: String
   logoIcon: String
+  logoColor: String
   brandHue: Int
   description: String
   address: String
@@ -4381,6 +4614,7 @@ type GymSettings {
   facilityHighlights: JSON
   heroStats: JSON
   contactTopics: JSON
+  participationTerms: String
   rating: Decimal
   reviewCount: Int
   createdAt: DateTime
@@ -4402,6 +4636,7 @@ input GymSettingsWhereInput {
   name: StringFilter
   tagline: StringFilter
   logoIcon: StringFilter
+  logoColor: StringFilter
   brandHue: IntFilter
   description: StringFilter
   address: StringFilter
@@ -4424,6 +4659,7 @@ input GymSettingsWhereInput {
   copyrightName: StringFilter
   facilityHeadline: StringFilter
   facilityDescription: StringFilter
+  participationTerms: StringFilter
   rating: DecimalNullableFilter
   reviewCount: IntNullableFilter
   createdAt: DateTimeFilter
@@ -4446,6 +4682,7 @@ input GymSettingsOrderByInput {
   name: OrderDirection
   tagline: OrderDirection
   logoIcon: OrderDirection
+  logoColor: OrderDirection
   brandHue: OrderDirection
   description: OrderDirection
   address: OrderDirection
@@ -4468,6 +4705,7 @@ input GymSettingsOrderByInput {
   copyrightName: OrderDirection
   facilityHeadline: OrderDirection
   facilityDescription: OrderDirection
+  participationTerms: OrderDirection
   rating: OrderDirection
   reviewCount: OrderDirection
   createdAt: OrderDirection
@@ -4479,6 +4717,7 @@ input GymSettingsUpdateInput {
   name: String
   tagline: String
   logoIcon: String
+  logoColor: String
   brandHue: Int
   description: String
   address: String
@@ -4505,6 +4744,7 @@ input GymSettingsUpdateInput {
   facilityHighlights: JSON
   heroStats: JSON
   contactTopics: JSON
+  participationTerms: String
   rating: Decimal
   reviewCount: Int
   createdAt: DateTime
@@ -4521,6 +4761,7 @@ input GymSettingsCreateInput {
   name: String
   tagline: String
   logoIcon: String
+  logoColor: String
   brandHue: Int
   description: String
   address: String
@@ -4547,6 +4788,7 @@ input GymSettingsCreateInput {
   facilityHighlights: JSON
   heroStats: JSON
   contactTopics: JSON
+  participationTerms: String
   rating: Decimal
   reviewCount: Int
   createdAt: DateTime
@@ -5194,6 +5436,7 @@ type ClassBooking {
   memberName: String
   memberEmail: String
   memberPhone: String
+  serviceSnapshot: JSON
   eligibilityReviewReason: String
   notes: String
   activeBookingKey: String
@@ -5254,6 +5497,7 @@ input ClassBookingUpdateInput {
   memberName: String
   memberEmail: String
   memberPhone: String
+  serviceSnapshot: JSON
   eligibilityReviewReason: String
   notes: String
   activeBookingKey: String
@@ -5283,6 +5527,7 @@ input ClassBookingCreateInput {
   memberName: String
   memberEmail: String
   memberPhone: String
+  serviceSnapshot: JSON
   eligibilityReviewReason: String
   notes: String
   activeBookingKey: String
@@ -5507,6 +5752,7 @@ type GymResource {
   cleanupBufferMinutes: Int
   notes: String
   metadata: JSON
+  allocationHistory: JSON
   appointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
   appointmentsCount(where: TrainerAppointmentWhereInput! = {}): Int
   createdAt: DateTime
@@ -5579,6 +5825,7 @@ input GymResourceUpdateInput {
   cleanupBufferMinutes: Int
   notes: String
   metadata: JSON
+  allocationHistory: JSON
   appointments: TrainerAppointmentRelateToManyForUpdateInput
   createdAt: DateTime
   updatedAt: DateTime
@@ -5601,6 +5848,7 @@ input GymResourceCreateInput {
   cleanupBufferMinutes: Int
   notes: String
   metadata: JSON
+  allocationHistory: JSON
   appointments: TrainerAppointmentRelateToManyForCreateInput
   createdAt: DateTime
   updatedAt: DateTime
@@ -5910,6 +6158,9 @@ type OnboardingRun {
   completedAt: DateTime
   leaseUntil: DateTime
   leaseToken: String
+  manifest: JSON
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 input OnboardingRunWhereUniqueInput {
@@ -5929,6 +6180,8 @@ input OnboardingRunWhereInput {
   completedAt: DateTimeNullableFilter
   leaseUntil: DateTimeNullableFilter
   leaseToken: StringFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
 }
 
 input OnboardingRunOrderByInput {
@@ -5940,6 +6193,8 @@ input OnboardingRunOrderByInput {
   completedAt: OrderDirection
   leaseUntil: OrderDirection
   leaseToken: OrderDirection
+  createdAt: OrderDirection
+  updatedAt: OrderDirection
 }
 
 input OnboardingRunUpdateInput {
@@ -5951,6 +6206,9 @@ input OnboardingRunUpdateInput {
   completedAt: DateTime
   leaseUntil: DateTime
   leaseToken: String
+  manifest: JSON
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 input OnboardingRunUpdateArgs {
@@ -5967,6 +6225,9 @@ input OnboardingRunCreateInput {
   completedAt: DateTime
   leaseUntil: DateTime
   leaseToken: String
+  manifest: JSON
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 type GymRefundAttempt {
@@ -5979,9 +6240,12 @@ type GymRefundAttempt {
   startingRefundAmount: Int
   status: String
   providerRefundId: String
+  reservation: JSON
   lastError: String
   requestedAt: DateTime
   completedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 input GymRefundAttemptWhereUniqueInput {
@@ -6004,6 +6268,8 @@ input GymRefundAttemptWhereInput {
   lastError: StringFilter
   requestedAt: DateTimeNullableFilter
   completedAt: DateTimeNullableFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
 }
 
 input GymRefundAttemptOrderByInput {
@@ -6017,6 +6283,8 @@ input GymRefundAttemptOrderByInput {
   lastError: OrderDirection
   requestedAt: OrderDirection
   completedAt: OrderDirection
+  createdAt: OrderDirection
+  updatedAt: OrderDirection
 }
 
 input GymRefundAttemptUpdateInput {
@@ -6028,9 +6296,12 @@ input GymRefundAttemptUpdateInput {
   startingRefundAmount: Int
   status: String
   providerRefundId: String
+  reservation: JSON
   lastError: String
   requestedAt: DateTime
   completedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 input GymRefundAttemptUpdateArgs {
@@ -6047,9 +6318,12 @@ input GymRefundAttemptCreateInput {
   startingRefundAmount: Int
   status: String
   providerRefundId: String
+  reservation: JSON
   lastError: String
   requestedAt: DateTime
   completedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 type MembershipBillingAttempt {
@@ -6066,6 +6340,8 @@ type MembershipBillingAttempt {
   lastError: String
   requestedAt: DateTime
   completedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 input MembershipBillingAttemptWhereUniqueInput {
@@ -6089,6 +6365,8 @@ input MembershipBillingAttemptWhereInput {
   lastError: StringFilter
   requestedAt: DateTimeFilter
   completedAt: DateTimeNullableFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
 }
 
 input MembershipBillingAttemptOrderByInput {
@@ -6103,6 +6381,8 @@ input MembershipBillingAttemptOrderByInput {
   lastError: OrderDirection
   requestedAt: OrderDirection
   completedAt: OrderDirection
+  createdAt: OrderDirection
+  updatedAt: OrderDirection
 }
 
 input MembershipBillingAttemptUpdateInput {
@@ -6118,6 +6398,8 @@ input MembershipBillingAttemptUpdateInput {
   lastError: String
   requestedAt: DateTime
   completedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 input MembershipBillingAttemptUpdateArgs {
@@ -6138,6 +6420,8 @@ input MembershipBillingAttemptCreateInput {
   lastError: String
   requestedAt: DateTime
   completedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 type AuthRateLimitBucket {
@@ -6145,6 +6429,8 @@ type AuthRateLimitBucket {
   key: String
   count: Int
   resetAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 input AuthRateLimitBucketWhereUniqueInput {
@@ -6159,6 +6445,8 @@ input AuthRateLimitBucketWhereInput {
   key: StringFilter
   count: IntNullableFilter
   resetAt: DateTimeNullableFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
 }
 
 input AuthRateLimitBucketOrderByInput {
@@ -6166,12 +6454,16 @@ input AuthRateLimitBucketOrderByInput {
   key: OrderDirection
   count: OrderDirection
   resetAt: OrderDirection
+  createdAt: OrderDirection
+  updatedAt: OrderDirection
 }
 
 input AuthRateLimitBucketUpdateInput {
   key: String
   count: Int
   resetAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 input AuthRateLimitBucketUpdateArgs {
@@ -6183,6 +6475,8 @@ input AuthRateLimitBucketCreateInput {
   key: String
   count: Int
   resetAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
 }
 
 """
@@ -6221,6 +6515,12 @@ type Mutation {
   updateRetailCloses(data: [RetailCloseUpdateArgs!]!): [RetailClose]
   deleteRetailClose(where: RetailCloseWhereUniqueInput!): RetailClose
   deleteRetailCloses(where: [RetailCloseWhereUniqueInput!]!): [RetailClose]
+  createCounterPaymentAttempt(data: CounterPaymentAttemptCreateInput!): CounterPaymentAttempt
+  createCounterPaymentAttempts(data: [CounterPaymentAttemptCreateInput!]!): [CounterPaymentAttempt]
+  updateCounterPaymentAttempt(where: CounterPaymentAttemptWhereUniqueInput!, data: CounterPaymentAttemptUpdateInput!): CounterPaymentAttempt
+  updateCounterPaymentAttempts(data: [CounterPaymentAttemptUpdateArgs!]!): [CounterPaymentAttempt]
+  deleteCounterPaymentAttempt(where: CounterPaymentAttemptWhereUniqueInput!): CounterPaymentAttempt
+  deleteCounterPaymentAttempts(where: [CounterPaymentAttemptWhereUniqueInput!]!): [CounterPaymentAttempt]
   createMemberImportRecord(data: MemberImportRecordCreateInput!): MemberImportRecord
   createMemberImportRecords(data: [MemberImportRecordCreateInput!]!): [MemberImportRecord]
   updateMemberImportRecord(where: MemberImportRecordWhereUniqueInput!, data: MemberImportRecordUpdateInput!): MemberImportRecord
@@ -6251,6 +6551,12 @@ type Mutation {
   updateTrainingLeads(data: [TrainingLeadUpdateArgs!]!): [TrainingLead]
   deleteTrainingLead(where: TrainingLeadWhereUniqueInput!): TrainingLead
   deleteTrainingLeads(where: [TrainingLeadWhereUniqueInput!]!): [TrainingLead]
+  createContactMessage(data: ContactMessageCreateInput!): ContactMessage
+  createContactMessages(data: [ContactMessageCreateInput!]!): [ContactMessage]
+  updateContactMessage(where: ContactMessageWhereUniqueInput!, data: ContactMessageUpdateInput!): ContactMessage
+  updateContactMessages(data: [ContactMessageUpdateArgs!]!): [ContactMessage]
+  deleteContactMessage(where: ContactMessageWhereUniqueInput!): ContactMessage
+  deleteContactMessages(where: [ContactMessageWhereUniqueInput!]!): [ContactMessage]
   createMembershipCreditGrant(data: MembershipCreditGrantCreateInput!): MembershipCreditGrant
   createMembershipCreditGrants(data: [MembershipCreditGrantCreateInput!]!): [MembershipCreditGrant]
   updateMembershipCreditGrant(where: MembershipCreditGrantWhereUniqueInput!, data: MembershipCreditGrantUpdateInput!): MembershipCreditGrant
@@ -6511,13 +6817,16 @@ type Mutation {
   markClassAttendance(bookingId: ID!, outcome: String!, minutesLate: Int, notes: String): AttendanceRecord!
   recordMemberCheckIn(memberId: ID!, locationId: ID, method: String!): CheckInTransitionResult!
   checkOutMember(checkInId: ID!): CheckInTransitionResult!
-  upsertGymSettings(data: GymSettingsUpdateInput!): GymSettings!
+  upsertGymSettings(data: GymSettingsUpdateInput!, expectedUpdatedAt: String): GymSettings!
+  publishGymParticipationTerms(text: String!, expectedPolicyId: ID): JSON
   runDeterministicOnboarding(template: String!, data: JSON): OnboardingRunResult!
   registerMember(data: RegisterMemberInput!): User
   inviteMember(data: InviteMemberInput!): InviteMemberResult!
   setMemberAccountStatus(memberId: ID!, status: String!): Member!
-  prepareInstructorAccount(instructorId: ID!, email: String!): InstructorAccountClaimResult!
+  prepareInstructorAccount(instructorId: ID!, email: String!, delivery: String): AccessLinkResult!
+  issueMemberAccessLink(memberId: ID!, delivery: String): AccessLinkResult!
   updateMemberProfile(data: MemberProfileUpdateInput!): MemberProfileProjection!
+  changeMemberPassword(currentPassword: String!, newPassword: String!, confirmPassword: String!): Boolean!
   transitionOnboardingStatus(status: String!): User!
   generateUpcomingClassInstances(weeks: Int!): SchedulingGenerationResult!
   updateClassScheduleCapacity(classScheduleId: ID!, maxCapacity: Int!): ClassSchedule!
@@ -6550,6 +6859,7 @@ type Mutation {
   sellRetail(data: JSON!): JSON!
   returnRetail(data: JSON!): JSON!
   closeRetail(data: JSON!): JSON!
+  reconcileCounterPayment(attemptId: ID, checkoutSessionId: String, action: String!): JSON!
 }
 
 union UserAuthenticationWithPasswordResult = UserAuthenticationWithPasswordSuccess | UserAuthenticationWithPasswordFailure
@@ -6596,6 +6906,9 @@ type Query {
   retailClose(where: RetailCloseWhereUniqueInput!): RetailClose
   retailCloses(where: RetailCloseWhereInput! = {}, orderBy: [RetailCloseOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: RetailCloseWhereUniqueInput): [RetailClose!]
   retailClosesCount(where: RetailCloseWhereInput! = {}): Int
+  counterPaymentAttempt(where: CounterPaymentAttemptWhereUniqueInput!): CounterPaymentAttempt
+  counterPaymentAttempts(where: CounterPaymentAttemptWhereInput! = {}, orderBy: [CounterPaymentAttemptOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: CounterPaymentAttemptWhereUniqueInput): [CounterPaymentAttempt!]
+  counterPaymentAttemptsCount(where: CounterPaymentAttemptWhereInput! = {}): Int
   memberImportRecord(where: MemberImportRecordWhereUniqueInput!): MemberImportRecord
   memberImportRecords(where: MemberImportRecordWhereInput! = {}, orderBy: [MemberImportRecordOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MemberImportRecordWhereUniqueInput): [MemberImportRecord!]
   memberImportRecordsCount(where: MemberImportRecordWhereInput! = {}): Int
@@ -6611,6 +6924,9 @@ type Query {
   trainingLead(where: TrainingLeadWhereUniqueInput!): TrainingLead
   trainingLeads(where: TrainingLeadWhereInput! = {}, orderBy: [TrainingLeadOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainingLeadWhereUniqueInput): [TrainingLead!]
   trainingLeadsCount(where: TrainingLeadWhereInput! = {}): Int
+  contactMessage(where: ContactMessageWhereUniqueInput!): ContactMessage
+  contactMessages(where: ContactMessageWhereInput! = {}, orderBy: [ContactMessageOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ContactMessageWhereUniqueInput): [ContactMessage!]
+  contactMessagesCount(where: ContactMessageWhereInput! = {}): Int
   membershipCreditGrant(where: MembershipCreditGrantWhereUniqueInput!): MembershipCreditGrant
   membershipCreditGrants(where: MembershipCreditGrantWhereInput! = {}, orderBy: [MembershipCreditGrantOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipCreditGrantWhereUniqueInput): [MembershipCreditGrant!]
   membershipCreditGrantsCount(where: MembershipCreditGrantWhereInput! = {}): Int
@@ -6734,33 +7050,36 @@ type Query {
   keystone: KeystoneMeta!
   authenticatedItem: AuthenticatedItem
   validateUserPasswordResetToken(email: String!, token: String!): ValidateUserPasswordResetTokenResult
+  gymSettingsEditor: JSON!
   operationsWorkspace(caseAfterId: ID): JSON!
   participationWorkspace: JSON!
   exportOperatingData(kind: String!, from: String!, to: String!): JSON!
   redirectToInit: Boolean
   checkClassAvailability(classInstanceId: ID!): ClassAvailabilityResult!
   getBillingStats: BillingStats!
-  billingWorkspace: JSON!
+  billingWorkspace(q: String, recoverySkip: Int, failedSkip: Int, planSkip: Int, refundSkip: Int): JSON!
   memberProfile: MemberProfileProjection!
   memberCheckInCode: MemberCheckInCode!
   schedulingWorkspace(start: DateTime!, end: DateTime!, userId: ID): JSON!
   instructorAccount: JSON
-  rosterSessions: JSON!
+  instructorClaimQueue: JSON!
+  rosterSessions(q: String, state: String, from: String, to: String, sort: String, skip: Int): JSON!
   rosterDetail(classInstanceId: ID!): JSON
-  frontDeskWorkspace(query: String): JSON!
+  frontDeskWorkspace(query: String, visitQuery: String, visitLocationId: ID, visitOrder: String, visitSkip: Int): JSON!
   reportsDashboard: JSON!
   kioskSearchMembers(query: String!, organizationId: ID!, credential: String!): [KioskSearchMember!]!
-  discoveryClasses(credential: String!, partner: String, from: String, to: String, dayOfWeek: String, locationId: ID, locationName: String, limit: Int): JSON!
+  discoveryClasses(credential: String!, partner: String, from: String, to: String, dayOfWeek: String, locationId: ID, locationName: String, limit: Int, skip: Int): JSON!
   publicGymSettings: PublicGymSettings
-  publicGymClassTypes(limit: Int = 50): [PublicGymClassType!]!
+  storefrontOrganization: ID
+  publicGymClassTypes(limit: Int = 50, skip: Int = 0): [PublicGymClassType!]!
   publicGymClassType(id: ID!): PublicGymClassType
   publicGymSchedules(dayOfWeek: String, instructorId: ID, limit: Int = 50): [PublicGymSchedule!]!
   publicGymSchedule(id: ID!): PublicGymSchedule
-  publicGymClassInstances(from: DateTime, to: DateTime, scheduleId: ID, instructorId: ID, limit: Int = 50): [PublicGymClassInstance!]!
+  publicGymClassInstances(from: DateTime, to: DateTime, scheduleId: ID, instructorId: ID, classTypeId: ID, locationId: ID, skip: Int = 0, limit: Int = 50): [PublicGymClassInstance!]!
   publicGymClassInstance(id: ID!): PublicGymClassInstance
-  publicGymInstructors(limit: Int = 50): [PublicGymInstructor!]!
+  publicGymInstructors(limit: Int = 50, skip: Int = 0): [PublicGymInstructor!]!
   publicGymInstructor(id: ID!): PublicGymInstructor
-  publicGymMembershipTiers(limit: Int = 50): [PublicGymMembershipTier!]!
+  publicGymMembershipTiers(limit: Int = 50, skip: Int = 0): [PublicGymMembershipTier!]!
   publicGymMembershipTier(id: ID!): PublicGymMembershipTier
   trainingWorkspace(skip: Int = 0): JSON!
   retailWorkspace(skip: Int = 0): JSON!
@@ -6909,6 +7228,7 @@ type PublicGymSettings {
   name: String!
   tagline: String
   logoIcon: String
+  logoColor: String!
   brandHue: Int!
   description: String
   address: String
@@ -6935,6 +7255,7 @@ type PublicGymSettings {
   facilityHighlights: JSON
   heroStats: JSON
   contactTopics: JSON
+  participationTerms: JSON
 }
 
 type PublicGymClassType {
@@ -6976,11 +7297,18 @@ type PublicGymAvailability {
   state: String!
 }
 
+type PublicGymLocation {
+  id: ID!
+  name: String!
+  address: String
+}
+
 type PublicGymClassInstance {
   id: ID!
   startsAt: String!
   schedule: PublicGymSchedule
   instructor: PublicGymInstructor
+  location: PublicGymLocation
   availability: PublicGymAvailability!
 }
 
@@ -6996,6 +7324,7 @@ type PublicGymMembershipTier {
   personalTrainingSessions: Int!
   freezeAllowed: Boolean!
   contractLength: Int!
+  features: [String!]!
   monthlyCheckoutAvailable: Boolean!
   annualCheckoutAvailable: Boolean!
 }
@@ -7058,13 +7387,15 @@ type MemberProfileProjection {
   membershipLengthDays: Int!
   attendanceRate: Float!
   lastCheckIn: String
+  updatedAt: String
 }
 
 input MemberProfileUpdateInput {
   name: String
   email: String
+  currentPassword: String
+  expectedUpdatedAt: String
   phone: String
-  password: String
   dateOfBirth: String
   emergencyContactName: String
   emergencyContactPhone: String
@@ -7089,14 +7420,18 @@ type InviteMemberResult {
   email: String!
 }
 
-type InstructorAccountClaimResult {
-  userId: ID!
+type AccessLinkResult {
+  userId: ID
   email: String!
+  delivered: String!
+  url: String
+  expiresAt: String!
 }
 
 type SchedulingGenerationResult {
   success: Boolean!
   createdCount: Int!
+  skippedNonexistent: Int!
 }
 
 type KioskSearchMember {
@@ -7151,6 +7486,8 @@ input ContactFormInput {
   phone: String
   topic: String
   message: String!
+  reference: String
+  sourcePath: String
 }
 
 input RegisterMemberInput {
@@ -7165,6 +7502,8 @@ type OnboardingRunResult {
   organizationId: ID!
   runId: ID!
   instanceCount: Int!
+  readiness: JSON
+  skippedSessions: JSON
 }
 
 type SetupIntentResult {

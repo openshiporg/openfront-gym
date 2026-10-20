@@ -8,7 +8,10 @@ import { trackingFields } from "./trackingFields";
 import { requiredRelationshipDb } from "./tenantRelationships";
 import { sanitizeGymLogoSvg } from "../utils/gymLogo";
 import {
+  DEFAULT_GYM_LOGO_COLOR,
   DEFAULT_STOREFRONT_HUE,
+  isGymLogoColor,
+  normalizeGymLogoColor,
   normalizeStorefrontHue,
 } from "../lib/storefront-branding";
 
@@ -75,10 +78,28 @@ export const GymSettings = list({
       },
     }),
 
+    logoColor: text({
+      defaultValue: DEFAULT_GYM_LOGO_COLOR,
+      ui: { description: "Logo color as a hue rotation in degrees; the storefront accent follows it" },
+      hooks: {
+        resolveInput: ({ resolvedData, fieldKey }) => {
+          const value = resolvedData[fieldKey];
+          return value === undefined ? value : normalizeGymLogoColor(value);
+        },
+        validate: ({ inputData, fieldKey, addValidationError }) => {
+          const submitted = inputData?.[fieldKey];
+          if (submitted !== undefined && !isGymLogoColor(submitted)) {
+            addValidationError("Logo color must be a hue rotation in degrees");
+          }
+        },
+      },
+    }),
+
     brandHue: integer({
       defaultValue: DEFAULT_STOREFRONT_HUE,
       validation: { isRequired: true, min: 0, max: 359 },
-      ui: { description: "Storefront accent hue from 0 through 359" },
+      // Kept for existing tenants' data; the storefront accent now follows the logo color.
+      ui: { description: "Legacy accent hue (no longer used; the accent follows the logo color)", itemView: { fieldMode: "read" } },
       hooks: {
         resolveInput: ({ resolvedData, fieldKey }) => {
           const value = resolvedData[fieldKey];
@@ -168,6 +189,13 @@ export const GymSettings = list({
     contactTopics: json({
       defaultValue: [],
       ui: { description: "Contact page topics/cards" },
+    }),
+
+    // Owner-pasted participation terms. Saving changed text through Store Settings
+    // publishes a new ParticipationPolicy version that members accept.
+    participationTerms: text({
+      defaultValue: "",
+      ui: { displayMode: "textarea", description: "Participation waiver / terms shown at /waiver. Edit in Store Settings so a new version is published." },
     }),
 
     rating: decimal({

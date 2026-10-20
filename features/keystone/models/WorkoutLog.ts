@@ -9,7 +9,7 @@ import {
 
 import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
-import { requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
+import { requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from './tenantRelationships';
 
 export const WorkoutLog = list({
   hooks: { validateInput: validateTenantOwnership([
@@ -42,6 +42,7 @@ export const WorkoutLog = list({
     }),
     member: relationship({
       ref: 'Member.workoutLogs',
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: 'select',
         description: 'Member who performed this workout',

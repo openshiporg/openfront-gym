@@ -1,63 +1,84 @@
 import Link from "next/link";
 import { Metadata } from "next";
 import Image from "next/image";
-import { Building2 } from "lucide-react";
-import { getStorefrontBrandName } from "@/features/storefront/lib/brand";
+import { ArrowUpRight, Building2 } from "lucide-react";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
-
-export const metadata: Metadata = {
-  title: "Facilities",
-  description: "Explore the facility, studios, and amenities.",
-};
+import { publishedHours } from "@/features/storefront/lib/contact-config";
+import { PageHead } from "@/features/storefront/modules/common/page-head";
+import { ArrowLink, EmptyState } from "@/features/storefront/modules/common/ui";
+import { HoursList } from "@/features/storefront/modules/layout/templates/footer";
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
-  return { title: `Facility — ${getStorefrontBrandName(config)}`, description: config?.facilityDescription || metadata.description };
+  return { title: "Facilities", description: config?.facilityDescription || undefined };
 }
+
+type Highlight = { title: string; description?: string; features?: string[] };
 
 export async function FacilitiesPage() {
   const config = await getStorefrontConfig();
-  const facilities = config?.facilityHighlights?.length ? config.facilityHighlights : [];
+  const facilities = (Array.isArray(config?.facilityHighlights) ? config.facilityHighlights : [])
+    .filter((item): item is Highlight => typeof item?.title === "string" && item.title.trim() !== "");
+  const hours = publishedHours(config?.hours);
+  const timeZone = config?.timezone || "UTC";
 
   return (
     <div className="sf-page">
-      <div className="sf-container">
-        <header className="sf-page-header">
-          <div><p className="sf-eyebrow">Facility</p><h1 className="sf-display mt-4 text-[var(--text-display-s)]">{config?.facilityHeadline || config?.name || "Facility"}</h1></div>
-          {config?.facilityDescription ? <p className="max-w-md text-base leading-7 text-[var(--sf-muted)]">{config.facilityDescription}</p> : null}
-        </header>
+      <div className="sf-wrap">
+        <PageHead title={config?.facilityHeadline || "Facilities"} lead={config?.facilityDescription || undefined} />
 
-        <section className="sf-quick-grid mb-8" aria-label="Plan your visit"><div className="sf-quick-card"><h2>Find the club</h2><p>{config?.address || "Ask the club for arrival directions."}</p></div><div className="sf-quick-card"><h2>Choose your session</h2><p>Browse the timetable for dates, coaches and available spaces.</p><Link href="/schedule" className="sf-link mt-3 inline-flex">See the timetable →</Link></div><div className="sf-quick-card"><h2>Visiting for the first time?</h2><p>Ask about accessibility, facilities and what to bring before you arrive.</p><Link href="/contact" className="sf-link mt-3 inline-flex">Arrange your visit →</Link></div></section>
         {config?.heroImageUrl ? (
-          <div className="relative overflow-hidden border border-[var(--sf-border)]">
-            <Image src={config.heroImageUrl} alt={`${getStorefrontBrandName(config)} training facility`} width={1600} height={1000} priority sizes="100vw" className="max-h-[32rem] w-full object-cover" unoptimized />
-          </div>
+          <figure className="sf-photo sf-rise-2">
+            <Image src={config.heroImageUrl} alt="" fill priority sizes="(max-width: 1279px) 100vw, 1240px" unoptimized />
+          </figure>
         ) : null}
 
-        {facilities.length ? (
-          <div className={`grid gap-4 md:grid-cols-2 lg:grid-cols-12 ${config?.heroImageUrl ? "mt-4" : ""}`}>
-            {facilities.map((facility: { title: string; description: string; features?: string[] }, index: number) => (
-              <article key={facility.title} className={`border border-[var(--sf-border)] bg-[var(--sf-surface)] p-7 sm:p-8 ${index % 5 === 0 ? "lg:col-span-7" : "lg:col-span-5"} ${index % 3 === 1 ? "sf-diagonal-field bg-[var(--sf-secondary)]" : ""}`}>
-                <h2 className="text-xl font-bold tracking-[-0.035em]">{facility.title}</h2>
-                <p className="mt-4 text-sm leading-6 text-[var(--sf-muted)]">{facility.description}</p>
-                {facility.features?.length ? <p className="mt-6 text-xs leading-5 text-[var(--sf-muted)]">{facility.features.join(" / ")}</p> : null}
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className={`border border-[var(--sf-border)] bg-[var(--sf-surface)] p-8 sm:p-10 ${config?.heroImageUrl ? "mt-4" : ""}`}>
-            <Building2 className="h-8 w-8 text-[var(--sf-primary)]" aria-hidden="true" />
-            <h2 className="mt-7 text-2xl font-bold">No facility highlights are published.</h2>
-          </div>
-        )}
+        <section className="sf-section" aria-labelledby="facility-spaces">
+          <h2 id="facility-spaces" className="sf-h2" style={{ marginBottom: 20 }}>Spaces</h2>
+          {facilities.length ? (
+            <div className="sf-features">
+              {facilities.map((facility) => (
+                <article key={facility.title}>
+                  <h3>{facility.title}</h3>
+                  {facility.description ? <p>{facility.description}</p> : <span />}
+                  {facility.features?.length ? (
+                    <ul className="sf-list-plain" aria-label={`${facility.title} features`}>
+                      {facility.features.map((feature) => <li key={feature} className="sf-tag">{feature}</li>)}
+                    </ul>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={<Building2 aria-hidden="true" />} title="No spaces published" action={<ArrowLink href="/contact">Contact</ArrowLink>} />
+          )}
+        </section>
 
-        {config?.hours && Object.keys(config.hours).length > 0 && <section className="sf-panel mt-6"><h2 className="text-2xl font-semibold">Opening hours</h2><p className="sf-muted mt-2">Facility opening hours. Membership access can depend on your plan.</p><dl className="sf-facts">{Object.entries(config.hours).map(([day, hours]) => <div key={day}><dt>{day}</dt><dd>{hours}</dd></div>)}</dl></section>}
-        {config?.address || config?.phone ? (
-          <section className="mt-4 grid gap-8 border border-[var(--sf-border)] bg-[var(--sf-surface-strong)] p-8 md:grid-cols-2">
-            {config.address ? <div><p className="sf-label">Address</p><p className="mt-2 text-base">{config.address}</p></div> : null}
-            {config.phone ? <div><p className="sf-label">Phone</p><a href={`tel:${config.phone}`} className="mt-2 block text-base underline decoration-[var(--sf-border-strong)] underline-offset-4">{config.phone}</a></div> : null}
-          </section>
-        ) : null}
+        <section className="sf-section" aria-labelledby="facility-visit">
+          <h2 id="facility-visit" className="sf-h2" style={{ marginBottom: 20 }}>Visit</h2>
+          <div className="sf-split">
+            <div className="sf-stack">
+              {config?.address ? <p className="sf-h3">{config.address}</p> : <p className="sf-text-2">Address not published</p>}
+              {config?.phone ? <a className="sf-link" href={`tel:${config.phone}`}>{config.phone}</a> : null}
+              <div className="sf-actions">
+                {config?.address ? (
+                  <a className="sf-btn" data-variant="secondary" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(config.address)}`} target="_blank" rel="noreferrer">
+                    Directions<ArrowUpRight aria-hidden="true" />
+                  </a>
+                ) : null}
+                <Link href="/contact" className="sf-btn" data-variant="ghost">Contact</Link>
+                <Link href="/policies" className="sf-btn" data-variant="ghost">Policies</Link>
+              </div>
+            </div>
+            <div className="sf-panel">
+              <div className="sf-row" data-between>
+                <h3 className="sf-h3">Hours</h3>
+                <span className="sf-meta">{timeZone}</span>
+              </div>
+              {hours.length ? <HoursList hours={hours} timeZone={timeZone} /> : <p className="sf-text-2">Not published</p>}
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );

@@ -1,8 +1,7 @@
-import { getGraphQLEndpoint } from "@/features/dashboard/lib/getBaseUrl";
-import { internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
+import { internalGraphqlEndpoint, internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
 
 export async function executeDiscoveryGraphQL<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-  const response = await internalGraphqlFetch(await getGraphQLEndpoint(), {
+  const response = await internalGraphqlFetch(internalGraphqlEndpoint(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, variables }),

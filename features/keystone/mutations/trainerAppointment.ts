@@ -2,9 +2,11 @@ import { assertInstructorQualifications } from "./trainerQualifications";
 import { lockParticipationPolicy, assertParticipationAllowed } from "../lib/operational-policy";
 import { enqueueOperationalNotice } from "../lib/operational-notices";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
+import { businessTimeZone } from "../lib/business-time-zone";
 import type { Context } from ".keystone/types";
 import { getTenantId } from "../access/tenantPolicy";
 import { lockTransactionKey } from "./classCapacity";
+import { lockActiveOrganization } from "../lib/current-actor";
 import { assertAppointmentTransition, buildActiveAppointmentOverlapWhere, normalizeAppointmentWindow } from "./trainerAppointmentPolicy";
 import { assertTrainerAppointmentReplayMatches, hashTrainerAppointmentRequest } from "./trainerAppointmentEvidence";
 import { assertPackageUsable, assertTrainerAvailable, assertTrainingActor, assertTrainingMember, assertTrainingTenant, trainingText, type TrainingActor } from "./trainingPolicy";
@@ -53,12 +55,12 @@ export async function createAtomicTrainerAppointment(prisma: any, input: {
       return { appointment: appointmentProjection(existing), reused: true };
     }
     if (startTime <= now || startTime.getTime() > now.getTime() + 366 * 86_400_000) throw new Error("Appointment must start within the next year");
-    const [instructor, location, resource, pack, organization] = await Promise.all([
+    const [instructor, location, resource, pack, timeZone] = await Promise.all([
       tx.instructor.findUnique({ where: { id: input.instructorId } }),
       tx.location.findUnique({ where: { id: input.locationId } }),
       input.resourceId ? tx.gymResource.findUnique({ where: { id: input.resourceId } }) : null,
       tx.trainingPackage.findUnique({ where: { id: input.trainingPackageId } }),
-      tx.organization.findUnique({ where: { id: actor.organizationId }, select: { timezone: true } }),
+      businessTimeZone(tx, actor.organizationId),
     ]);
     assertTrainingTenant(instructor, actor, "Instructor"); assertTrainingTenant(location, actor, "Location");
     if (input.resourceId) assertTrainingTenant(resource, actor, "Resource");
@@ -70,7 +72,7 @@ export async function createAtomicTrainerAppointment(prisma: any, input: {
     await assertParticipationAllowed(tx, actor.organizationId, member.id, window.startTime, location.id);
     const rows = await tx.trainerAvailability.findMany({ where: { organizationId: actor.organizationId, instructorId: instructor.id, locationId: location.id }, take: 500 });
     if (rows.length >= 500) throw new Error("Instructor availability requires operator review");
-    assertTrainerAvailable(rows, window.startTime, window.endTime, organization?.timezone || "UTC");
+    assertTrainerAvailable(rows, window.startTime, window.endTime, timeZone);
     const overlap = buildActiveAppointmentOverlapWhere(window.startTime, window.endTime);
     const conflict = await tx.trainerAppointment.findFirst({ where: { organizationId: actor.organizationId, OR: [{ instructorId: instructor.id }, { memberId: member.id }], ...overlap }, select: { id: true } });
     if (conflict) throw new Error("Instructor or member already has an overlapping appointment");
@@ -113,6 +115,7 @@ export async function createAtomicTrainerAppointment(prisma: any, input: {
       const end = instance.endsAt ? new Date(instance.endsAt) : new Date(new Date(instance.date).getTime() + duration * 60_000);
       if (end > window.startTime) throw new Error("Member already has an overlapping class booking");
     }
+    await lockActiveOrganization(tx, actor.organizationId);
     const appointment = await tx.trainerAppointment.create({ data: { organizationId: actor.organizationId, memberId: member.id, instructorId: instructor.id, locationId: location.id, resourceId: resource?.id || null, trainingPackageId: pack.id, ...window, resourceStartsAt, resourceEndsAt, status: "confirmed", serviceName: pack.serviceName, priceAmount: Math.floor(pack.amount / pack.totalCredits), currencyCode: pack.currencyCode, memberNotes, idempotencyKey: key, requestHash: hashTrainerAppointmentRequest(request) } });
     await debitTrainingPackage(tx, pack, appointment.id, actor);
     throwOnKeystonePrismaError(await enqueueOperationalNotice(tx, { organizationId: actor.organizationId, memberId: member.id, key: `training-booked:${appointment.id}`, kind: "training", message: `${pack.serviceName} is confirmed for ${window.startTime.toISOString()}. One credit was reserved from your training package. Cancel before the start to restore that credit.` }));
@@ -132,7 +135,8 @@ export async function transitionAtomicTrainerAppointment(prisma: any, input: { a
     await lockTransactionKey(tx, `member:${appointment.memberId}`);
     appointment.member = await tx.member.findUnique({ where: { id: appointment.memberId }, include: { user: { select: { id: true } } } });
     const owner = appointment.member?.user?.id === actor.userId;
-    const instructor = actor.isInstructor && appointment.instructor?.user?.id === actor.userId;
+    // Coach authority is the current, active assignment: a retired coach keeps no operational rights.
+    const instructor = actor.isInstructor && appointment.instructor?.isActive === true && appointment.instructor?.user?.id === actor.userId;
     if (!actor.canManageAppointments && !instructor && !(owner && input.status === "cancelled")) throw new Error("Appointment transition is not permitted");
     assertAppointmentTransition(appointment.status, input.status);
     if (appointment.status === input.status) return { appointment: appointmentProjection(appointment), reused: true };
@@ -148,6 +152,8 @@ export async function transitionAtomicTrainerAppointment(prisma: any, input: { a
       if (input.status !== "no_show" && appointment.member?.status !== "active") throw new Error("Inactive members cannot receive training; operator review required");
       if (input.status !== "no_show") {
         if (!appointment.instructor?.isActive) throw new Error("Inactive instructors cannot fulfill appointments");
+        const site = await tx.location.findFirst({ where: { id: appointment.locationId, organizationId: actor.organizationId }, select: { isActive: true } });
+        if (!site?.isActive) throw new Error("This appointment's location is closed; reschedule it to an open location");
         assertInstructorQualifications(appointment.instructor, now);
         await assertParticipationAllowed(tx, actor.organizationId, appointment.memberId, now, appointment.locationId);
       }
@@ -163,7 +169,13 @@ export function appointmentProjection(row: any) {
   return { id: row.id, memberId: row.memberId, instructorId: row.instructorId, locationId: row.locationId, trainingPackageId: row.trainingPackageId, serviceName: row.serviceName, startTime: new Date(row.startTime).toISOString(), endTime: new Date(row.endTime).toISOString(), status: row.status, cancellationReason: row.cancellationReason || "", memberNotes: row.memberNotes || "" };
 }
 export async function bookTrainerAppointment(_root: unknown, { data }: { data: any }, context: Context) {
-  return createAtomicTrainerAppointment(context.prisma, { ...data, actor: trainingActorFromContext(context) });
+  const actor = trainingActorFromContext(context);
+  // The package fixes its owner and site. Both are re-checked under lock, including that a
+  // non-manager may only book for themselves.
+  const packageId = typeof data?.trainingPackageId === "string" ? data.trainingPackageId : "";
+  const pack = packageId ? await guardKeystonePrismaResults(context.prisma as any).trainingPackage.findFirst({ where: { id: packageId, organizationId: actor.organizationId }, select: { memberId: true, locationId: true } }) : null;
+  if (!pack) throw new Error("Choose a package with available credits");
+  return createAtomicTrainerAppointment(context.prisma, { ...data, memberId: pack.memberId, locationId: pack.locationId, actor });
 }
 export async function transitionTrainerAppointment(_root: unknown, args: { appointmentId: string; status: string; reason?: string | null }, context: Context) {
   return transitionAtomicTrainerAppointment(context.prisma, { ...args, actor: trainingActorFromContext(context) });

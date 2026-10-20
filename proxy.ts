@@ -1,95 +1,33 @@
-import {
-  getAuthenticatedUser,
-  handleDashboardRoutes,
-} from '@/features/dashboard/middleware';
-import { NextRequest, NextResponse } from 'next/server';
-import { consumeAuthAttempt } from '@/lib/authRateLimit';
-import {
-  inspectGraphQLAuthPayload,
-  readGraphQLRequestPayload,
-} from '@/lib/graphqlAuthRateLimit';
-import { keystoneContext } from '@/features/keystone/context';
+import type { NextRequest } from "next/server";
+import { handleDashboardRoutes, getAuthenticatedUser } from "@/features/dashboard/middleware";
+import { handleStorefrontRoutes } from "@/features/storefront/middleware";
+import { NextResponse } from "next/server";
 
-const dashboardPath = '/dashboard';
+const dashboardPath = "/dashboard";
 
+// Main middleware function that handles all routes
 export async function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname === '/api/graphql') {
-    // Limit only credential-bearing public operations. A shared fallback bucket
-    // on every GraphQL request lets ordinary traffic or one attacker deny the
-    // entire application when the runtime does not expose a trusted client IP.
-    if (request.method === 'POST') {
-      let payload: unknown;
-      try {
-        payload = await readGraphQLRequestPayload(request);
-      } catch {
-        // Let GraphQL return its normal bounded parse/validation response.
-        return NextResponse.next();
-      }
-
-      const inspection = inspectGraphQLAuthPayload(payload);
-      if (inspection.authRootCount > 1) {
-        return NextResponse.json(
-          { errors: [{ message: 'Only one authentication operation is allowed per request' }] },
-          { status: 400 },
-        );
-      }
-      if (inspection.isAuth) {
-        try {
-          const globallyAllowed = await consumeAuthAttempt(
-            keystoneContext.prisma,
-            'graphql-auth:global',
-            500,
-            15 * 60 * 1000,
-          );
-          let identitiesAllowed = true;
-          for (const identity of inspection.identities) {
-            identitiesAllowed = identitiesAllowed && await consumeAuthAttempt(
-              keystoneContext.prisma,
-              `graphql-auth:${identity}`,
-              20,
-              15 * 60 * 1000,
-            );
-          }
-          if (!globallyAllowed || !identitiesAllowed) {
-            return NextResponse.json({ errors: [{ message: 'Too many requests' }] }, { status: 429 });
-          }
-        } catch {
-          return NextResponse.json(
-            { errors: [{ message: 'Authentication rate limiting is temporarily unavailable' }] },
-            { status: 503 },
-          );
-        }
-      }
-    }
-    return NextResponse.next();
-  }
+  // Get authenticated user once
   const { user, redirectToInit } = await getAuthenticatedUser(request);
 
-  // Match canonical openfront behavior:
-  // if no initial user exists yet, all storefront traffic should redirect to dashboard/init.
-  if (
-    redirectToInit &&
-    !request.nextUrl.pathname.startsWith(`${dashboardPath}/init`)
-  ) {
+  // If redirectToInit is true (no users exist) and user is on storefront, redirect to dashboard init
+  if (redirectToInit && !request.nextUrl.pathname.startsWith(`${dashboardPath}/init`)) {
     return NextResponse.redirect(new URL(`${dashboardPath}/init`, request.url));
   }
 
-  const dashboardResponse = await handleDashboardRoutes(request, user, redirectToInit);
-  if (dashboardResponse) return dashboardResponse;
-
-  return NextResponse.next();
+  // Let each handler manage its own routes and logic
+  const response = await handleDashboardRoutes(request, user, redirectToInit);
+  
+  // If dashboard handler didn't handle the route, pass to storefront
+  if (!response) {
+    return handleStorefrontRoutes(request, user);
+  }
+  
+  return response;
 }
 
 export const config = {
   matcher: [
-    '/api/graphql',
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.svg (favicon file)
-     */
-    '/((?!api|_next/static|_next/image|favicon.svg).*)',
+    "/((?!api|_next/static|_next/image|favicon.svg|images|assets|png|svg|jpg|jpeg|gif|webp).*)",
   ],
 };

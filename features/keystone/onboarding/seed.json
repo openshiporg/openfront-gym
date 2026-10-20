@@ -99,28 +99,34 @@
         "title": "Location",
         "details": [
           "123 Fitness Ave",
-          "San Francisco, CA 94102"
+          "San Francisco, CA 94102",
+          "Replace with your gym's address."
         ]
       },
       {
         "title": "Phone",
         "details": [
           "(415) 555-0100",
-          "Front desk support during staffed hours"
+          "Replace with your gym's phone number."
         ]
       },
       {
         "title": "Email",
         "details": [
-          "hello@kineticperformance.club",
-          "support@kineticperformance.club"
+          "hello@example.invalid",
+          "Replace with your gym's email address."
         ]
       },
       {
         "title": "Hours",
         "details": [
-          "Mon–Fri 5:00 AM – 10:00 PM",
-          "Sat–Sun reduced staffed hours"
+          "Monday: 5:00 AM - 10:00 PM",
+          "Tuesday: 5:00 AM - 10:00 PM",
+          "Wednesday: 5:00 AM - 10:00 PM",
+          "Thursday: 5:00 AM - 10:00 PM",
+          "Friday: 5:00 AM - 9:00 PM",
+          "Saturday: 6:00 AM - 6:00 PM",
+          "Sunday: 7:00 AM - 4:00 PM"
         ]
       }
     ],

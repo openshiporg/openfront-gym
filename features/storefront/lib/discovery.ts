@@ -28,9 +28,6 @@ export function matchesSession(item: DiscoverableSession, filters: { q?: string;
   const text = `${item.name} ${item.instructor} ${item.difficulty || ""}`.toLowerCase();
   return terms.every(term => text.includes(term)) && (!filters.coach || item.instructorId === filters.coach) && (!filters.format || item.classTypeId === filters.format) && (filters.availability !== "open" || item.spots > 0);
 }
-export function chronologicalBookings<T extends { classInstance?: { date?: string | null } | null }>(bookings: T[]) {
-  return [...bookings].sort((a, b) => (a.classInstance?.date || "9999").localeCompare(b.classInstance?.date || "9999"));
-}
 export function creditLabel(value: number | null | undefined) {
   return value === -1 ? "Unlimited classes" : value === 0 ? "No classes included" : typeof value === "number" ? `${value} classes each service month` : "Class allowance not available";
 }

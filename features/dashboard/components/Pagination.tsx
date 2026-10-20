@@ -32,7 +32,6 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MAX_GRAPHQL_LIST_TAKE, normalizeListPageSize } from "@/lib/list-pagination";
 
 interface ListInfo {
   singular: string;
@@ -115,7 +114,7 @@ export function Pagination({
 
   // Handle page size change
   const handlePageSizeChange = (newSize: number) => {
-    const size = normalizeListPageSize(newSize, pageSize);
+    const size = Math.max(1, Number(newSize));
     // Reset to page 1 when changing page size
     const newQuery = getQueryString({ pageSize: size, page: 1 });
     router.push(`${pathname}?${newQuery}`);
@@ -333,7 +332,6 @@ export function Pagination({
                   <Input
                     type="number"
                     min="1"
-                    max={MAX_GRAPHQL_LIST_TAKE}
                     value={pageSize}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       const value = parseInt(e.target.value, 10);
@@ -352,7 +350,6 @@ export function Pagination({
                   <Button
                     size="icon"
                     variant="outline"
-                    disabled={pageSize >= MAX_GRAPHQL_LIST_TAKE}
                     onClick={() => {
                       const newSize = pageSize + 5;
                       handlePageSizeChange(newSize);

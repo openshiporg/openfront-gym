@@ -12,7 +12,7 @@ import {
 import { isSignedIn, permissions, rules } from "../access";
 import { trackingFields } from "./trackingFields";
 import { paymentEvidenceHooks } from "./paymentEvidence";
-import { requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
+import { requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from "./tenantRelationships";
 
 export const MembershipPayment = list({
   hooks: {
@@ -54,6 +54,7 @@ export const MembershipPayment = list({
     }),
     member: relationship({
       ref: "User.payments",
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
       },

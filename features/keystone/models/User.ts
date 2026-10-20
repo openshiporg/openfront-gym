@@ -9,6 +9,7 @@ import { connectedRelationshipId, validateTenantOwnership } from './tenantRelati
 import { elevatedRoleCapabilities, roleCapabilityFields } from './roleCapabilities'
 import { normalizeAuthIdentity } from '../../../lib/authRateLimit'
 import { guardKeystonePrismaResults } from '../lib/prisma-result'
+import { memberHasHistory } from '../lib/lifecycle-guards'
 
 const validateUserTenant = validateTenantOwnership([
   { field: 'role', list: 'role' },
@@ -40,8 +41,31 @@ function canAssignRole({ session, item, operation }: any) {
   return operation === 'create' || session?.itemId !== item?.id;
 }
 
+/**
+ * An account linked to a member profile has one contact authority: the Member record (and the
+ * member's own profile service). Its User name/phone copy is not edited generically, so the two
+ * can never be changed from both sides at once. Staff-only accounts keep their own fields.
+ */
+async function noLinkedMember({ item, context }: any) {
+  if (!item?.id) return true
+  const linked = await guardKeystonePrismaResults(context.prisma as any).member.count({ where: { userId: item.id } })
+  return linked === 0
+}
+
 export const User = list({
-  hooks: { validateInput: validateUserInput },
+  hooks: {
+    validateInput: validateUserInput,
+    // Accounts that own memberships, bookings, payments or coaching history are archived
+    // (member account closed, coach retired), never deleted out from under that history.
+    async validateDelete({ item, context, addValidationError }: any) {
+      const prisma = guardKeystonePrismaResults(context.prisma as any)
+      const member = await prisma.member.findFirst({ where: { userId: item.id, organizationId: item.organizationId }, select: { id: true } })
+      const coach = await prisma.instructor.count({ where: { userId: item.id } })
+      if (coach || await memberHasHistory(context, item.organizationId, member?.id ?? null, item.id)) {
+        addValidationError("This account has membership, booking, payment or coaching history and can't be deleted; close or retire it instead")
+      }
+    },
+  },
   access: {
     operation: {
       query: isSignedIn,
@@ -86,12 +110,18 @@ export const User = list({
       ui: { description: 'Tenant organization for this account' },
     }),
     name: text({
+      access: { update: noLinkedMember },
       validation: {
         isRequired: true,
       },
     }),
+    // The login identity. Generic updates are refused for everyone, including tenant
+    // all-record operators: only the signed-in holder changes it (current password, then a link
+    // sent to the new mailbox confirms it — requestEmailChange/confirmEmailChange). The change
+    // stays synchronized to Member.
     email: text({
       isIndexed: 'unique',
+      access: { update: denyAll },
       hooks: {
         resolveInput: ({ resolvedData }) => resolvedData.email === undefined
           ? undefined
@@ -101,11 +131,12 @@ export const User = list({
         isRequired: true,
       },
     }),
+    // Only the holder changes a password: with current-password proof (changeMemberPassword) or
+    // their own reset link. Generic updates are refused for everyone, staff included.
     password: password({
       access: {
         read: denyAll,
-        update: ({ session, item }) =>
-          permissions.canManagePeople({ session }) || session?.itemId === item.id,
+        update: denyAll,
       },
       validation: {
         isRequired: true,
@@ -159,15 +190,35 @@ export const User = list({
     }),
 
     phone: text({
+      access: { update: noLinkedMember },
       ui: {
         description: "Member phone number",
       },
     }),
 
+    // Legacy free-text emergency contact. Sensitive: never written generically (the member
+    // profile's emergency fields carry this now) and cleared with other health/emergency data.
     emergencyContact: text({
+      access: { read: ({ session, item }) => Boolean(session?.itemId && (session.itemId === item.id || session.data?.role?.canManageAllRecords)), create: denyAll, update: denyAll },
       ui: {
-        description: "Emergency contact name and phone",
+        description: "Emergency contact name and phone (legacy)",
+        createView: { fieldMode: 'hidden' },
+        itemView: { fieldMode: 'read' },
       },
+    }),
+
+    // A requested sign-in email change waiting for its link to be opened from the new mailbox.
+    pendingEmail: text({
+      access: { read: ({ session, item }) => Boolean(session?.itemId && session.itemId === item.id), create: denyAll, update: denyAll },
+      ui: { createView: { fieldMode: 'hidden' }, itemView: { fieldMode: 'read' }, listView: { fieldMode: 'hidden' } },
+    }),
+    pendingEmailTokenHash: text({
+      access: { read: denyAll, create: denyAll, update: denyAll },
+      ui: { createView: { fieldMode: 'hidden' }, itemView: { fieldMode: 'hidden' }, listView: { fieldMode: 'hidden' } },
+    }),
+    pendingEmailRequestedAt: timestamp({
+      access: { read: denyAll, create: denyAll, update: denyAll },
+      ui: { createView: { fieldMode: 'hidden' }, itemView: { fieldMode: 'hidden' }, listView: { fieldMode: 'hidden' } },
     }),
 
     onboardingStatus: select({

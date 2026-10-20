@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
     const params = new URL(request.url).searchParams;
     const limitRaw = params.get('limit');
     const limit = limitRaw ? Number.parseInt(limitRaw, 10) : null;
+    const skipRaw = params.get('skip');
+    const skip = skipRaw ? Number.parseInt(skipRaw, 10) : null;
     const data = await executeDiscoveryGraphQL<{ discoveryClasses: Record<string, unknown> }>(`
       query DiscoveryClasses(
         $credential: String!
@@ -18,6 +20,7 @@ export async function GET(request: NextRequest) {
         $locationId: ID
         $locationName: String
         $limit: Int
+        $skip: Int
       ) {
         discoveryClasses(
           credential: $credential
@@ -28,6 +31,7 @@ export async function GET(request: NextRequest) {
           locationId: $locationId
           locationName: $locationName
           limit: $limit
+          skip: $skip
         )
       }
     `, {
@@ -38,6 +42,7 @@ export async function GET(request: NextRequest) {
       locationId: params.get('locationId'),
       locationName: params.get('locationName'),
       limit: Number.isInteger(limit) ? limit : null,
+      skip: Number.isInteger(skip) ? skip : null,
     });
     return NextResponse.json(data.discoveryClasses);
   } catch (error) {

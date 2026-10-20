@@ -10,7 +10,7 @@ import {
 
 import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
-import { requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
+import { requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from './tenantRelationships';
 
 export const Subscription = list({
   access: {
@@ -41,6 +41,7 @@ export const Subscription = list({
     }),
     member: relationship({
       ref: 'Member.subscriptions',
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: 'select',
         description: 'Member who owns this subscription',

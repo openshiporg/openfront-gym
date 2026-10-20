@@ -1,5 +1,6 @@
 import { assertInstructorQualifications } from "../mutations/trainerQualifications";
-import { assertNoMemberServiceConflict, lockTransactionKey } from "../mutations/classCapacity";
+import { assertNoMemberServiceConflict, fillReleasedSeats, lockTransactionKey } from "../mutations/classCapacity";
+import { lockParticipationPolicy } from "./operational-policy";
 import { assertMembershipServiceEligibility } from "./membership-credits";
 import { enqueueOperationalNotice } from "./operational-notices";
 
@@ -32,13 +33,13 @@ export async function assertClassAllocation(tx: any, organizationId: string, can
   const classes = await tx.classInstance.findMany({ where: { organizationId, isCancelled: false, ...(ignoreId ? { id: { not: ignoreId } } : {}), date: { lt: end, gt: new Date(start.getTime() - 48 * 3600000) } }, include: { classSchedule: true, resource: true } });
   for (const other of classes) {
     const otherEnd = other.endsAt || new Date(other.date.getTime() + scheduleDuration(other.classSchedule));
-    if (instructorId && effectiveInstructor(other) === instructorId && overlapping(candidate.date, candidate.endsAt, other.date, otherEnd)) throw new Error("Instructor has an overlapping class");
+    if (instructorId && effectiveInstructor(other) === instructorId && overlapping(candidate.date, candidate.endsAt, other.date, otherEnd)) throw new Error("This coach already teaches another class at that time. Choose another time or coach");
     const otherResourceId = other.endsAt ? other.resourceId : other.resourceId ?? other.classSchedule?.resourceId;
     if (resource && otherResourceId === resource.id) {
       const otherResource = other.resource ?? resource;
       if (overlapping(start, end,
         new Date(other.date.getTime() - (otherResource.setupBufferMinutes || 0) * 60000),
-        new Date(otherEnd.getTime() + (otherResource.cleanupBufferMinutes || 0) * 60000))) throw new Error("Resource has an overlapping class");
+        new Date(otherEnd.getTime() + (otherResource.cleanupBufferMinutes || 0) * 60000))) throw new Error("This resource is already allocated to another class at that time. Choose another time or resource");
     }
   }
   if (instructorId || resource) {
@@ -47,13 +48,20 @@ export async function assertClassAllocation(tx: any, organizationId: string, can
       OR: [...(instructorId ? [{ instructorId }] : []), ...(resource ? [{ resourceId: resource.id }] : [])],
     } });
     for (const appointment of appointments) {
-      if (instructorId && appointment.instructorId === instructorId && overlapping(candidate.date, candidate.endsAt, appointment.startTime, appointment.endTime)) throw new Error("Instructor has an overlapping training appointment");
-      if (resource && appointment.resourceId === resource.id && overlapping(start, end, appointment.resourceStartsAt || new Date(appointment.startTime.getTime() - before), appointment.resourceEndsAt || new Date(appointment.endTime.getTime() + after))) throw new Error("Resource has an overlapping training appointment");
+      if (instructorId && appointment.instructorId === instructorId && overlapping(candidate.date, candidate.endsAt, appointment.startTime, appointment.endTime)) throw new Error("This coach has a training appointment at that time. Choose another time or coach");
+      if (resource && appointment.resourceId === resource.id && overlapping(start, end, appointment.resourceStartsAt || new Date(appointment.startTime.getTime() - before), appointment.resourceEndsAt || new Date(appointment.endTime.getTime() + after))) throw new Error("This resource is allocated to a training appointment at that time. Choose another time or resource");
     }
   }
 }
 
+/**
+ * Every class allocation (setup, generation, occurrence editing) goes through here and takes the
+ * same participation and scheduling locks, in the same order as personal training, before it
+ * reads conflicts or writes. Re-taking them inside a caller that already holds them is harmless.
+ */
 export async function saveControlledOccurrence(tx: any, organizationId: string, input: any, id?: string | null) {
+  await lockParticipationPolicy(tx, organizationId);
+  await lockTransactionKey(tx, `gym-scheduling:${organizationId}`);
   if (id) await lockTransactionKey(tx, `class-instance:${id}`);
   const existing = id ? await tx.classInstance.findFirst({ where: { id, organizationId } }) : null;
   if (id && !existing) throw new Error("Class instance not found");
@@ -95,6 +103,8 @@ export async function saveControlledOccurrence(tx: any, organizationId: string, 
     { at: new Date().toISOString(), actorId: input.actorId || "system", before: { date: existing.date.toISOString(), instructorId: existing.instructorId, locationId: existing.locationId, resourceId: existing.resourceId }, after: { date: date.toISOString(), instructorId: data.instructorId, locationId: data.locationId, resourceId: data.resourceId } },
   ] } : {}) };
   const result = existing ? await tx.classInstance.update({ where: { id: existing.id }, data: persisted }) : await tx.classInstance.create({ data: persisted });
+  // Seats added by a capacity or room change go to the existing waitlist first, in order.
+  if (existing) await fillReleasedSeats(tx, result.id, organizationId);
   if (changed) for (const booking of bookings) await enqueueOperationalNotice(tx, { organizationId, memberId: booking.memberId,
     key: `booking:${booking.id}:reschedule:${persisted.changeHistory?.length}`, kind: "reschedule", message: `Your class details changed. The class starts ${date.toISOString()}. Please review your booking.` });
   return result;

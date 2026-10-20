@@ -3,7 +3,7 @@ import { relationship, text, json, timestamp, checkbox, integer } from '@keyston
 import { permissions } from '../access';
 import { tenantFilter } from '../access/tenantPolicy';
 import { trackingFields } from './trackingFields';
-import { requiredRelationshipDb } from './tenantRelationships';
+import { requiredRelationshipDb, restrictDeleteDb } from './tenantRelationships';
 
 // Evidence is changed only by the tenant-checked domain operations, never raw CRUD.
 const access = {
@@ -19,19 +19,23 @@ export const OperationalNotice = list({ access, fields: {
 } });
 export const ParticipationPolicy = list({ access, fields: {
   organization: organization(), version: text(), documentReference: text(),
+  // Snapshot of owner-pasted terms for this version; empty for external-document policies.
+  documentText: text({ ui: { displayMode: 'textarea' } }),
   enforceWaiver: checkbox({ defaultValue: true }), adultOnly: checkbox({ defaultValue: true }),
   healthPurpose: text(), retentionDays: integer({ defaultValue: 365 }),
   publishedBy: text(), ...trackingFields,
 } });
 export const ParticipationEvidence = list({ access, fields: {
-  organization: organization(), member: relationship({ ref: 'Member' }),
+  organization: organization(), member: relationship({ ref: 'Member', db: { extendPrismaSchema: restrictDeleteDb } }),
   policy: relationship({ ref: 'ParticipationPolicy' }), key: text({ isIndexed: 'unique' }), requestHash: text(),
   documentReference: text(), verifiedBy: text(), acceptedAt: timestamp(), expiresAt: timestamp(),
   revokedAt: timestamp(), revocationReason: text(), healthConsent: checkbox({ defaultValue: false }),
+  // "acceptance" (terms accepted or verified) or "health_consent" (optional health-storage permission only).
+  kind: text({ defaultValue: 'acceptance', validation: { isRequired: true } }),
   ...trackingFields,
 } });
 export const OperationsCase = list({ access, fields: {
-  organization: organization(), member: relationship({ ref: 'Member' }),
+  organization: organization(), member: relationship({ ref: 'Member', db: { extendPrismaSchema: restrictDeleteDb } }),
   key: text({ isIndexed: 'unique' }), requestHash: text(), kind: text(), reference: text(), locationId: text(),
   summary: text(), status: text({ defaultValue: 'open' }), assignedTo: text(),
   history: json({ defaultValue: [] }), openedBy: text(), closedAt: timestamp(), ...trackingFields,

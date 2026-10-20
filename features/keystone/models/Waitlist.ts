@@ -10,7 +10,7 @@ import {
 
 import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
-import { requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
+import { requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from './tenantRelationships';
 
 export const Waitlist = list({
   access: {
@@ -40,6 +40,7 @@ export const Waitlist = list({
     }),
     member: relationship({
       ref: 'Member.waitlistEntries',
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: 'select',
         description: 'Member on the waitlist',

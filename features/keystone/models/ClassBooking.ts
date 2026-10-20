@@ -5,13 +5,14 @@ import {
   select,
   timestamp,
   integer,
+  json,
   text,
 } from "@keystone-6/core/fields";
 
 import { isSignedIn, permissions, rules } from "../access";
 import { trackingFields } from "./trackingFields";
 import { bookingLifecycleHooks } from "../mutations/gymLifecyclePolicy";
-import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from "./tenantRelationships";
 
 export const ClassBooking = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, classInstanceId, memberId, activeBookingKey") },
@@ -64,6 +65,7 @@ export const ClassBooking = list({
     member: relationship({
       ref: "Member.bookings",
       access: { update: denyAll },
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
         description: "The member who made the booking",
@@ -87,6 +89,13 @@ export const ClassBooking = list({
       ui: {
         description: "Member's phone number",
       },
+    }),
+
+    // The class as booked (title, type, coach, site, times, credit terms), captured in the
+    // reservation transaction so later catalog edits never rewrite booking history.
+    serviceSnapshot: json({
+      access: { create: denyAll, update: denyAll },
+      ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "read" }, description: "Class details at the time of booking" },
     }),
 
     eligibilityReviewReason: text({ access: { create: denyAll, update: denyAll } }),

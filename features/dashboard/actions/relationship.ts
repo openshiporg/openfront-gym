@@ -1,14 +1,13 @@
 "use server";
 
 import { keystoneClient, type KeystoneResponse } from "@/features/dashboard/lib/keystoneClient";
-import { normalizeDashboardListWindow } from "@/lib/list-pagination";
 
 // Relationship Options Server Action
 export async function getRelationshipOptions(
   listKey: string,
   where: Record<string, unknown>,
-  take: unknown,
-  skip: unknown,
+  take: number,
+  skip: number,
   labelField: string,
   extraSelection: string,
   gqlNames: {
@@ -17,8 +16,6 @@ export async function getRelationshipOptions(
     listQueryCountName: string;
   }
 ): Promise<KeystoneResponse<any>> {
-  const pagination = normalizeDashboardListWindow(take, skip);
-
   try {
     const query = `
       query GetOptions($where: ${gqlNames.whereInputName}!, $take: Int!, $skip: Int!) {
@@ -33,18 +30,16 @@ export async function getRelationshipOptions(
 
     const response = await keystoneClient(query, {
       where,
-      take: pagination.take,
-      skip: pagination.skip,
+      take,
+      skip,
     });
 
     // Return the entire response object directly
     return response;
   } catch (error) {
-    console.error("Error fetching relationship options:", error);
+    console.error("Dashboard operation failed (details redacted).");
     const errorMessage =
-      error instanceof Error
-        ? error.message
-        : "An unexpected error occurred while fetching relationship options";
+      "An unexpected error occurred while fetching relationship options";
     return { success: false, error: errorMessage } as KeystoneResponse<any>;
   }
 }

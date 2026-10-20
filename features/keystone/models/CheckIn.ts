@@ -10,7 +10,7 @@ import {
 
 import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
-import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from './tenantRelationships';
 
 export const CheckIn = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, memberId, openCheckInKey") },
@@ -41,6 +41,7 @@ export const CheckIn = list({
     }),
     member: relationship({
       ref: 'Member.checkIns',
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: 'select',
         description: 'Member checking in',

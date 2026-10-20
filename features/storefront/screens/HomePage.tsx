@@ -1,34 +1,227 @@
 import { type Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { ArrowUpRight, CalendarSearch } from "lucide-react";
 import { UNCONFIGURED_STOREFRONT, getStorefrontBrandName } from "@/features/storefront/lib/brand";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
 import { getClassTypes, getUpcomingClassOccurrences } from "@/features/storefront/lib/data/classes";
 import { getInstructors } from "@/features/storefront/lib/data/instructors";
 import { getMembershipTiers } from "@/features/storefront/lib/data/memberships";
 import { formatMajorUnits } from "@/features/platform/lib/currency";
-import { formatOccurrenceDate, formatOccurrenceTime } from "@/features/storefront/lib/class-occurrence";
+import { formatOccurrenceTime } from "@/features/storefront/lib/class-occurrence";
 import { bookingReturnPath, joinPath } from "@/features/storefront/lib/return-path";
-import { creditLabel } from "@/features/storefront/lib/discovery";
+import { calendarDays, creditLabel, localDateKey } from "@/features/storefront/lib/discovery";
+import { mapLink, publishedHours } from "@/features/storefront/lib/contact-config";
+import { difficultyLabel, documentText, initials } from "@/features/storefront/lib/presentation";
+import { BookSessionLink, SessionRow } from "@/features/storefront/modules/common/session-row";
+import { ArrowLink, EmptyState, SectionHead } from "@/features/storefront/modules/common/ui";
+import { HoursList } from "@/features/storefront/modules/layout/templates/footer";
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
-  return { title: getStorefrontBrandName(config), description: config?.heroSubheadline || config?.description || UNCONFIGURED_STOREFRONT.description };
+  return {
+    title: { absolute: getStorefrontBrandName(config) },
+    description: config?.heroSubheadline || config?.description || UNCONFIGURED_STOREFRONT.description,
+  };
 }
+
 export async function HomePage() {
-  const [config, formats, coaches, tiers, sessions] = await Promise.all([getStorefrontConfig(), getClassTypes(), getInstructors(), getMembershipTiers(), getUpcomingClassOccurrences({ days: 7, limit: 4 })]);
+  const [config, formats, coaches, tiers, sessions] = await Promise.all([
+    getStorefrontConfig(),
+    getClassTypes(),
+    getInstructors(),
+    getMembershipTiers(),
+    getUpcomingClassOccurrences({ days: 7, limit: 100 }),
+  ]);
   const brand = getStorefrontBrandName(config);
   const zone = config?.timezone || "UTC";
+  const currency = config?.currencyCode || "USD";
   const headline = config?.heroHeadline?.replace(/\\n/g, "\n") || config?.tagline || brand;
-  const highlights = Array.isArray(config?.facilityHighlights) ? config.facilityHighlights : [];
-  return <>
-    <section className="sf-container sf-home-hero"><div><p className="sf-eyebrow mb-5">{config?.heroEyebrow || "Training, on your terms"}</p><h1>{headline}</h1><p className="sf-lead">{config?.heroSubheadline || config?.description || "Explore classes, find your coach and make room for your next session."}</p><div className="sf-actions"><Link className="sf-btn-primary" href="/schedule">Find your next session →</Link><Link className="sf-btn-secondary" href="/memberships">Explore membership</Link></div><p className="sf-muted text-sm mt-5">Already a member? <Link className="sf-link" href="/account">Your bookings and check-in code</Link></p><dl className="sf-home-facts"><div><dd>{formats.length}</dd><dt>Published class formats</dt></div><div><dd>{coaches.length}</dd><dt>Coaches to meet</dt></div>{config?.locationName && <div><dd>{config.locationName}</dd><dt>Your training location</dt></div>}</dl></div>
-      <figure className="sf-home-photo">{config?.heroImageUrl ? <Image src={config.heroImageUrl} alt={`${brand} training floor`} width={1200} height={1000} sizes="(max-width: 700px) 100vw, 48vw" priority unoptimized /> : <div className="sf-panel"><p className="sf-eyebrow">Start with the timetable</p><h2 className="sf-display text-4xl my-4">Find your rhythm.</h2><p className="sf-muted">Explore published sessions and choose a time to train.</p></div>}<figcaption><span>{config?.locationName || brand}</span><Link href="/facilities">Explore the space ↗</Link></figcaption></figure>
-    </section>
-    <section className="sf-home-section"><div className="sf-container sf-home-split"><div><p className="sf-eyebrow">Coming up at the club</p><h2>A place in your week.</h2><p className="sf-muted">See what’s next, check the spaces and book a session. Times shown in {zone}.</p><Link className="sf-btn-secondary mt-6" href="/schedule">View the full timetable →</Link></div><div className="sf-session-list">{sessions.length ? sessions.map(session => <article className="sf-session-row" key={session.id}><div className="sf-session-time"><time dateTime={session.startsAt}>{formatOccurrenceTime(session.startsAt, zone)}</time><span>{formatOccurrenceDate(session.startsAt, zone)}</span></div><div><h3>{session.name || session.classType?.name || "Class"}</h3><p>{session.instructor?.name || "Coach not published"}</p><p>{session.availability.spotsRemaining > 0 ? `${session.availability.spotsRemaining} spaces available` : "Waitlist available"}</p></div><Link href={bookingReturnPath(session.id)} className="sf-btn-secondary">{session.availability.spotsRemaining > 0 ? "Book" : "Waitlist"}<span className="sr-only"> {session.name}</span></Link></article>) : <div className="sf-empty"><h3>The next sessions are on their way</h3><p>Explore the formats or ask the club about upcoming classes.</p><Link href="/classes" className="sf-btn-secondary">Explore class formats</Link></div>}</div></div></section>
-    <section className="sf-home-section"><div className="sf-container"><p className="sf-eyebrow">Find your kind of training</p><div className="sf-section-heading"><h2>Different ways to move forward.</h2><Link href="/classes" className="sf-link">All class formats →</Link></div><div className="sf-format-grid">{formats.slice(0,6).map(format => <Link href={`/classes/${format.id}`} key={format.id} className="sf-format-card"><div className="flex flex-wrap gap-2"><span className="sf-badge">{format.difficulty}</span><span className="sf-badge">{format.duration} min</span></div><h3 className="text-2xl font-semibold">{format.name}</h3><p>{format.equipmentNeeded?.length ? format.equipmentNeeded.join(" · ") : "Meet the format and explore upcoming sessions."}</p><span className="sf-link">What to expect →</span></Link>)}</div>{!formats.length && <p className="sf-muted">Class formats have not been published. Contact the club for help planning your training.</p>}</div></section>
-    {coaches.length > 0 && <section className="sf-home-section"><div className="sf-container"><p className="sf-eyebrow">Meet your coaching team</p><div className="sf-section-heading"><h2>People to train with.</h2><Link href="/instructors" className="sf-link">Meet all coaches →</Link></div><div className="sf-coach-grid">{coaches.slice(0,3).map(coach => <Link key={coach.id} href={`/instructors/${coach.id}`} className="sf-coach-card"><div className="sf-coach-photo">{coach.photo ? <Image src={coach.photo} alt={coach.user.name} width={480} height={400} sizes="(max-width: 700px) 45vw, 30vw" unoptimized /> : <span>Portrait not published</span>}</div><h3 className="text-xl font-semibold">{coach.user.name}</h3><p>{coach.specialties?.length ? coach.specialties.join(" · ") : "Explore this coach’s profile and upcoming sessions."}</p><span className="sf-link">Meet your coach →</span></Link>)}</div></div></section>}
-    <section className="sf-home-section"><div className="sf-container sf-home-split"><div><p className="sf-eyebrow">Membership made clear</p><h2>Access that fits your week.</h2><p className="sf-muted">Compare class allowances, access hours and billing options. Review your chosen plan before checkout.</p><Link href="/memberships" className="sf-btn-primary mt-6">Compare memberships →</Link></div><div className="space-y-3">{tiers.length ? tiers.slice(0,3).map(tier => <Link key={tier.id} href={joinPath(tier.id)} className="sf-panel flex flex-wrap items-center justify-between gap-4"><div><h3 className="text-xl font-semibold">{tier.name}</h3><p className="sf-muted text-sm mt-2">{creditLabel(tier.classCreditsPerMonth)}</p></div><div><p className="text-2xl font-semibold">{formatMajorUnits(tier.monthlyPrice, config?.currencyCode || "USD")}</p><p className="sf-muted text-sm">per month · review plan →</p></div></Link>) : <div className="sf-empty"><h3>Let’s find the right membership</h3><p>Plans are not published yet. Contact the club for current options.</p><Link href="/contact" className="sf-btn-secondary">Ask about joining</Link></div>}</div></div></section>
-    <section className="sf-home-section"><div className="sf-container sf-home-split"><div><p className="sf-eyebrow">Come get a feel for the place</p><h2>{config?.facilityHeadline || "Plan your first visit."}</h2><p className="sf-muted">{config?.facilityDescription || "Find the address, check opening hours and ask us about your first session."}</p><div className="sf-actions"><Link href="/facilities" className="sf-btn-secondary">Explore facilities</Link><Link href="/contact" className="sf-link">Contact and hours →</Link></div></div><div className="sf-panel">{config?.address && <p className="text-lg font-semibold mb-5">{config.address}</p>}{highlights.slice(0,3).map(highlight => <div key={highlight.title} className="border-t border-[var(--sf-border)] py-4"><h3 className="font-semibold">{highlight.title}</h3><p className="sf-muted text-sm mt-2">{highlight.description}</p></div>)}<Link href="/policies" className="sf-link">Read club policies →</Link></div></div></section>
-  </>;
+  const subline = config?.heroSubheadline || config?.description || null;
+  const primaryCta = config?.heroPrimaryCtaLabel && config?.heroPrimaryCtaHref
+    ? { label: config.heroPrimaryCtaLabel, href: config.heroPrimaryCtaHref }
+    : { label: "Book a class", href: "/schedule" };
+  const secondaryCta = config?.heroSecondaryCtaLabel && config?.heroSecondaryCtaHref
+    ? { label: config.heroSecondaryCtaLabel, href: config.heroSecondaryCtaHref }
+    : { label: "Memberships", href: "/memberships" };
+  const days = calendarDays(new Date(), zone, 7);
+  const dayCaption = (startsAt: string) => {
+    const key = localDateKey(startsAt, zone);
+    const index = days.findIndex((day) => day.key === key);
+    return index === 0 ? "Today" : index === 1 ? "Tomorrow" : days[index]?.label ?? "";
+  };
+  const upNext = sessions.slice(0, 5);
+  const week = days.map((day) => ({ ...day, sessions: sessions.filter((session) => localDateKey(session.startsAt, zone) === day.key) }));
+  const hours = publishedHours(config?.hours);
+
+  return (
+    <div className="sf-wrap">
+      <section className="sf-hero" aria-labelledby="home-title">
+        <div className="sf-hero-media" data-plain={config?.heroImageUrl ? undefined : true}>
+          {config?.heroImageUrl ? (
+            <Image src={config.heroImageUrl} alt="" fill priority sizes="(max-width: 1099px) 100vw, 66vw" unoptimized />
+          ) : null}
+          <div className="sf-hero-copy">
+            {config?.heroEyebrow ? <p className="sf-hero-sub" data-eyebrow>{config.heroEyebrow}</p> : null}
+            <h1 id="home-title" className="sf-hero-title">{headline}</h1>
+            {subline ? <p className="sf-hero-sub">{subline}</p> : null}
+            <div className="sf-actions">
+              <Link href={primaryCta.href} className="sf-btn" data-variant="accent" data-size="lg">{primaryCta.label}</Link>
+              <Link href={secondaryCta.href} className="sf-btn" data-variant="outline-night" data-size="lg">{secondaryCta.label}</Link>
+            </div>
+          </div>
+        </div>
+
+        <section className="sf-upnext sf-rise-2" aria-labelledby="home-upnext">
+          <div className="sf-upnext-head">
+            <h2 id="home-upnext" className="sf-h3">Up next</h2>
+            <ArrowLink href="/schedule" size="sm">Schedule</ArrowLink>
+          </div>
+          {upNext.length ? (
+            <div className="sf-sessions">
+              {upNext.map((session) => {
+                const name = session.name || session.classType?.name || "Class";
+                return (
+                  <SessionRow
+                    key={session.id}
+                    time={formatOccurrenceTime(session.startsAt, zone)}
+                    startsAt={session.startsAt}
+                    caption={dayCaption(session.startsAt)}
+                    title={name}
+                    titleHref={session.classType ? `/classes/${session.classType.id}` : undefined}
+                    meta={<>
+                      {session.instructor ? <Link href={`/instructors/${session.instructor.id}`}>{session.instructor.name}</Link> : null}
+                      {session.classType?.duration ? <span>{session.classType.duration} min</span> : null}
+                    </>}
+                    spots={session.availability.spotsRemaining}
+                    capacity={session.availability.maxCapacity}
+                    waitlist={session.availability.waitlistCount}
+                    action={<BookSessionLink id={session.id} name={name} spots={session.availability.spotsRemaining} />}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState icon={<CalendarSearch aria-hidden="true" />} title="No sessions this week" action={<ArrowLink href="/classes">Classes</ArrowLink>} />
+          )}
+          <p className="sf-meta">Times in {zone}</p>
+        </section>
+      </section>
+
+      <section className="sf-section" aria-labelledby="home-week">
+        <SectionHead id="home-week" title="This week" href="/schedule?view=week" linkLabel="Week view" />
+        <div className="sf-week">
+          {week.map((day, index) => (
+            <article key={day.key} className="sf-week-day" data-today={index === 0 || undefined} aria-label={day.full}>
+              <Link href={`/schedule?date=${day.key}`}>
+                <strong>{index === 0 ? "Today" : day.label}</strong>
+                <span>{day.short}</span>
+              </Link>
+              {day.sessions.slice(0, 4).map((session) => (
+                <Link key={session.id} href={bookingReturnPath(session.id)} className="sf-week-item">
+                  <time dateTime={session.startsAt}>{formatOccurrenceTime(session.startsAt, zone)}</time>
+                  <strong>{session.name || session.classType?.name || "Class"}</strong>
+                </Link>
+              ))}
+              {day.sessions.length > 4 ? <p className="sf-week-more">{day.sessions.length - 4} more</p> : null}
+              {!day.sessions.length ? <p className="sf-week-empty">No sessions</p> : null}
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="sf-section" aria-labelledby="home-classes">
+        <SectionHead id="home-classes" title="Classes" href="/classes" linkLabel="All classes" />
+        {formats.length ? (
+          <div className="sf-scroller">
+            {formats.slice(0, 6).map((format) => {
+              const description = documentText(format.description);
+              const level = difficultyLabel(format.difficulty);
+              return (
+                <article key={format.id} className="sf-class-card">
+                  <ArrowUpRight className="sf-arrow-mark" aria-hidden="true" />
+                  <h3><Link href={`/classes/${format.id}`}>{format.name}</Link></h3>
+                  <div className="sf-list-plain">
+                    {level ? <span className="sf-tag">{level}</span> : null}
+                    <span className="sf-tag">{format.duration} min</span>
+                  </div>
+                  {description ? <p>{description}</p> : null}
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState title="No classes published" action={<ArrowLink href="/contact">Contact</ArrowLink>} />
+        )}
+      </section>
+
+      <section className="sf-section" aria-labelledby="home-plans">
+        <SectionHead id="home-plans" title="Memberships" href="/memberships" linkLabel="Compare plans" />
+        {tiers.length ? (
+          <div className="sf-plans" data-count={tiers.length >= 3 ? "3" : undefined}>
+            {tiers.slice(0, 3).map((tier) => (
+              <article key={tier.id} className="sf-plan">
+                <div className="sf-plan-head">
+                  <h3>{tier.name}</h3>
+                  {tier.accessHours ? <p className="sf-meta">Access: {tier.accessHours}</p> : null}
+                </div>
+                <p className="sf-price"><strong>{formatMajorUnits(tier.monthlyPrice, currency)}</strong><span>/ month</span></p>
+                <dl className="sf-facts" data-plain>
+                  <div><dt>Classes</dt><dd>{creditLabel(tier.classCreditsPerMonth)}</dd></div>
+                  <div><dt>Freeze</dt><dd>{tier.freezeAllowed ? "Included" : "Not included"}</dd></div>
+                </dl>
+                <Link href={joinPath(tier.id)} className="sf-btn" data-variant="accent" data-block>Choose {tier.name}</Link>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="No plans published" action={<ArrowLink href="/contact">Contact</ArrowLink>} />
+        )}
+      </section>
+
+      {coaches.length > 0 ? (
+        <section className="sf-section" aria-labelledby="home-coaches">
+          <SectionHead id="home-coaches" title="Coaches" href="/instructors" linkLabel="All coaches" />
+          <div className="sf-grid" data-cols="coaches">
+            {coaches.slice(0, 4).map((coach) => (
+              <article key={coach.id} className="sf-coach">
+                <div className="sf-coach-photo">
+                  {coach.photo ? <Image src={coach.photo} alt={coach.user.name} width={600} height={750} sizes="(max-width: 899px) 50vw, 25vw" unoptimized /> : <span className="sf-monogram" aria-hidden="true">{initials(coach.user.name)}</span>}
+                </div>
+                <div className="sf-stack" data-gap="sm">
+                  <h3><Link href={`/instructors/${coach.id}`}>{coach.user.name}</Link></h3>
+                  {coach.specialties?.length ? <p>{coach.specialties.join(", ")}</p> : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="sf-section" aria-labelledby="home-visit">
+        <SectionHead id="home-visit" title="Visit" href="/facilities" linkLabel="Facilities" />
+        <div className="sf-split">
+          <div className="sf-stack">
+            {config?.address ? <p className="sf-h2">{config.address}</p> : <p className="sf-text-2">Address not published</p>}
+            <div className="sf-actions">
+              {config?.address ? (
+                <a className="sf-btn" data-variant="secondary" href={mapLink(config.address)} target="_blank" rel="noreferrer">
+                  Directions<ArrowUpRight aria-hidden="true" />
+                </a>
+              ) : null}
+              {config?.phone ? <a className="sf-btn" data-variant="secondary" href={`tel:${config.phone.replace(/[^\d+]/g, "")}`}>{config.phone}</a> : null}
+              <Link className="sf-btn" data-variant="ghost" href="/contact">Contact</Link>
+            </div>
+          </div>
+          <div className="sf-panel">
+            <div className="sf-row" data-between>
+              <h3 className="sf-h3">Hours</h3>
+              <span className="sf-meta">{zone}</span>
+            </div>
+            {hours.length ? <HoursList hours={hours} timeZone={zone} /> : <p className="sf-text-2">Not published</p>}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }

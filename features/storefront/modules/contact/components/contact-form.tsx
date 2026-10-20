@@ -1,41 +1,67 @@
 "use client";
 
 import { useActionState } from "react";
+import { Loader2 } from "lucide-react";
 import { submitContactFormAction, type ContactFormState } from "@/features/storefront/lib/actions/contact";
+import { CONTACT_TOPICS } from "@/features/storefront/lib/contact-config";
+import { Banner } from "@/features/storefront/modules/common/ui";
 
 const initialState: ContactFormState = { status: "idle", message: null, reference: null };
-const inputClass = "h-12 w-full border border-[var(--sf-border-strong)] bg-[var(--sf-surface)] px-4 text-sm text-[var(--sf-foreground)] placeholder:text-[var(--sf-muted)] outline-none focus:border-[var(--sf-foreground)] focus:ring-2 focus:ring-[var(--sf-focus)]/30";
-const labelClass = "grid gap-2 text-sm font-semibold";
 
-export function ContactForm({ deliveryConfigured, supportEmail }: { deliveryConfigured: boolean; supportEmail: string | null }) {
+export function ContactForm({
+  topic,
+  from,
+  phone,
+  supportEmail,
+  defaults,
+  sentNote = "Staff read messages in the club inbox and reply to the email address you entered. Keep this reference if you contact the club again.",
+}: {
+  topic?: string | null;
+  from?: string | null;
+  phone?: string | null;
+  supportEmail?: string | null;
+  defaults?: { firstName?: string; lastName?: string; email?: string; phone?: string };
+  /** What happens next, shown after the message is stored. */
+  sentNote?: string;
+}) {
   const [state, action, pending] = useActionState(submitContactFormAction, initialState);
-
-  if (!deliveryConfigured) {
-    return (
-      <div className="sf-status-warning mt-8 px-5 py-5 text-sm leading-6">
-        <p className="font-semibold">Online messages are unavailable right now.</p>
-        <p className="mt-2">This form is not accepting messages. Please call the front desk{supportEmail ? " or email us directly" : ""}.</p>
-        {supportEmail ? <a className="mt-3 inline-flex font-semibold underline underline-offset-4" href={`mailto:${supportEmail}`}>Email {supportEmail}</a> : null}
-      </div>
-    );
-  }
+  const selectedTopic = CONTACT_TOPICS.find((item) => item.key === topic)?.label ?? CONTACT_TOPICS[0].label;
+  const fallback = phone
+    ? <a className="sf-link" href={`tel:${phone}`}>Call {phone}</a>
+    : supportEmail ? <a className="sf-link" href={`mailto:${supportEmail}`}>Email {supportEmail}</a> : undefined;
 
   return (
-    <form action={action} className="mt-8 grid gap-5" noValidate>
-      {state.status === "sent" ? <div role="status" className="sf-status-success px-4 py-3 text-sm">{state.message} Reference: <strong>{state.reference}</strong>.</div> : null}
-      {state.status === "error" ? (
-        <div role="alert" className="sf-status-error px-4 py-3 text-sm"><p>{state.message}</p>{supportEmail ? <a className="mt-2 inline-flex font-semibold underline underline-offset-4" href={`mailto:${supportEmail}`}>Email {supportEmail} directly</a> : null}</div>
+    <form action={action} className="sf-form">
+      {state.status === "sent" ? (
+        <Banner tone="ok" title={state.message}>Reference {state.reference}. {sentNote}</Banner>
       ) : null}
+      {state.status === "error" ? <Banner tone="bad" action={fallback}>{state.message}</Banner> : null}
 
-      <div className="grid gap-5 md:grid-cols-2">
-        <label className={labelClass}>First name<input name="firstName" required maxLength={100} className={inputClass} autoComplete="given-name" /></label>
-        <label className={labelClass}>Last name<input name="lastName" required maxLength={100} className={inputClass} autoComplete="family-name" /></label>
+      {from ? <input type="hidden" name="from" value={from} /> : null}
+      <div className="sf-honeypot" aria-hidden="true">
+        <label>Website<input name="website" tabIndex={-1} autoComplete="off" /></label>
       </div>
-      <label className={labelClass}>Email<input name="email" required maxLength={254} className={inputClass} type="email" autoComplete="email" /></label>
-      <label className={labelClass}>Phone <span className="font-normal text-[var(--sf-muted)]">Optional</span><input name="phone" maxLength={40} className={inputClass} type="tel" autoComplete="tel" /></label>
-      <label className={labelClass}>Topic<select name="topic" className={inputClass}><option>Membership inquiry</option><option>Class information</option><option>Schedule a tour</option><option>General support</option></select></label>
-      <label className={labelClass}>Message<textarea name="message" required maxLength={5000} className="min-h-40 w-full border border-[var(--sf-border-strong)] bg-[var(--sf-surface)] px-4 py-3 text-sm outline-none focus:border-[var(--sf-foreground)] focus:ring-2 focus:ring-[var(--sf-focus)]/30" /></label>
-      <button type="submit" disabled={pending} className="sf-btn-primary w-fit px-6 disabled:cursor-wait disabled:opacity-60">{pending ? "Sending..." : "Send message"}</button>
+
+      <div className="sf-form-row">
+        <label className="sf-field">First name<input name="firstName" required maxLength={100} autoComplete="given-name" defaultValue={defaults?.firstName} /></label>
+        <label className="sf-field">Last name<input name="lastName" required maxLength={100} autoComplete="family-name" defaultValue={defaults?.lastName} /></label>
+      </div>
+      <div className="sf-form-row">
+        <label className="sf-field">Email<input name="email" required maxLength={254} type="email" autoComplete="email" defaultValue={defaults?.email} /></label>
+        <label className="sf-field">Phone (optional)<input name="phone" maxLength={40} type="tel" autoComplete="tel" defaultValue={defaults?.phone} /></label>
+      </div>
+      <label className="sf-field">Topic
+        <select name="topic" defaultValue={selectedTopic}>
+          {CONTACT_TOPICS.map((item) => <option key={item.key} value={item.label}>{item.label}</option>)}
+        </select>
+      </label>
+      <label className="sf-field">Message<textarea name="message" required maxLength={5000} rows={6} /></label>
+      <div>
+        <button type="submit" disabled={pending} className="sf-btn" data-size="lg">
+          {pending ? <Loader2 className="sf-spin" aria-hidden="true" /> : null}
+          {pending ? "Sending…" : "Send message"}
+        </button>
+      </div>
     </form>
   );
 }

@@ -1,30 +1,51 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowRight, Menu, Moon, Sun, X } from "lucide-react";
-import { useTheme } from "next-themes";
+import { createPortal } from "react-dom";
+import { ArrowUpRight, Menu, X } from "lucide-react";
 import { signOut } from "@/features/storefront/lib/data/user";
+import Wordmark, { type WordmarkBrand } from "./wordmark";
+import ThemeSwitch from "./theme-switch";
 
 const NAV_LINKS = [
-  { label: "Timetable", href: "/schedule" },
+  { label: "Schedule", href: "/schedule" },
   { label: "Classes", href: "/classes" },
-  { label: "Membership", href: "/memberships" },
+  { label: "Memberships", href: "/memberships" },
   { label: "Coaches", href: "/instructors" },
-  { label: "Facility", href: "/facilities" },
+  { label: "Facilities", href: "/facilities" },
+  { label: "Contact", href: "/contact" },
 ];
 
 const MOBILE_NAV_LINKS = [
   { label: "Home", href: "/" },
   ...NAV_LINKS,
-  { label: "Contact", href: "/contact" },
 ];
 
 type NavCta = { label: string; href: string };
 
+function isActive(pathname: string, href: string) {
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function PrimaryNav() {
+  const pathname = usePathname() || "";
+  return (
+    <nav className="sf-nav" aria-label="Primary navigation">
+      {NAV_LINKS.map((link) => (
+        <Link key={link.href} href={link.href} aria-current={isActive(pathname, link.href) ? "page" : undefined}>
+          {link.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+/** Phone header controls: a Book shortcut and the full-screen menu. Hidden from 1080px. */
 export default function NavClient({
   user,
+  brand,
   primaryCta,
   secondaryCta,
 }: {
@@ -32,25 +53,23 @@ export default function NavClient({
     name?: string | null;
     role?: { isInstructor?: boolean; canAccessDashboard?: boolean } | null;
   } | null;
+  brand: WordmarkBrand;
   primaryCta?: NavCta | null;
   secondaryCta?: NavCta | null;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname() || "";
-  const { resolvedTheme, setTheme } = useTheme();
-  const mounted = useSyncExternalStore(
-    () => () => undefined,
-    () => true,
-    () => false,
-  );
-  const dark = mounted && resolvedTheme === "dark";
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const hasOpened = useRef(false);
+  const close = () => setOpen(false);
+  const extraCtas = [user ? null : primaryCta, secondaryCta].filter(
+    (cta): cta is NavCta => Boolean(cta) && !MOBILE_NAV_LINKS.some((link) => link.href === cta?.href),
+  );
 
   useEffect(() => {
-    const query = window.matchMedia("(min-width: 1120px)");
+    const query = window.matchMedia("(min-width: 1080px)");
     const closeOnDesktop = () => { if (query.matches) setOpen(false); };
     query.addEventListener("change", closeOnDesktop);
     return () => query.removeEventListener("change", closeOnDesktop);
@@ -65,9 +84,8 @@ export default function NavClient({
   }, []);
 
   useEffect(() => {
-    const background = document.querySelectorAll<HTMLElement>(
-      "main, footer, .sf-wordmark, .sf-auth-nav",
-    );
+    // The menu is portalled to <body>, so the whole storefront behind it can be made inert.
+    const background = document.querySelectorAll<HTMLElement>(".sf-root");
     document.body.style.overflow = open ? "hidden" : "";
     background.forEach((element) => {
       element.inert = open;
@@ -88,7 +106,7 @@ export default function NavClient({
     };
   }, [open]);
 
-  function trapMenuFocus(event: React.KeyboardEvent<HTMLDivElement>) {
+  function trapMenuFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Tab") return;
     const focusable = menuRef.current?.querySelectorAll<HTMLElement>(
       'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -107,28 +125,9 @@ export default function NavClient({
 
   return (
     <>
-      <nav className="sf-desktop-nav" aria-label="Primary navigation">
-        {NAV_LINKS.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className="sf-nav-link"
-            data-active={pathname === link.href || pathname.startsWith(`${link.href}/`)}
-            aria-current={pathname === link.href || pathname.startsWith(`${link.href}/`) ? "page" : undefined}
-          >
-            {link.label}
-          </Link>
-        ))}
-      </nav>
-
-      <button
-        type="button"
-        className="sf-theme-toggle"
-        onClick={() => setTheme(dark ? "light" : "dark")}
-        aria-label={dark ? "Use light theme" : "Use dark theme"}
-      >
-        {dark ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
-      </button>
+      {pathname !== "/schedule" ? (
+        <Link href="/schedule" className="sf-btn sf-mobile-only" data-size="sm">Book</Link>
+      ) : null}
 
       <button
         ref={triggerRef}
@@ -136,74 +135,70 @@ export default function NavClient({
         aria-label="Open menu"
         aria-controls="storefront-mobile-menu"
         aria-expanded={open}
-        aria-hidden={open}
-        disabled={open}
-        tabIndex={open ? -1 : 0}
         onClick={() => setOpen(true)}
-        className={`sf-menu-trigger ${open ? "invisible pointer-events-none" : ""}`}
+        className="sf-icon-btn sf-mobile-only"
       >
-        <Menu className="h-5 w-5" />
+        <Menu aria-hidden="true" />
       </button>
 
-      {open ? (
-        <div
-          className="sf-mobile-backdrop fixed inset-0 z-40 bg-[var(--sf-ink)]/45 backdrop-blur-sm"
-          onClick={() => setOpen(false)}
-        />
-      ) : null}
-
-      {open ? (
+      {open ? createPortal(
         <div
           ref={menuRef}
           id="storefront-mobile-menu"
           role="dialog"
           aria-modal="true"
           aria-labelledby="storefront-mobile-menu-title"
-          className="sf-mobile-menu"
+          className="sf-portal sf-drawer"
           onKeyDown={trapMenuFocus}
         >
-          <div className="sf-mobile-menu-header">
-            <span id="storefront-mobile-menu-title" className="sf-eyebrow">Menu</span>
-            <button ref={closeRef} type="button" aria-label="Close menu" onClick={() => setOpen(false)}>
-              <X className="h-5 w-5" />
+          <div className="sf-drawer-head">
+            <Wordmark brand={brand} onNavigate={close} />
+            <span id="storefront-mobile-menu-title" className="sr-only">Menu</span>
+            <button ref={closeRef} type="button" className="sf-icon-btn" aria-label="Close menu" onClick={close}>
+              <X aria-hidden="true" />
             </button>
           </div>
 
-          <nav className="flex flex-col" aria-label="Mobile navigation">
-            {MOBILE_NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setOpen(false)}
-                className="sf-mobile-nav-link"
-                aria-current={pathname === link.href ? "page" : undefined}
-              >
-                {link.label}
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            ))}
-          </nav>
+          <div className="sf-drawer-body">
+            <nav className="sf-drawer-nav" aria-label="Mobile navigation">
+              {MOBILE_NAV_LINKS.map((link, index) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={close}
+                  style={{ "--i": index } as CSSProperties}
+                  aria-current={isActive(pathname, link.href) ? "page" : undefined}
+                >
+                  {link.label}
+                  <ArrowUpRight aria-hidden="true" />
+                </Link>
+              ))}
+            </nav>
 
-          <div className="mt-auto space-y-3 border-t border-[var(--sf-rule)] p-6">
-            {user ? (
-              <>
-                <Link href="/account" onClick={() => setOpen(false)} className="sf-btn-primary w-full">Member account</Link>
-                <Link href="/account/bookings" onClick={() => setOpen(false)} className="sf-btn-secondary w-full">My bookings</Link>
-                {user.role?.isInstructor ? <Link href="/account/instructor" onClick={() => setOpen(false)} className="sf-btn-secondary w-full">Instructor console</Link> : null}
-                {user.role?.canAccessDashboard ? <Link href="/dashboard" onClick={() => setOpen(false)} className="sf-btn-secondary w-full">Admin dashboard</Link> : null}
-                <form action={signOut}><button type="submit" className="sf-btn-ghost w-full py-2">Sign out</button></form>
-              </>
-            ) : (
-              <Link href="/account" onClick={() => setOpen(false)} className="sf-btn-primary w-full">Member sign in</Link>
-            )}
-            {!user && primaryCta && !MOBILE_NAV_LINKS.some((link) => link.href === primaryCta.href) ? <Link href={primaryCta.href} onClick={() => setOpen(false)} className="sf-btn-secondary w-full">{primaryCta.label}</Link> : null}
-            {secondaryCta && !MOBILE_NAV_LINKS.some((link) => link.href === secondaryCta.href) ? <Link href={secondaryCta.href} onClick={() => setOpen(false)} className="sf-btn-secondary w-full">{secondaryCta.label}</Link> : null}
-            <button type="button" className="sf-mobile-theme-toggle" onClick={() => setTheme(dark ? "light" : "dark")}>
-              {dark ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
-              {dark ? "Use light theme" : "Use dark theme"}
-            </button>
+            <div className="sf-drawer-account">
+              {user ? (
+                <>
+                  <Link href="/account" onClick={close} className="sf-btn" data-size="lg" data-block>Account</Link>
+                  <div className="sf-row" data-gap="sm">
+                    <Link href="/account/bookings" onClick={close} className="sf-btn" data-variant="secondary">Bookings</Link>
+                    <Link href="/member/check-in-code" onClick={close} className="sf-btn" data-variant="secondary">Check-in code</Link>
+                  </div>
+                  {user.role?.isInstructor ? <Link href="/account/instructor" onClick={close} className="sf-btn" data-variant="secondary" data-block>Coach workspace</Link> : null}
+                  {user.role?.canAccessDashboard ? <Link href="/dashboard" onClick={close} className="sf-btn" data-variant="secondary" data-block>Dashboard</Link> : null}
+                  <form action={signOut}><button type="submit" className="sf-btn" data-variant="ghost" data-block>Sign out</button></form>
+                </>
+              ) : (
+                <Link href="/account" onClick={close} className="sf-btn" data-variant="secondary" data-size="lg" data-block>Sign in</Link>
+              )}
+              {extraCtas.map((cta) => (
+                <Link key={cta.href} href={cta.href} onClick={close} className="sf-btn" data-size="lg" data-block>{cta.label}</Link>
+              ))}
+            </div>
+
+            <ThemeSwitch />
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </>
   );

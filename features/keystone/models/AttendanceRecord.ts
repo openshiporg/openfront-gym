@@ -11,7 +11,7 @@ import {
 
 import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
-import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
+import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from './tenantRelationships';
 
 export const AttendanceRecord = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, bookingId") },
@@ -58,6 +58,7 @@ export const AttendanceRecord = list({
 
     member: relationship({
       ref: 'Member.attendanceRecords',
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: 'select',
         description: 'Member whose attendance is being tracked',

@@ -90,7 +90,7 @@ function DashboardLayoutContent({ children, adminMeta, authenticatedItem }: Dash
         adminMeta={adminMeta}
         user={authenticatedItem}
         onOpenDialog={() => setIsOnboardingDialogOpen(true)}
-      />
+      />      
       <SidebarInset className="min-w-0">
         {children}
       </SidebarInset>

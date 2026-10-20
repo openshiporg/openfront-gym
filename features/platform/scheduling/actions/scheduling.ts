@@ -1,6 +1,10 @@
 "use server";
 
-import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
+import { gymGraphql as keystoneClient } from "@/features/platform/lib/gym-graphql";
+import { staffActionError } from "@/features/platform/lib/action-error";
+
+/** Returned, not thrown: production Server Actions hide thrown messages behind a generic render error. */
+export type SchedulingActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 export type CalendarEvent = {
   id: string;
@@ -53,34 +57,34 @@ export async function cancelClassInstanceAction(classInstanceId: string, reason:
       }
     }
   `, { classInstanceId, reason });
-  if (!response.success) throw new Error(response.error);
-  return response.data.cancelClassInstance;
+  if (!response.success) return { ok: false as const, error: staffActionError(response, "The session was not cancelled. Refresh and try again.") };
+  return { ok: true as const, data: response.data.cancelClassInstance };
 }
 
 export async function saveClassSchedule(data: Record<string, unknown>, id?: string | null) {
   const result = await keystoneClient<{ saveGymClassSchedule: { id: string } }>(`
     mutation SaveGymClassSchedule($id: ID, $data: JSON!) { saveGymClassSchedule(id: $id, data: $data) { id } }
   `, { id: id || null, data });
-  if (!result.success) throw new Error(result.error);
-  return result.data.saveGymClassSchedule;
+  if (!result.success) return { ok: false as const, error: staffActionError(result, "The template was not saved. Check the coach, place and times, then try again.") };
+  return { ok: true as const, data: result.data.saveGymClassSchedule };
 }
 
 export async function saveClassInstance(data: Record<string, unknown>, id?: string | null) {
   const result = await keystoneClient<{ saveGymClassInstance: { id: string } }>(`
     mutation SaveGymClassInstance($id: ID, $data: JSON!) { saveGymClassInstance(id: $id, data: $data) { id } }
   `, { id: id || null, data });
-  if (!result.success) throw new Error(result.error);
-  return result.data.saveGymClassInstance;
+  if (!result.success) return { ok: false as const, error: staffActionError(result, "The session was not saved. Check the coach, place, time and capacity, then try again.") };
+  return { ok: true as const, data: result.data.saveGymClassInstance };
 }
 
 export async function generateUpcomingInstances(weeks: number = 4) {
   const response = await keystoneClient<{
-    generateUpcomingClassInstances: { success: boolean; createdCount: number };
+    generateUpcomingClassInstances: { success: boolean; createdCount: number; skippedNonexistent: number };
   }>(`
     mutation GenerateUpcomingClassInstances($weeks: Int!) {
-      generateUpcomingClassInstances(weeks: $weeks) { success createdCount }
+      generateUpcomingClassInstances(weeks: $weeks) { success createdCount skippedNonexistent }
     }
   `, { weeks });
-  if (!response.success) throw new Error(response.error);
-  return response.data.generateUpcomingClassInstances;
+  if (!response.success) return { ok: false as const, error: staffActionError(response, "Upcoming sessions were not created. Refresh and try again.") };
+  return { ok: true as const, data: response.data.generateUpcomingClassInstances };
 }

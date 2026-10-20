@@ -1,10 +1,12 @@
 export const ROSTER_SESSIONS_DOCUMENT = `
-  query RosterSessions { rosterSessions }
+  query RosterSessions($q: String, $state: String, $from: String, $to: String, $sort: String, $skip: Int) {
+    rosterSessions(q: $q, state: $state, from: $from, to: $to, sort: $sort, skip: $skip)
+  }
 `;
 
 export const ROSTER_DETAIL_DOCUMENT = `
-  query RosterDetail($classInstanceId: ID!) {
-    rosterDetail(classInstanceId: $classInstanceId)
+  query RosterDetail($classInstanceId: ID!, $confirmedSkip: Int, $waitlistSkip: Int, $otherSkip: Int) {
+    rosterDetail(classInstanceId: $classInstanceId, confirmedSkip: $confirmedSkip, waitlistSkip: $waitlistSkip, otherSkip: $otherSkip)
   }
 `;
 

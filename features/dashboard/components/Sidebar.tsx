@@ -7,7 +7,7 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { 
   Sidebar as SidebarComponent, 
   SidebarContent, 
@@ -39,10 +39,10 @@ import { AdminMeta } from '../hooks/useAdminMeta'
 import { Home, Database, ChevronRight, Package } from 'lucide-react'
 import { Logo, LogoIcon } from '@/features/dashboard/components/Logo'
 import { UserProfileClient } from './UserProfileClient'
-import { platformNavGroups, platformStandaloneItems, getPlatformNavItemsWithBasePath } from '@/features/platform/lib/navigation'
-import { useDashboard } from '../context/DashboardProvider'
 import { OnboardingCards } from '@/features/platform/onboarding/components/OnboardingCards'
 import { dismissOnboarding } from '@/features/platform/onboarding/actions/onboarding'
+import { platformNavGroups, platformStandaloneItems, getPlatformNavItemsWithBasePath } from '@/features/platform/lib/navigation'
+import { useDashboard } from '../context/DashboardProvider'
 
 interface User {
   id: string;
@@ -50,8 +50,6 @@ interface User {
   name?: string;
   onboardingStatus?: string;
   role?: {
-    isInstructor?: boolean;
-    canManageAllRecords?: boolean;
     canManageOnboarding?: boolean;
   };
 }
@@ -59,13 +57,12 @@ interface User {
 interface SidebarProps {
   adminMeta: AdminMeta | null
   user?: User | null
-  onOpenDialog: () => void
+  onOpenDialog?: () => void
 }
 
 export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
   const { isMobile, setOpenMobile } = useSidebar()
   const pathname = usePathname()
-  const router = useRouter()
   const { basePath } = useDashboard()
 
   const lists = adminMeta?.lists || {}
@@ -98,16 +95,8 @@ export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
   }))
 
   // Platform navigation groups with proper basePath
-  const platformItemsWithBasePath = getPlatformNavItemsWithBasePath(basePath, user)
-  const platformItems = platformNavGroups
-    .filter(group => {
-      if (user?.role?.isInstructor && !user?.role?.canManageAllRecords) {
-        // Only show management if they have items in it (instructors won't)
-        return false;
-      }
-      return true;
-    })
-    .map((group) => ({
+  const platformItemsWithBasePath = getPlatformNavItemsWithBasePath(basePath)
+  const platformItems = platformNavGroups.map((group) => ({
     title: group.title,
     items: platformItemsWithBasePath.filter(item => item.group === group.id).map(item => ({
       title: item.title,
@@ -118,20 +107,23 @@ export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
     icon: group.icon,
   }))
 
-  // Standalone platform items with proper basePath (and role-aware filtering)
-  const standaloneItemsWithBasePath = platformItemsWithBasePath.filter(item => item.group === 'standalone')
+  // Standalone platform items with proper basePath
+  const standaloneItemsWithBasePath = platformStandaloneItems.map(item => ({
+    ...item,
+    href: `${basePath}${item.href}`,
+  }))
 
   return (
     <SidebarComponent collapsible="icon">
       <SidebarHeader>
         <SidebarMenuButton asChild>
-          <div className="group-has-[[data-collapsible=icon]]/sidebar-wrapper:hidden p-2">
-            <Logo />
+          <div className="group-has-[[data-collapsible=icon]]/sidebar-wrapper:hidden p-1.5">
+            <Logo variant="sidebar" />
           </div>
         </SidebarMenuButton>
         <SidebarMenuButton asChild>
           <div className="hidden group-has-[[data-collapsible=icon]]/sidebar-wrapper:block">
-            <LogoIcon className="size-5 text-violet-400" suffix="-full-header" />
+            <LogoIcon className="size-5 text-violet-500" color="#8b5cf6" suffix="-full-header" />
           </div>
         </SidebarMenuButton>
       </SidebarHeader>
@@ -361,23 +353,19 @@ export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
       </SidebarContent>
       
       <SidebarFooter>
-        {/* Onboarding Cards — canonical pattern matching openfront/openfront-restaurant */}
+        {/* Onboarding Cards */}
         <div className="w-full mb-2 overflow-visible">
           <OnboardingCards
             steps={[{
               href: '#onboarding',
               title: 'Welcome to Openfront Gym',
-              description: 'Your gym is empty. Click get started to seed membership plans, class types, and instructors.',
+              description: 'Your gym is empty. Click get started to set up membership plans, class types, coaches, and schedules.',
             }]}
             onboardingStatus={user?.onboardingStatus}
             userRole={user?.role}
             onDismiss={async () => {
               try {
-                const result = await dismissOnboarding();
-                if (!result?.success) {
-                  throw new Error(result?.error || 'Failed to dismiss onboarding');
-                }
-                router.refresh()
+                await dismissOnboarding();
               } catch (error) {
                 console.error('Error dismissing onboarding:', error);
               }
@@ -385,6 +373,8 @@ export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
             onOpenDialog={onOpenDialog}
           />
         </div>
+        
+        {/* User Profile */}
         {user && <UserProfileClient user={user} />}
       </SidebarFooter>
       

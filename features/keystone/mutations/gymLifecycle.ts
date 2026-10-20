@@ -294,11 +294,11 @@ export async function markCapacityControlledAttendance(
     if (booking.classInstance.date.getTime() > Date.now()) {
       throw new Error("Attendance cannot be marked before the class starts");
     }
-    const assignedInstructorIds = [booking.classInstance.instructor?.user?.id ?? booking.classInstance.classSchedule?.instructor?.user?.id].filter(Boolean);
-    if (
-      !input.actor.canManageAllRecords &&
-      !(input.actor.isInstructor && assignedInstructorIds.includes(input.actor.userId))
-    ) {
+    // Only the session's current, active coach (or an operator) records attendance; a retired
+    // coach keeps no operational authority over past assignments.
+    const effectiveInstructor = booking.classInstance.instructor ?? booking.classInstance.classSchedule?.instructor ?? null;
+    const assignedToActor = Boolean(effectiveInstructor?.isActive && effectiveInstructor?.user?.id === input.actor.userId);
+    if (!input.actor.canManageAllRecords && !(input.actor.isInstructor && assignedToActor)) {
       throw new Error("Attendance management permission required");
     }
 

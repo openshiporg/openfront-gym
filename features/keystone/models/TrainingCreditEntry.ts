@@ -18,7 +18,7 @@ export const TrainingCreditEntry = list({
     trainingPackage: relationship({ ref: "TrainingPackage", db: { extendPrismaSchema: requiredRelationshipDb("trainingPackage") } }),
     appointment: relationship({ ref: "TrainerAppointment" }),
     eventKey: text({ validation: { isRequired: true } }),
-    kind: select({ options: ["issued", "reserved", "restored", "refunded"], validation: { isRequired: true } }),
+    kind: select({ options: ["issued", "reserved", "restored", "refunded", "refund_reserved", "refund_released"], validation: { isRequired: true } }),
     quantity: integer({ validation: { isRequired: true } }),
     balanceAfter: integer({ validation: { isRequired: true, min: 0 } }),
     actor: relationship({ ref: "User" }),

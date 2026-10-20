@@ -1,18 +1,14 @@
-import { requireDashboardManager } from '@/features/dashboard/lib/current-user'
-import { keystoneClient } from '@/features/dashboard/lib/keystoneClient'
-import { ClassCatalogPage } from './ClassCatalogPage'
+import { requireDashboardManager } from '@/features/platform/lib/current-user'
+import { ListPage } from '@/features/dashboard/screens/ListPage'
 
-export async function ClassCatalogPageServer() {
+/**
+ * Class formats use the shared list and item workflow: server search, filters, sort, field selection and
+ * pagination, stable item and create URLs, and the shared document and relationship editors that
+ * save only changed fields. Model access, hooks and validation stay authoritative.
+ */
+export async function ClassCatalogPageServer({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   await requireDashboardManager()
-  const response = await keystoneClient<{ classTypes: any[] }>(`
-    query ClassCatalogWorkspace {
-      classTypes(orderBy: [{ name: asc }], take: 500) {
-        id name description { document } difficulty duration caloriesBurn equipmentNeeded
-      }
-    }
-  `)
-  if (!response.success) throw new Error(response.error)
-  return <ClassCatalogPage initialClassTypes={response.data.classTypes} />
+  return <ListPage params={Promise.resolve({ listKey: 'class-types' })} searchParams={searchParams} />
 }
 
 export default ClassCatalogPageServer

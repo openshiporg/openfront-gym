@@ -1,11 +1,21 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { keystoneClient } from "@/features/dashboard/lib/keystoneClient";
-import { Input } from "@/components/ui/input";
+import { gymGraphql as keystoneClient } from "@/features/platform/lib/gym-graphql";
 import { Button } from "@/components/ui/button";
 import { PageContainer } from "@/features/dashboard/components/PageContainer";
+import {
+  FieldInput,
+  NativeSelect,
+  Notice,
+  PaginationBar,
+  Panel,
+  PlatformBody,
+  PlatformHeader,
+  SearchField,
+  SegmentedLinks,
+} from "@/features/platform/components/platform-ui";
 import { MemberInviteForm } from "../components/MemberInviteForm";
-import { requireDashboardManager } from "@/features/dashboard/lib/current-user";
+import { requirePeopleManager } from "@/features/platform/lib/current-user";
 import { normalizeDashboardListPagination } from "@/lib/list-pagination";
 import MemberListPageClient, {
   type MemberSummary,
@@ -18,7 +28,6 @@ type SearchParams = {
   joinedFrom?: string | string[];
   joinedTo?: string | string[];
   page?: string | string[];
-  notice?: string | string[];
   error?: string | string[];
 };
 
@@ -29,16 +38,21 @@ function getParam(value?: string | string[]) {
   return value ?? "";
 }
 
-function buildDateRange(from?: string, to?: string) {
-  if (!from && !to) return undefined;
-  const range: { gte?: string; lte?: string } = {};
-  if (from) {
-    range.gte = new Date(`${from}T00:00:00.000Z`).toISOString();
-  }
-  if (to) {
-    range.lte = new Date(`${to}T23:59:59.999Z`).toISOString();
-  }
-  return range;
+/** A real YYYY-MM-DD calendar date (no rollover such as 2026-02-31), else null. */
+function calendarDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : null;
+}
+
+function buildDateRange(from: string, to: string): { range?: { gte?: string; lte?: string }; error?: string } {
+  if (!from && !to) return {};
+  const start = from ? calendarDate(from) : null;
+  const end = to ? calendarDate(to) : null;
+  if ((from && !start) || (to && !end)) return { error: "Joined dates must be real dates (YYYY-MM-DD); the date filter was ignored." };
+  if (start && end && start > end) return { error: "Joined from must be on or before joined to; the date filter was ignored." };
+  return { range: { ...(start ? { gte: start.toISOString() } : {}), ...(end ? { lte: new Date(`${to}T23:59:59.999Z`).toISOString() } : {}) } };
 }
 
 function buildSearchString(params: URLSearchParams, updates: Record<string, string>) {
@@ -76,16 +90,16 @@ export default async function MemberListPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requireDashboardManager();
+  const user = await requirePeopleManager();
+  // Directory readers keep search and profiles; invite, suspend and close need people management.
+  const canManagePeople = Boolean(user.role?.canManagePeople);
   const resolvedSearchParams = await searchParams;
   const query = getParam(resolvedSearchParams.q).trim();
   const status = getParam(resolvedSearchParams.status);
   const tier = getParam(resolvedSearchParams.tier);
   const joinedFrom = getParam(resolvedSearchParams.joinedFrom);
   const joinedTo = getParam(resolvedSearchParams.joinedTo);
-  const pagination = normalizeDashboardListPagination(getParam(resolvedSearchParams.page), PAGE_SIZE, PAGE_SIZE);
-  const page = pagination.page;
-  const notice = getParam(resolvedSearchParams.notice);
+  const requestedPage = normalizeDashboardListPagination(getParam(resolvedSearchParams.page), PAGE_SIZE, PAGE_SIZE).page;
   const error = getParam(resolvedSearchParams.error);
 
   const where: Record<string, unknown> = {};
@@ -106,14 +120,26 @@ export default async function MemberListPage({
     where.membershipTier = { id: { equals: tier } };
   }
 
-  const joinDateRange = buildDateRange(joinedFrom || undefined, joinedTo || undefined);
-  if (joinDateRange) {
-    where.joinDate = joinDateRange;
+  const joinDates = buildDateRange(joinedFrom, joinedTo);
+  if (joinDates.range) {
+    where.joinDate = joinDates.range;
   }
+
+  // Count first, then load the page that is actually shown, so the label and rows agree.
+  const counted = await keystoneClient<{ membersCount: number; membershipTiers: { id: string; name?: string | null }[] }>(`
+    query MemberDirectoryCount($where: MemberWhereInput) {
+      membersCount(where: $where)
+      membershipTiers(orderBy: [{ name: asc }]) { id name }
+    }
+  `, { where });
+  const totalCount = counted.success ? counted.data.membersCount : 0;
+  const membershipTiers = counted.success ? counted.data.membershipTiers : [];
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const currentPage = Math.min(requestedPage, totalPages);
 
   const queryDocument = `
     query MemberDirectory($where: MemberWhereInput, $take: Int, $skip: Int) {
-      members(where: $where, take: $take, skip: $skip, orderBy: [{ joinDate: desc }]) {
+      members(where: $where, take: $take, skip: $skip, orderBy: [{ joinDate: desc }, { id: asc }]) {
         id
         name
         email
@@ -124,34 +150,21 @@ export default async function MemberListPage({
         bookingsCount
         paymentsCount
         checkInsCount
+        user {
+          id
+        }
         membershipTier {
           id
           name
         }
       }
-      membersCount(where: $where)
-      membershipTiers(orderBy: [{ name: asc }]) {
-        id
-        name
-      }
     }
   `;
 
-  const response = await keystoneClient<{
-    members: MemberSummary[];
-    membersCount: number;
-    membershipTiers: { id: string; name?: string | null }[];
-  }>(queryDocument, {
-    where,
-    take: pagination.pageSize,
-    skip: pagination.skip,
-  });
-
-  const members = response.success ? response.data.members : [];
-  const totalCount = response.success ? response.data.membersCount : 0;
-  const membershipTiers = response.success ? response.data.membershipTiers : [];
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
+  const response = counted.success
+    ? await keystoneClient<{ members: MemberSummary[] }>(queryDocument, { where, take: PAGE_SIZE, skip: (currentPage - 1) * PAGE_SIZE })
+    : counted;
+  const members = response.success ? (response.data as { members: MemberSummary[] }).members : [];
 
   const params = new URLSearchParams();
   if (query) params.set("q", query);
@@ -161,112 +174,109 @@ export default async function MemberListPage({
   if (joinedTo) params.set("joinedTo", joinedTo);
   params.set("page", currentPage.toString());
 
-  const activeCount = members.filter((member) => (member.status ?? "active") === "active").length;
-  const needsPlanCount = members.filter((member) => !member.membershipTier).length;
-  const header = <div className="flex flex-col gap-1"><h1 className="text-lg font-semibold md:text-2xl">Member directory</h1><p className="text-muted-foreground">Find a member, verify account context, and move into the next operator task.</p></div>;
-  const breadcrumbs = [{ type: "link" as const, label: "Dashboard", href: "/dashboard" }, { type: "page" as const, label: "Members" }];
+
+  const hasFilters = Boolean(query || (status && status !== "all") || (tier && tier !== "all") || joinedFrom || joinedTo);
+  const basePath = "/dashboard/platform/members";
+  const statusHref = (value: string) => `${basePath}?${buildSearchString(params, { status: value, page: "" })}`;
+  const firstShown = totalCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const lastShown = (currentPage - 1) * PAGE_SIZE + members.length;
+
+  const header = (
+    <PlatformHeader
+      title="Members"
+      description="Find members, review their plan and account status, and invite new members."
+      actions={
+        <>
+          {/* Every member field, filter, sort and column through the shared list workflow. */}
+          <Button asChild variant="outline"><Link href="/dashboard/members">All fields and filters</Link></Button>
+          {canManagePeople ? <MemberInviteForm /> : null}
+        </>
+      }
+    />
+  );
+  const breadcrumbs = [{ type: "link" as const, label: "Dashboard", href: "/dashboard" }, { type: "page" as const, label: "Platform" }, { type: "page" as const, label: "Members" }];
 
   return (
     <PageContainer title="Members" header={header} breadcrumbs={breadcrumbs}>
-      <div className="w-full min-w-0 space-y-5 p-4 md:p-6">
-        {!response.success ? <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">The member directory could not be loaded. {response.error}</div> : null}
-        <div className="grid grid-cols-3 divide-x rounded-lg border bg-card">
-          <div className="p-3"><p className="text-xs text-muted-foreground">Matching members</p><p className="mt-1 text-2xl font-semibold tabular-nums">{totalCount}</p></div>
-          <div className="p-3"><p className="text-xs text-muted-foreground">Active on this page</p><p className="mt-1 text-2xl font-semibold tabular-nums">{activeCount}</p></div>
-          <div className="p-3"><p className="text-xs text-muted-foreground">No plan on this page</p><p className="mt-1 text-2xl font-semibold tabular-nums">{needsPlanCount}</p></div>
-        </div>
+      <PlatformBody>
 
-        {notice ? (
-          <div className="mt-6 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            {notice === "invite-sent"
-              ? "Member account created. A secure password-setup email was sent. They can then sign in and choose a membership."
-              : "Member account created, but the password-setup email could not be sent. Ask them to use Forgot password before sign-in."}
+        {joinDates.error ? <Notice tone="warning">{joinDates.error}</Notice> : null}
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+
+        <Panel>
+          <div className="flex flex-col gap-3 border-b p-3 sm:px-4">
+            <SegmentedLinks
+              label="Filter by account status"
+              items={[
+                { label: "All", href: statusHref("all"), active: !status || status === "all" },
+                { label: "Active", href: statusHref("active"), active: status === "active" },
+                { label: "Suspended", href: statusHref("suspended"), active: status === "suspended" },
+                { label: "Cancelled", href: statusHref("cancelled"), active: status === "cancelled" },
+              ]}
+            />
+            <form method="get" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_12rem_10rem_10rem_auto]">
+              {status && status !== "all" ? <input type="hidden" name="status" value={status} /> : null}
+              <SearchField name="q" defaultValue={query} label="Search members" placeholder="Search name, email, or phone" className="sm:col-span-2 lg:col-span-1" />
+              <label>
+                <span className="sr-only">Filter by membership plan</span>
+                <NativeSelect name="tier" defaultValue={tier || "all"}>
+                  <option value="all">All plans</option>
+                  {membershipTiers.map((tierOption) => (
+                    <option key={tierOption.id} value={tierOption.id}>
+                      {tierOption.name || "Unnamed"}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+              <label className="relative">
+                <span className="pointer-events-none absolute -top-2 left-2 bg-card px-1 text-[10px] font-medium text-muted-foreground">Joined from</span>
+                <FieldInput name="joinedFrom" type="date" defaultValue={joinedFrom} aria-label="Joined on or after" />
+              </label>
+              <label className="relative">
+                <span className="pointer-events-none absolute -top-2 left-2 bg-card px-1 text-[10px] font-medium text-muted-foreground">Joined to</span>
+                <FieldInput name="joinedTo" type="date" defaultValue={joinedTo} aria-label="Joined on or before" />
+              </label>
+              <div className="flex gap-2 sm:col-span-2 lg:col-span-1">
+                <Button type="submit" className="flex-1 lg:flex-none">Apply</Button>
+                {hasFilters ? (
+                  <Button asChild variant="ghost">
+                    <Link href={basePath}>Reset</Link>
+                  </Button>
+                ) : null}
+              </div>
+            </form>
           </div>
-        ) : null}
-        {error ? (
-          <div className="mt-6 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div>
-        ) : null}
 
-        <MemberInviteForm />
-
-        <div className="rounded-lg border bg-card p-4">
-          <form method="get" className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <label><span className="sr-only">Search members</span><Input
-              name="q"
-              type="search"
-              placeholder="Search name, email, or phone"
-              defaultValue={query}
-            /></label>
-            <label><span className="sr-only">Filter by member status</span><select
-              name="status"
-              defaultValue={status || "all"}
-              className="h-11 rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="all">All statuses</option>
-              <option value="active">Active</option>
-              <option value="suspended">Suspended</option>
-              <option value="cancelled">Cancelled</option>
-            </select></label>
-            <label><span className="sr-only">Filter by membership tier</span><select
-              name="tier"
-              defaultValue={tier || "all"}
-              className="h-11 rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="all">All tiers</option>
-              {membershipTiers.map((tierOption) => (
-                <option key={tierOption.id} value={tierOption.id}>
-                  {tierOption.name || "Unnamed"}
-                </option>
-              ))}
-            </select></label>
-            <label><span className="sr-only">Joined on or after</span><Input
-              name="joinedFrom"
-              type="date"
-              defaultValue={joinedFrom}
-            /></label>
-            <label><span className="sr-only">Joined on or before</span><Input
-              name="joinedTo"
-              type="date"
-              defaultValue={joinedTo}
-            /></label>
-            <div className="flex flex-wrap gap-2 md:col-span-2 xl:col-span-5">
-              <Button type="submit">Apply filters</Button>
-              <Button asChild type="button" variant="secondary">
-                <Link href="/dashboard/platform/members">Reset</Link>
-              </Button>
+          {!response.success ? (
+            // A failed load is not an empty directory: no member count, rows or empty state is claimed.
+            <div className="px-4 py-6 sm:px-5">
+              <Notice tone="danger" title="The member directory could not be loaded" action={<Button asChild size="sm" variant="outline"><Link href={`${basePath}?${params.toString()}`}>Try again</Link></Button>}>
+                Members, their status and counts are unknown until it loads.
+              </Notice>
             </div>
-          </form>
-        </div>
+          ) : (
+            <>
+              <MemberListPageClient
+                members={members}
+                viewProfileBasePath="/dashboard/members"
+                suspendMember={suspendMember}
+                canManagePeople={canManagePeople}
+                hasFilters={hasFilters}
+                resetHref={basePath}
+              />
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-muted-foreground">
-            Showing {members.length} of {totalCount} members
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            {currentPage <= 1 ? <Button variant="outline" size="sm" disabled>Previous</Button> : (
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/dashboard/platform/members?${buildSearchString(params, { page: (currentPage - 1).toString() })}`}>Previous</Link>
-              </Button>
-            )}
-            <span className="text-muted-foreground">
-              Page {currentPage} of {totalPages}
-            </span>
-            {currentPage >= totalPages ? <Button variant="outline" size="sm" disabled>Next</Button> : (
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/dashboard/platform/members?${buildSearchString(params, { page: (currentPage + 1).toString() })}`}>Next</Link>
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <MemberListPageClient
-            members={members}
-            viewProfileBasePath="/dashboard/members"
-            suspendMember={suspendMember}
-          />
-        </div>
-      </div>
+              <div className="border-t px-4 py-3">
+                <PaginationBar
+                  summary={totalCount ? `Showing ${firstShown}–${lastShown} of ${totalCount} members` : "No members to show"}
+                  pageLabel={`Page ${currentPage} of ${totalPages}`}
+                  previousHref={currentPage > 1 ? `${basePath}?${buildSearchString(params, { page: (currentPage - 1).toString() })}` : null}
+                  nextHref={currentPage < totalPages ? `${basePath}?${buildSearchString(params, { page: (currentPage + 1).toString() })}` : null}
+                />
+              </div>
+            </>
+          )}
+        </Panel>
+      </PlatformBody>
     </PageContainer>
   );
 }
