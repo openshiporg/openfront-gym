@@ -30,8 +30,8 @@ function toFormData(values: Record<string, string[]>) {
 
 async function readIntent(id: string): Promise<StoredIntent | null> {
   if (!INTENT_ID.test(id)) return null;
-  const result = await gymGraphql<{ staffIntent: StoredIntent | null }>(`query StaffIntent($id: ID!) { staffIntent(id: $id) }`, { id });
-  return result.success ? result.data.staffIntent : null;
+  const result = await gymGraphql<{ myStaffIntent: StoredIntent | null }>(`query MyStaffIntent($id: ID!) { myStaffIntent(id: $id) }`, { id });
+  return result.success ? result.data.myStaffIntent : null;
 }
 
 /**

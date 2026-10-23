@@ -733,6 +733,105 @@ input CounterPaymentAttemptCreateInput {
   updatedAt: DateTime
 }
 
+type StaffIntent {
+  id: ID!
+  organization: Organization
+  actor: User
+  workspace: String
+  operation: String
+  scope: String
+  requestKey: String
+  requestHash: String
+  form: JSON
+  status: String
+  result: JSON
+  lastError: String
+  expiresAt: DateTime
+  resolvedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input StaffIntentWhereUniqueInput {
+  id: ID
+}
+
+input StaffIntentWhereInput {
+  AND: [StaffIntentWhereInput!]
+  OR: [StaffIntentWhereInput!]
+  NOT: [StaffIntentWhereInput!]
+  id: IDFilter
+  organization: OrganizationWhereInput
+  actor: UserWhereInput
+  workspace: StringFilter
+  operation: StringFilter
+  scope: StringFilter
+  requestKey: StringFilter
+  requestHash: StringFilter
+  status: StringFilter
+  lastError: StringFilter
+  expiresAt: DateTimeNullableFilter
+  resolvedAt: DateTimeNullableFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
+}
+
+input StaffIntentOrderByInput {
+  id: OrderDirection
+  workspace: OrderDirection
+  operation: OrderDirection
+  scope: OrderDirection
+  requestKey: OrderDirection
+  requestHash: OrderDirection
+  status: OrderDirection
+  lastError: OrderDirection
+  expiresAt: OrderDirection
+  resolvedAt: OrderDirection
+  createdAt: OrderDirection
+  updatedAt: OrderDirection
+}
+
+input StaffIntentUpdateInput {
+  organization: OrganizationRelateToOneForUpdateInput
+  actor: UserRelateToOneForUpdateInput
+  workspace: String
+  operation: String
+  scope: String
+  requestKey: String
+  requestHash: String
+  form: JSON
+  status: String
+  result: JSON
+  lastError: String
+  expiresAt: DateTime
+  resolvedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input StaffIntentUpdateArgs {
+  where: StaffIntentWhereUniqueInput!
+  data: StaffIntentUpdateInput!
+}
+
+input StaffIntentCreateInput {
+  organization: OrganizationRelateToOneForCreateInput
+  actor: UserRelateToOneForCreateInput
+  workspace: String
+  operation: String
+  scope: String
+  requestKey: String
+  requestHash: String
+  form: JSON
+  status: String
+  result: JSON
+  lastError: String
+  expiresAt: DateTime
+  resolvedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
 type MemberImportRecord {
   id: ID!
   organization: Organization
@@ -1732,6 +1831,7 @@ type ParticipationEvidence {
   revokedAt: DateTime
   revocationReason: String
   healthConsent: Boolean
+  kind: String
   createdAt: DateTime
   updatedAt: DateTime
 }
@@ -1758,6 +1858,7 @@ input ParticipationEvidenceWhereInput {
   revokedAt: DateTimeNullableFilter
   revocationReason: StringFilter
   healthConsent: BooleanFilter
+  kind: StringFilter
   createdAt: DateTimeFilter
   updatedAt: DateTimeFilter
 }
@@ -1773,6 +1874,7 @@ input ParticipationEvidenceOrderByInput {
   revokedAt: OrderDirection
   revocationReason: OrderDirection
   healthConsent: OrderDirection
+  kind: OrderDirection
   createdAt: OrderDirection
   updatedAt: OrderDirection
 }
@@ -1790,6 +1892,7 @@ input ParticipationEvidenceUpdateInput {
   revokedAt: DateTime
   revocationReason: String
   healthConsent: Boolean
+  kind: String
   createdAt: DateTime
   updatedAt: DateTime
 }
@@ -1818,6 +1921,7 @@ input ParticipationEvidenceCreateInput {
   revokedAt: DateTime
   revocationReason: String
   healthConsent: Boolean
+  kind: String
   createdAt: DateTime
   updatedAt: DateTime
 }
@@ -2015,67 +2119,67 @@ type Organization {
   defaultCurrency: String
   timezone: String
   isMultiLocation: Boolean
-  users(where: UserWhereInput! = {}, orderBy: [UserOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: UserWhereUniqueInput): [User!]
+  users(where: UserWhereInput! = {}, orderBy: [UserOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: UserWhereUniqueInput): [User!]
   usersCount(where: UserWhereInput! = {}): Int
-  roles(where: RoleWhereInput! = {}, orderBy: [RoleOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: RoleWhereUniqueInput): [Role!]
+  roles(where: RoleWhereInput! = {}, orderBy: [RoleOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: RoleWhereUniqueInput): [Role!]
   rolesCount(where: RoleWhereInput! = {}): Int
-  members(where: MemberWhereInput! = {}, orderBy: [MemberOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MemberWhereUniqueInput): [Member!]
+  members(where: MemberWhereInput! = {}, orderBy: [MemberOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MemberWhereUniqueInput): [Member!]
   membersCount(where: MemberWhereInput! = {}): Int
-  instructors(where: InstructorWhereInput! = {}, orderBy: [InstructorOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: InstructorWhereUniqueInput): [Instructor!]
+  instructors(where: InstructorWhereInput! = {}, orderBy: [InstructorOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: InstructorWhereUniqueInput): [Instructor!]
   instructorsCount(where: InstructorWhereInput! = {}): Int
-  locations(where: LocationWhereInput! = {}, orderBy: [LocationOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: LocationWhereUniqueInput): [Location!]
+  locations(where: LocationWhereInput! = {}, orderBy: [LocationOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: LocationWhereUniqueInput): [Location!]
   locationsCount(where: LocationWhereInput! = {}): Int
-  resources(where: GymResourceWhereInput! = {}, orderBy: [GymResourceOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymResourceWhereUniqueInput): [GymResource!]
+  resources(where: GymResourceWhereInput! = {}, orderBy: [GymResourceOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymResourceWhereUniqueInput): [GymResource!]
   resourcesCount(where: GymResourceWhereInput! = {}): Int
-  trainerAvailability(where: TrainerAvailabilityWhereInput! = {}, orderBy: [TrainerAvailabilityOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAvailabilityWhereUniqueInput): [TrainerAvailability!]
+  trainerAvailability(where: TrainerAvailabilityWhereInput! = {}, orderBy: [TrainerAvailabilityOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAvailabilityWhereUniqueInput): [TrainerAvailability!]
   trainerAvailabilityCount(where: TrainerAvailabilityWhereInput! = {}): Int
-  appointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
+  appointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
   appointmentsCount(where: TrainerAppointmentWhereInput! = {}): Int
-  membershipTiers(where: MembershipTierWhereInput! = {}, orderBy: [MembershipTierOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipTierWhereUniqueInput): [MembershipTier!]
+  membershipTiers(where: MembershipTierWhereInput! = {}, orderBy: [MembershipTierOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipTierWhereUniqueInput): [MembershipTier!]
   membershipTiersCount(where: MembershipTierWhereInput! = {}): Int
-  memberships(where: MembershipWhereInput! = {}, orderBy: [MembershipOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipWhereUniqueInput): [Membership!]
+  memberships(where: MembershipWhereInput! = {}, orderBy: [MembershipOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipWhereUniqueInput): [Membership!]
   membershipsCount(where: MembershipWhereInput! = {}): Int
-  membershipPayments(where: MembershipPaymentWhereInput! = {}, orderBy: [MembershipPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipPaymentWhereUniqueInput): [MembershipPayment!]
+  membershipPayments(where: MembershipPaymentWhereInput! = {}, orderBy: [MembershipPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipPaymentWhereUniqueInput): [MembershipPayment!]
   membershipPaymentsCount(where: MembershipPaymentWhereInput! = {}): Int
-  subscriptions(where: SubscriptionWhereInput! = {}, orderBy: [SubscriptionOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: SubscriptionWhereUniqueInput): [Subscription!]
+  subscriptions(where: SubscriptionWhereInput! = {}, orderBy: [SubscriptionOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: SubscriptionWhereUniqueInput): [Subscription!]
   subscriptionsCount(where: SubscriptionWhereInput! = {}): Int
-  gymPayments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
+  gymPayments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
   gymPaymentsCount(where: GymPaymentWhereInput! = {}): Int
-  paymentMethods(where: PaymentMethodWhereInput! = {}, orderBy: [PaymentMethodOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentMethodWhereUniqueInput): [PaymentMethod!]
+  paymentMethods(where: PaymentMethodWhereInput! = {}, orderBy: [PaymentMethodOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentMethodWhereUniqueInput): [PaymentMethod!]
   paymentMethodsCount(where: PaymentMethodWhereInput! = {}): Int
-  paymentProviders(where: PaymentProviderWhereInput! = {}, orderBy: [PaymentProviderOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentProviderWhereUniqueInput): [PaymentProvider!]
+  paymentProviders(where: PaymentProviderWhereInput! = {}, orderBy: [PaymentProviderOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentProviderWhereUniqueInput): [PaymentProvider!]
   paymentProvidersCount(where: PaymentProviderWhereInput! = {}): Int
-  paymentSessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
+  paymentSessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
   paymentSessionsCount(where: PaymentSessionWhereInput! = {}): Int
-  paymentEvents(where: PaymentEventWhereInput! = {}, orderBy: [PaymentEventOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentEventWhereUniqueInput): [PaymentEvent!]
+  paymentEvents(where: PaymentEventWhereInput! = {}, orderBy: [PaymentEventOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentEventWhereUniqueInput): [PaymentEvent!]
   paymentEventsCount(where: PaymentEventWhereInput! = {}): Int
-  checkIns(where: CheckInWhereInput! = {}, orderBy: [CheckInOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: CheckInWhereUniqueInput): [CheckIn!]
+  checkIns(where: CheckInWhereInput! = {}, orderBy: [CheckInOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: CheckInWhereUniqueInput): [CheckIn!]
   checkInsCount(where: CheckInWhereInput! = {}): Int
-  workoutLogs(where: WorkoutLogWhereInput! = {}, orderBy: [WorkoutLogOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WorkoutLogWhereUniqueInput): [WorkoutLog!]
+  workoutLogs(where: WorkoutLogWhereInput! = {}, orderBy: [WorkoutLogOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: WorkoutLogWhereUniqueInput): [WorkoutLog!]
   workoutLogsCount(where: WorkoutLogWhereInput! = {}): Int
-  workoutSets(where: WorkoutSetWhereInput! = {}, orderBy: [WorkoutSetOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WorkoutSetWhereUniqueInput): [WorkoutSet!]
+  workoutSets(where: WorkoutSetWhereInput! = {}, orderBy: [WorkoutSetOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: WorkoutSetWhereUniqueInput): [WorkoutSet!]
   workoutSetsCount(where: WorkoutSetWhereInput! = {}): Int
-  exercises(where: ExerciseWhereInput! = {}, orderBy: [ExerciseOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ExerciseWhereUniqueInput): [Exercise!]
+  exercises(where: ExerciseWhereInput! = {}, orderBy: [ExerciseOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ExerciseWhereUniqueInput): [Exercise!]
   exercisesCount(where: ExerciseWhereInput! = {}): Int
-  waitlists(where: WaitlistWhereInput! = {}, orderBy: [WaitlistOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WaitlistWhereUniqueInput): [Waitlist!]
+  waitlists(where: WaitlistWhereInput! = {}, orderBy: [WaitlistOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: WaitlistWhereUniqueInput): [Waitlist!]
   waitlistsCount(where: WaitlistWhereInput! = {}): Int
-  attendanceRecords(where: AttendanceRecordWhereInput! = {}, orderBy: [AttendanceRecordOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: AttendanceRecordWhereUniqueInput): [AttendanceRecord!]
+  attendanceRecords(where: AttendanceRecordWhereInput! = {}, orderBy: [AttendanceRecordOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: AttendanceRecordWhereUniqueInput): [AttendanceRecord!]
   attendanceRecordsCount(where: AttendanceRecordWhereInput! = {}): Int
-  classTypes(where: ClassTypeWhereInput! = {}, orderBy: [ClassTypeOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassTypeWhereUniqueInput): [ClassType!]
+  classTypes(where: ClassTypeWhereInput! = {}, orderBy: [ClassTypeOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassTypeWhereUniqueInput): [ClassType!]
   classTypesCount(where: ClassTypeWhereInput! = {}): Int
-  classSchedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
+  classSchedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
   classSchedulesCount(where: ClassScheduleWhereInput! = {}): Int
-  classBookings(where: ClassBookingWhereInput! = {}, orderBy: [ClassBookingOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassBookingWhereUniqueInput): [ClassBooking!]
+  classBookings(where: ClassBookingWhereInput! = {}, orderBy: [ClassBookingOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassBookingWhereUniqueInput): [ClassBooking!]
   classBookingsCount(where: ClassBookingWhereInput! = {}): Int
-  classInstances(where: ClassInstanceWhereInput! = {}, orderBy: [ClassInstanceOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassInstanceWhereUniqueInput): [ClassInstance!]
+  classInstances(where: ClassInstanceWhereInput! = {}, orderBy: [ClassInstanceOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassInstanceWhereUniqueInput): [ClassInstance!]
   classInstancesCount(where: ClassInstanceWhereInput! = {}): Int
-  gymSettings(where: GymSettingsWhereInput! = {}, orderBy: [GymSettingsOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymSettingsWhereUniqueInput): [GymSettings!]
+  gymSettings(where: GymSettingsWhereInput! = {}, orderBy: [GymSettingsOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymSettingsWhereUniqueInput): [GymSettings!]
   gymSettingsCount(where: GymSettingsWhereInput! = {}): Int
-  onboardingRuns(where: OnboardingRunWhereInput! = {}, orderBy: [OnboardingRunOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: OnboardingRunWhereUniqueInput): [OnboardingRun!]
+  onboardingRuns(where: OnboardingRunWhereInput! = {}, orderBy: [OnboardingRunOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: OnboardingRunWhereUniqueInput): [OnboardingRun!]
   onboardingRunsCount(where: OnboardingRunWhereInput! = {}): Int
-  refundAttempts(where: GymRefundAttemptWhereInput! = {}, orderBy: [GymRefundAttemptOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymRefundAttemptWhereUniqueInput): [GymRefundAttempt!]
+  refundAttempts(where: GymRefundAttemptWhereInput! = {}, orderBy: [GymRefundAttemptOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymRefundAttemptWhereUniqueInput): [GymRefundAttempt!]
   refundAttemptsCount(where: GymRefundAttemptWhereInput! = {}): Int
-  membershipBillingAttempts(where: MembershipBillingAttemptWhereInput! = {}, orderBy: [MembershipBillingAttemptOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipBillingAttemptWhereUniqueInput): [MembershipBillingAttempt!]
+  membershipBillingAttempts(where: MembershipBillingAttemptWhereInput! = {}, orderBy: [MembershipBillingAttemptOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipBillingAttemptWhereUniqueInput): [MembershipBillingAttempt!]
   membershipBillingAttemptsCount(where: MembershipBillingAttemptWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -2811,13 +2915,16 @@ type User {
   password: PasswordState
   role: Role
   membership: Membership
-  payments(where: MembershipPaymentWhereInput! = {}, orderBy: [MembershipPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipPaymentWhereUniqueInput): [MembershipPayment!]
+  payments(where: MembershipPaymentWhereInput! = {}, orderBy: [MembershipPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipPaymentWhereUniqueInput): [MembershipPayment!]
   paymentsCount(where: MembershipPaymentWhereInput! = {}): Int
-  paymentSessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
+  paymentSessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
   paymentSessionsCount(where: PaymentSessionWhereInput! = {}): Int
   stripeCustomerId: String
   phone: String
   emergencyContact: String
+  pendingEmail: String
+  pendingEmailTokenHash: String
+  pendingEmailRequestedAt: DateTime
   onboardingStatus: String
   createdAt: DateTime
   updatedAt: DateTime
@@ -2851,6 +2958,9 @@ input UserWhereInput {
   stripeCustomerId: StringFilter
   phone: StringFilter
   emergencyContact: StringFilter
+  pendingEmail: StringFilter
+  pendingEmailTokenHash: StringFilter
+  pendingEmailRequestedAt: DateTimeNullableFilter
   onboardingStatus: StringFilter
   createdAt: DateTimeFilter
   updatedAt: DateTimeFilter
@@ -2870,6 +2980,9 @@ input UserOrderByInput {
   stripeCustomerId: OrderDirection
   phone: OrderDirection
   emergencyContact: OrderDirection
+  pendingEmail: OrderDirection
+  pendingEmailTokenHash: OrderDirection
+  pendingEmailRequestedAt: OrderDirection
   onboardingStatus: OrderDirection
   createdAt: OrderDirection
   updatedAt: OrderDirection
@@ -2889,6 +3002,9 @@ input UserUpdateInput {
   stripeCustomerId: String
   phone: String
   emergencyContact: String
+  pendingEmail: String
+  pendingEmailTokenHash: String
+  pendingEmailRequestedAt: DateTime
   onboardingStatus: String
   createdAt: DateTime
   updatedAt: DateTime
@@ -2920,6 +3036,9 @@ input UserCreateInput {
   stripeCustomerId: String
   phone: String
   emergencyContact: String
+  pendingEmail: String
+  pendingEmailTokenHash: String
+  pendingEmailRequestedAt: DateTime
   onboardingStatus: String
   createdAt: DateTime
   updatedAt: DateTime
@@ -2955,7 +3074,7 @@ type Role {
   canManagePayroll: Boolean
   canViewReports: Boolean
   isInstructor: Boolean
-  assignedTo(where: UserWhereInput! = {}, orderBy: [UserOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: UserWhereUniqueInput): [User!]
+  assignedTo(where: UserWhereInput! = {}, orderBy: [UserOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: UserWhereUniqueInput): [User!]
   assignedToCount(where: UserWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -3092,21 +3211,21 @@ type Member {
   profilePhoto: ImageFieldOutput
   status: String
   user: User
-  bookings(where: ClassBookingWhereInput! = {}, orderBy: [ClassBookingOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassBookingWhereUniqueInput): [ClassBooking!]
+  bookings(where: ClassBookingWhereInput! = {}, orderBy: [ClassBookingOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassBookingWhereUniqueInput): [ClassBooking!]
   bookingsCount(where: ClassBookingWhereInput! = {}): Int
-  checkIns(where: CheckInWhereInput! = {}, orderBy: [CheckInOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: CheckInWhereUniqueInput): [CheckIn!]
+  checkIns(where: CheckInWhereInput! = {}, orderBy: [CheckInOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: CheckInWhereUniqueInput): [CheckIn!]
   checkInsCount(where: CheckInWhereInput! = {}): Int
-  payments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
+  payments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
   paymentsCount(where: GymPaymentWhereInput! = {}): Int
-  workoutLogs(where: WorkoutLogWhereInput! = {}, orderBy: [WorkoutLogOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WorkoutLogWhereUniqueInput): [WorkoutLog!]
+  workoutLogs(where: WorkoutLogWhereInput! = {}, orderBy: [WorkoutLogOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: WorkoutLogWhereUniqueInput): [WorkoutLog!]
   workoutLogsCount(where: WorkoutLogWhereInput! = {}): Int
-  subscriptions(where: SubscriptionWhereInput! = {}, orderBy: [SubscriptionOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: SubscriptionWhereUniqueInput): [Subscription!]
+  subscriptions(where: SubscriptionWhereInput! = {}, orderBy: [SubscriptionOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: SubscriptionWhereUniqueInput): [Subscription!]
   subscriptionsCount(where: SubscriptionWhereInput! = {}): Int
-  waitlistEntries(where: WaitlistWhereInput! = {}, orderBy: [WaitlistOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WaitlistWhereUniqueInput): [Waitlist!]
+  waitlistEntries(where: WaitlistWhereInput! = {}, orderBy: [WaitlistOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: WaitlistWhereUniqueInput): [Waitlist!]
   waitlistEntriesCount(where: WaitlistWhereInput! = {}): Int
-  trainerAppointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
+  trainerAppointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
   trainerAppointmentsCount(where: TrainerAppointmentWhereInput! = {}): Int
-  attendanceRecords(where: AttendanceRecordWhereInput! = {}, orderBy: [AttendanceRecordOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: AttendanceRecordWhereUniqueInput): [AttendanceRecord!]
+  attendanceRecords(where: AttendanceRecordWhereInput! = {}, orderBy: [AttendanceRecordOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: AttendanceRecordWhereUniqueInput): [AttendanceRecord!]
   attendanceRecordsCount(where: AttendanceRecordWhereInput! = {}): Int
   lifetimeValue: Float
   membershipLengthDays: Int
@@ -3284,7 +3403,7 @@ type MembershipTier {
   maxClassBookings: Int
   hasGuestPrivileges: Boolean
   accessHoursJson: JSON
-  paymentSessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
+  paymentSessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
   paymentSessionsCount(where: PaymentSessionWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -3442,12 +3561,12 @@ type Membership {
   classCreditsRemaining: Int
   freezeStartDate: DateTime
   freezeEndDate: DateTime
-  payments(where: MembershipPaymentWhereInput! = {}, orderBy: [MembershipPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipPaymentWhereUniqueInput): [MembershipPayment!]
+  payments(where: MembershipPaymentWhereInput! = {}, orderBy: [MembershipPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipPaymentWhereUniqueInput): [MembershipPayment!]
   paymentsCount(where: MembershipPaymentWhereInput! = {}): Int
   stripeSubscriptionId: String
   cancelReason: String
   cancelledAt: DateTime
-  billingAttempts(where: MembershipBillingAttemptWhereInput! = {}, orderBy: [MembershipBillingAttemptOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipBillingAttemptWhereUniqueInput): [MembershipBillingAttempt!]
+  billingAttempts(where: MembershipBillingAttemptWhereInput! = {}, orderBy: [MembershipBillingAttemptOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipBillingAttemptWhereUniqueInput): [MembershipBillingAttempt!]
   billingAttemptsCount(where: MembershipBillingAttemptWhereInput! = {}): Int
   billingGeneration: Int
   createdAt: DateTime
@@ -3724,7 +3843,7 @@ type Subscription {
   cancelledAt: DateTime
   pausedAt: DateTime
   paymentMethod: PaymentMethod
-  billingHistory(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
+  billingHistory(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
   billingHistoryCount(where: GymPaymentWhereInput! = {}): Int
   stripeSubscriptionId: String
   stripeCustomerId: String
@@ -3854,7 +3973,7 @@ type GymPayment {
   refundLockUntil: DateTime
   refundLockToken: String
   paymentLink: String
-  refundAttempts(where: GymRefundAttemptWhereInput! = {}, orderBy: [GymRefundAttemptOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymRefundAttemptWhereUniqueInput): [GymRefundAttempt!]
+  refundAttempts(where: GymRefundAttemptWhereInput! = {}, orderBy: [GymRefundAttemptOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymRefundAttemptWhereUniqueInput): [GymRefundAttempt!]
   refundAttemptsCount(where: GymRefundAttemptWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -4015,7 +4134,7 @@ type PaymentMethod {
   stripePaymentMethodId: String
   expiryMonth: String
   expiryYear: String
-  subscriptions(where: SubscriptionWhereInput! = {}, orderBy: [SubscriptionOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: SubscriptionWhereUniqueInput): [Subscription!]
+  subscriptions(where: SubscriptionWhereInput! = {}, orderBy: [SubscriptionOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: SubscriptionWhereUniqueInput): [Subscription!]
   subscriptionsCount(where: SubscriptionWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -4103,11 +4222,11 @@ type PaymentProvider {
   isInstalled: Boolean
   credentials: JSON
   metadata: JSON
-  sessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
+  sessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
   sessionsCount(where: PaymentSessionWhereInput! = {}): Int
-  payments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
+  payments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
   paymentsCount(where: GymPaymentWhereInput! = {}): Int
-  events(where: PaymentEventWhereInput! = {}, orderBy: [PaymentEventOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentEventWhereUniqueInput): [PaymentEvent!]
+  events(where: PaymentEventWhereInput! = {}, orderBy: [PaymentEventOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentEventWhereUniqueInput): [PaymentEvent!]
   eventsCount(where: PaymentEventWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -4205,7 +4324,7 @@ type PaymentSession {
   cancelledAt: DateTime
   lastError: String
   provisioningLockedUntil: DateTime
-  payments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
+  payments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
   paymentsCount(where: GymPaymentWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -4509,11 +4628,11 @@ type Location {
   address: String
   phone: String
   isActive: Boolean
-  resources(where: GymResourceWhereInput! = {}, orderBy: [GymResourceOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymResourceWhereUniqueInput): [GymResource!]
+  resources(where: GymResourceWhereInput! = {}, orderBy: [GymResourceOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymResourceWhereUniqueInput): [GymResource!]
   resourcesCount(where: GymResourceWhereInput! = {}): Int
-  trainerAvailability(where: TrainerAvailabilityWhereInput! = {}, orderBy: [TrainerAvailabilityOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAvailabilityWhereUniqueInput): [TrainerAvailability!]
+  trainerAvailability(where: TrainerAvailabilityWhereInput! = {}, orderBy: [TrainerAvailabilityOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAvailabilityWhereUniqueInput): [TrainerAvailability!]
   trainerAvailabilityCount(where: TrainerAvailabilityWhereInput! = {}): Int
-  trainerAppointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
+  trainerAppointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
   trainerAppointmentsCount(where: TrainerAppointmentWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -4803,7 +4922,7 @@ type WorkoutLog {
   title: String
   duration: Int
   notes: String
-  workoutSets(where: WorkoutSetWhereInput! = {}, orderBy: [WorkoutSetOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WorkoutSetWhereUniqueInput): [WorkoutSet!]
+  workoutSets(where: WorkoutSetWhereInput! = {}, orderBy: [WorkoutSetOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: WorkoutSetWhereUniqueInput): [WorkoutSet!]
   workoutSetsCount(where: WorkoutSetWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -5233,7 +5352,7 @@ type ClassType {
   duration: Int
   equipmentNeeded: [String!]
   caloriesBurn: Int
-  schedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
+  schedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
   schedulesCount(where: ClassScheduleWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -5317,7 +5436,7 @@ type ClassSchedule {
   endTime: String
   maxCapacity: Int
   isActive: Boolean
-  instances(where: ClassInstanceWhereInput! = {}, orderBy: [ClassInstanceOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassInstanceWhereUniqueInput): [ClassInstance!]
+  instances(where: ClassInstanceWhereInput! = {}, orderBy: [ClassInstanceOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassInstanceWhereUniqueInput): [ClassInstance!]
   instancesCount(where: ClassInstanceWhereInput! = {}): Int
   averageAttendance: Float
   bookingRate: Float
@@ -5553,13 +5672,13 @@ type Instructor {
   certifications: JSON
   photo: String
   isActive: Boolean
-  classSchedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
+  classSchedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
   classSchedulesCount(where: ClassScheduleWhereInput! = {}): Int
-  classInstances(where: ClassInstanceWhereInput! = {}, orderBy: [ClassInstanceOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassInstanceWhereUniqueInput): [ClassInstance!]
+  classInstances(where: ClassInstanceWhereInput! = {}, orderBy: [ClassInstanceOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassInstanceWhereUniqueInput): [ClassInstance!]
   classInstancesCount(where: ClassInstanceWhereInput! = {}): Int
-  availability(where: TrainerAvailabilityWhereInput! = {}, orderBy: [TrainerAvailabilityOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAvailabilityWhereUniqueInput): [TrainerAvailability!]
+  availability(where: TrainerAvailabilityWhereInput! = {}, orderBy: [TrainerAvailabilityOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAvailabilityWhereUniqueInput): [TrainerAvailability!]
   availabilityCount(where: TrainerAvailabilityWhereInput! = {}): Int
-  appointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
+  appointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
   appointmentsCount(where: TrainerAppointmentWhereInput! = {}): Int
   displayName: String
   totalClassesTaught: Int
@@ -5647,6 +5766,7 @@ type ClassInstance {
   resource: GymResource
   endsAt: DateTime
   changeHistory: JSON
+  amendments: JSON
   occurrenceKey: String
   classSchedule: ClassSchedule
   date: DateTime
@@ -5654,7 +5774,7 @@ type ClassInstance {
   maxCapacity: Int
   isCancelled: Boolean
   cancellationReason: String
-  bookings(where: ClassBookingWhereInput! = {}, orderBy: [ClassBookingOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassBookingWhereUniqueInput): [ClassBooking!]
+  bookings(where: ClassBookingWhereInput! = {}, orderBy: [ClassBookingOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassBookingWhereUniqueInput): [ClassBooking!]
   bookingsCount(where: ClassBookingWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -5753,7 +5873,7 @@ type GymResource {
   notes: String
   metadata: JSON
   allocationHistory: JSON
-  appointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
+  appointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
   appointmentsCount(where: TrainerAppointmentWhereInput! = {}): Int
   createdAt: DateTime
   updatedAt: DateTime
@@ -6161,6 +6281,7 @@ type OnboardingRun {
   manifest: JSON
   createdAt: DateTime
   updatedAt: DateTime
+  trackingBasis: String
 }
 
 input OnboardingRunWhereUniqueInput {
@@ -6182,6 +6303,7 @@ input OnboardingRunWhereInput {
   leaseToken: StringFilter
   createdAt: DateTimeFilter
   updatedAt: DateTimeFilter
+  trackingBasis: StringFilter
 }
 
 input OnboardingRunOrderByInput {
@@ -6195,6 +6317,7 @@ input OnboardingRunOrderByInput {
   leaseToken: OrderDirection
   createdAt: OrderDirection
   updatedAt: OrderDirection
+  trackingBasis: OrderDirection
 }
 
 input OnboardingRunUpdateInput {
@@ -6209,6 +6332,7 @@ input OnboardingRunUpdateInput {
   manifest: JSON
   createdAt: DateTime
   updatedAt: DateTime
+  trackingBasis: String
 }
 
 input OnboardingRunUpdateArgs {
@@ -6228,6 +6352,7 @@ input OnboardingRunCreateInput {
   manifest: JSON
   createdAt: DateTime
   updatedAt: DateTime
+  trackingBasis: String
 }
 
 type GymRefundAttempt {
@@ -6246,6 +6371,7 @@ type GymRefundAttempt {
   completedAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
+  trackingBasis: String
 }
 
 input GymRefundAttemptWhereUniqueInput {
@@ -6270,6 +6396,7 @@ input GymRefundAttemptWhereInput {
   completedAt: DateTimeNullableFilter
   createdAt: DateTimeFilter
   updatedAt: DateTimeFilter
+  trackingBasis: StringFilter
 }
 
 input GymRefundAttemptOrderByInput {
@@ -6285,6 +6412,7 @@ input GymRefundAttemptOrderByInput {
   completedAt: OrderDirection
   createdAt: OrderDirection
   updatedAt: OrderDirection
+  trackingBasis: OrderDirection
 }
 
 input GymRefundAttemptUpdateInput {
@@ -6302,6 +6430,7 @@ input GymRefundAttemptUpdateInput {
   completedAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
+  trackingBasis: String
 }
 
 input GymRefundAttemptUpdateArgs {
@@ -6324,6 +6453,7 @@ input GymRefundAttemptCreateInput {
   completedAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
+  trackingBasis: String
 }
 
 type MembershipBillingAttempt {
@@ -6342,6 +6472,7 @@ type MembershipBillingAttempt {
   completedAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
+  trackingBasis: String
 }
 
 input MembershipBillingAttemptWhereUniqueInput {
@@ -6367,6 +6498,7 @@ input MembershipBillingAttemptWhereInput {
   completedAt: DateTimeNullableFilter
   createdAt: DateTimeFilter
   updatedAt: DateTimeFilter
+  trackingBasis: StringFilter
 }
 
 input MembershipBillingAttemptOrderByInput {
@@ -6383,6 +6515,7 @@ input MembershipBillingAttemptOrderByInput {
   completedAt: OrderDirection
   createdAt: OrderDirection
   updatedAt: OrderDirection
+  trackingBasis: OrderDirection
 }
 
 input MembershipBillingAttemptUpdateInput {
@@ -6400,6 +6533,7 @@ input MembershipBillingAttemptUpdateInput {
   completedAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
+  trackingBasis: String
 }
 
 input MembershipBillingAttemptUpdateArgs {
@@ -6422,6 +6556,7 @@ input MembershipBillingAttemptCreateInput {
   completedAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
+  trackingBasis: String
 }
 
 type AuthRateLimitBucket {
@@ -6521,6 +6656,12 @@ type Mutation {
   updateCounterPaymentAttempts(data: [CounterPaymentAttemptUpdateArgs!]!): [CounterPaymentAttempt]
   deleteCounterPaymentAttempt(where: CounterPaymentAttemptWhereUniqueInput!): CounterPaymentAttempt
   deleteCounterPaymentAttempts(where: [CounterPaymentAttemptWhereUniqueInput!]!): [CounterPaymentAttempt]
+  createStaffIntent(data: StaffIntentCreateInput!): StaffIntent
+  createStaffIntents(data: [StaffIntentCreateInput!]!): [StaffIntent]
+  updateStaffIntent(where: StaffIntentWhereUniqueInput!, data: StaffIntentUpdateInput!): StaffIntent
+  updateStaffIntents(data: [StaffIntentUpdateArgs!]!): [StaffIntent]
+  deleteStaffIntent(where: StaffIntentWhereUniqueInput!): StaffIntent
+  deleteStaffIntents(where: [StaffIntentWhereUniqueInput!]!): [StaffIntent]
   createMemberImportRecord(data: MemberImportRecordCreateInput!): MemberImportRecord
   createMemberImportRecords(data: [MemberImportRecordCreateInput!]!): [MemberImportRecord]
   updateMemberImportRecord(where: MemberImportRecordWhereUniqueInput!, data: MemberImportRecordUpdateInput!): MemberImportRecord
@@ -6823,10 +6964,10 @@ type Mutation {
   registerMember(data: RegisterMemberInput!): User
   inviteMember(data: InviteMemberInput!): InviteMemberResult!
   setMemberAccountStatus(memberId: ID!, status: String!): Member!
-  prepareInstructorAccount(instructorId: ID!, email: String!, delivery: String): AccessLinkResult!
-  issueMemberAccessLink(memberId: ID!, delivery: String): AccessLinkResult!
   updateMemberProfile(data: MemberProfileUpdateInput!): MemberProfileProjection!
   changeMemberPassword(currentPassword: String!, newPassword: String!, confirmPassword: String!): Boolean!
+  requestEmailChange(newEmail: String!, currentPassword: String!, surface: String): EmailChangeRequest!
+  confirmEmailChange(token: String!): Boolean!
   transitionOnboardingStatus(status: String!): User!
   generateUpcomingClassInstances(weeks: Int!): SchedulingGenerationResult!
   updateClassScheduleCapacity(classScheduleId: ID!, maxCapacity: Int!): ClassSchedule!
@@ -6856,10 +6997,14 @@ type Mutation {
   transitionCoaching(data: JSON!): JSON!
   saveTrainingLead(data: JSON!): JSON!
   saveRetailItem(data: JSON!): JSON!
+  quoteRetailSale(data: JSON!): JSON!
   sellRetail(data: JSON!): JSON!
   returnRetail(data: JSON!): JSON!
   closeRetail(data: JSON!): JSON!
   reconcileCounterPayment(attemptId: ID, checkoutSessionId: String, action: String!): JSON!
+  beginStaffIntent(workspace: String!, operation: String!, scope: String, requestKey: String!, form: JSON!): JSON!
+  settleStaffIntent(id: ID!, outcome: String!, error: String): JSON!
+  createCoachProfile(userId: ID!): JSON!
 }
 
 union UserAuthenticationWithPasswordResult = UserAuthenticationWithPasswordSuccess | UserAuthenticationWithPasswordFailure
@@ -6892,197 +7037,204 @@ enum PasswordResetRedemptionErrorCode {
 
 type Query {
   retailItem(where: RetailItemWhereUniqueInput!): RetailItem
-  retailItems(where: RetailItemWhereInput! = {}, orderBy: [RetailItemOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: RetailItemWhereUniqueInput): [RetailItem!]
+  retailItems(where: RetailItemWhereInput! = {}, orderBy: [RetailItemOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: RetailItemWhereUniqueInput): [RetailItem!]
   retailItemsCount(where: RetailItemWhereInput! = {}): Int
   retailSale(where: RetailSaleWhereUniqueInput!): RetailSale
-  retailSales(where: RetailSaleWhereInput! = {}, orderBy: [RetailSaleOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: RetailSaleWhereUniqueInput): [RetailSale!]
+  retailSales(where: RetailSaleWhereInput! = {}, orderBy: [RetailSaleOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: RetailSaleWhereUniqueInput): [RetailSale!]
   retailSalesCount(where: RetailSaleWhereInput! = {}): Int
   retailReturn(where: RetailReturnWhereUniqueInput!): RetailReturn
-  retailReturns(where: RetailReturnWhereInput! = {}, orderBy: [RetailReturnOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: RetailReturnWhereUniqueInput): [RetailReturn!]
+  retailReturns(where: RetailReturnWhereInput! = {}, orderBy: [RetailReturnOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: RetailReturnWhereUniqueInput): [RetailReturn!]
   retailReturnsCount(where: RetailReturnWhereInput! = {}): Int
   retailStockEntry(where: RetailStockEntryWhereUniqueInput!): RetailStockEntry
-  retailStockEntries(where: RetailStockEntryWhereInput! = {}, orderBy: [RetailStockEntryOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: RetailStockEntryWhereUniqueInput): [RetailStockEntry!]
+  retailStockEntries(where: RetailStockEntryWhereInput! = {}, orderBy: [RetailStockEntryOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: RetailStockEntryWhereUniqueInput): [RetailStockEntry!]
   retailStockEntriesCount(where: RetailStockEntryWhereInput! = {}): Int
   retailClose(where: RetailCloseWhereUniqueInput!): RetailClose
-  retailCloses(where: RetailCloseWhereInput! = {}, orderBy: [RetailCloseOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: RetailCloseWhereUniqueInput): [RetailClose!]
+  retailCloses(where: RetailCloseWhereInput! = {}, orderBy: [RetailCloseOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: RetailCloseWhereUniqueInput): [RetailClose!]
   retailClosesCount(where: RetailCloseWhereInput! = {}): Int
   counterPaymentAttempt(where: CounterPaymentAttemptWhereUniqueInput!): CounterPaymentAttempt
-  counterPaymentAttempts(where: CounterPaymentAttemptWhereInput! = {}, orderBy: [CounterPaymentAttemptOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: CounterPaymentAttemptWhereUniqueInput): [CounterPaymentAttempt!]
+  counterPaymentAttempts(where: CounterPaymentAttemptWhereInput! = {}, orderBy: [CounterPaymentAttemptOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: CounterPaymentAttemptWhereUniqueInput): [CounterPaymentAttempt!]
   counterPaymentAttemptsCount(where: CounterPaymentAttemptWhereInput! = {}): Int
+  staffIntent(where: StaffIntentWhereUniqueInput!): StaffIntent
+  staffIntents(where: StaffIntentWhereInput! = {}, orderBy: [StaffIntentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: StaffIntentWhereUniqueInput): [StaffIntent!]
+  staffIntentsCount(where: StaffIntentWhereInput! = {}): Int
   memberImportRecord(where: MemberImportRecordWhereUniqueInput!): MemberImportRecord
-  memberImportRecords(where: MemberImportRecordWhereInput! = {}, orderBy: [MemberImportRecordOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MemberImportRecordWhereUniqueInput): [MemberImportRecord!]
+  memberImportRecords(where: MemberImportRecordWhereInput! = {}, orderBy: [MemberImportRecordOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MemberImportRecordWhereUniqueInput): [MemberImportRecord!]
   memberImportRecordsCount(where: MemberImportRecordWhereInput! = {}): Int
   trainingPackage(where: TrainingPackageWhereUniqueInput!): TrainingPackage
-  trainingPackages(where: TrainingPackageWhereInput! = {}, orderBy: [TrainingPackageOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainingPackageWhereUniqueInput): [TrainingPackage!]
+  trainingPackages(where: TrainingPackageWhereInput! = {}, orderBy: [TrainingPackageOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainingPackageWhereUniqueInput): [TrainingPackage!]
   trainingPackagesCount(where: TrainingPackageWhereInput! = {}): Int
   trainingCreditEntry(where: TrainingCreditEntryWhereUniqueInput!): TrainingCreditEntry
-  trainingCreditEntries(where: TrainingCreditEntryWhereInput! = {}, orderBy: [TrainingCreditEntryOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainingCreditEntryWhereUniqueInput): [TrainingCreditEntry!]
+  trainingCreditEntries(where: TrainingCreditEntryWhereInput! = {}, orderBy: [TrainingCreditEntryOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainingCreditEntryWhereUniqueInput): [TrainingCreditEntry!]
   trainingCreditEntriesCount(where: TrainingCreditEntryWhereInput! = {}): Int
   coachingAssignment(where: CoachingAssignmentWhereUniqueInput!): CoachingAssignment
-  coachingAssignments(where: CoachingAssignmentWhereInput! = {}, orderBy: [CoachingAssignmentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: CoachingAssignmentWhereUniqueInput): [CoachingAssignment!]
+  coachingAssignments(where: CoachingAssignmentWhereInput! = {}, orderBy: [CoachingAssignmentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: CoachingAssignmentWhereUniqueInput): [CoachingAssignment!]
   coachingAssignmentsCount(where: CoachingAssignmentWhereInput! = {}): Int
   trainingLead(where: TrainingLeadWhereUniqueInput!): TrainingLead
-  trainingLeads(where: TrainingLeadWhereInput! = {}, orderBy: [TrainingLeadOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainingLeadWhereUniqueInput): [TrainingLead!]
+  trainingLeads(where: TrainingLeadWhereInput! = {}, orderBy: [TrainingLeadOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainingLeadWhereUniqueInput): [TrainingLead!]
   trainingLeadsCount(where: TrainingLeadWhereInput! = {}): Int
   contactMessage(where: ContactMessageWhereUniqueInput!): ContactMessage
-  contactMessages(where: ContactMessageWhereInput! = {}, orderBy: [ContactMessageOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ContactMessageWhereUniqueInput): [ContactMessage!]
+  contactMessages(where: ContactMessageWhereInput! = {}, orderBy: [ContactMessageOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ContactMessageWhereUniqueInput): [ContactMessage!]
   contactMessagesCount(where: ContactMessageWhereInput! = {}): Int
   membershipCreditGrant(where: MembershipCreditGrantWhereUniqueInput!): MembershipCreditGrant
-  membershipCreditGrants(where: MembershipCreditGrantWhereInput! = {}, orderBy: [MembershipCreditGrantOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipCreditGrantWhereUniqueInput): [MembershipCreditGrant!]
+  membershipCreditGrants(where: MembershipCreditGrantWhereInput! = {}, orderBy: [MembershipCreditGrantOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipCreditGrantWhereUniqueInput): [MembershipCreditGrant!]
   membershipCreditGrantsCount(where: MembershipCreditGrantWhereInput! = {}): Int
   membershipCreditEntry(where: MembershipCreditEntryWhereUniqueInput!): MembershipCreditEntry
-  membershipCreditEntries(where: MembershipCreditEntryWhereInput! = {}, orderBy: [MembershipCreditEntryOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipCreditEntryWhereUniqueInput): [MembershipCreditEntry!]
+  membershipCreditEntries(where: MembershipCreditEntryWhereInput! = {}, orderBy: [MembershipCreditEntryOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipCreditEntryWhereUniqueInput): [MembershipCreditEntry!]
   membershipCreditEntriesCount(where: MembershipCreditEntryWhereInput! = {}): Int
   operationalNotice(where: OperationalNoticeWhereUniqueInput!): OperationalNotice
-  operationalNotices(where: OperationalNoticeWhereInput! = {}, orderBy: [OperationalNoticeOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: OperationalNoticeWhereUniqueInput): [OperationalNotice!]
+  operationalNotices(where: OperationalNoticeWhereInput! = {}, orderBy: [OperationalNoticeOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: OperationalNoticeWhereUniqueInput): [OperationalNotice!]
   operationalNoticesCount(where: OperationalNoticeWhereInput! = {}): Int
   participationPolicy(where: ParticipationPolicyWhereUniqueInput!): ParticipationPolicy
-  participationPolicies(where: ParticipationPolicyWhereInput! = {}, orderBy: [ParticipationPolicyOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ParticipationPolicyWhereUniqueInput): [ParticipationPolicy!]
+  participationPolicies(where: ParticipationPolicyWhereInput! = {}, orderBy: [ParticipationPolicyOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ParticipationPolicyWhereUniqueInput): [ParticipationPolicy!]
   participationPoliciesCount(where: ParticipationPolicyWhereInput! = {}): Int
   participationEvidence(where: ParticipationEvidenceWhereUniqueInput!): ParticipationEvidence
-  participationEvidences(where: ParticipationEvidenceWhereInput! = {}, orderBy: [ParticipationEvidenceOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ParticipationEvidenceWhereUniqueInput): [ParticipationEvidence!]
+  participationEvidences(where: ParticipationEvidenceWhereInput! = {}, orderBy: [ParticipationEvidenceOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ParticipationEvidenceWhereUniqueInput): [ParticipationEvidence!]
   participationEvidencesCount(where: ParticipationEvidenceWhereInput! = {}): Int
   operationsCase(where: OperationsCaseWhereUniqueInput!): OperationsCase
-  operationsCases(where: OperationsCaseWhereInput! = {}, orderBy: [OperationsCaseOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: OperationsCaseWhereUniqueInput): [OperationsCase!]
+  operationsCases(where: OperationsCaseWhereInput! = {}, orderBy: [OperationsCaseOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: OperationsCaseWhereUniqueInput): [OperationsCase!]
   operationsCasesCount(where: OperationsCaseWhereInput! = {}): Int
   integrationCredential(where: IntegrationCredentialWhereUniqueInput!): IntegrationCredential
-  integrationCredentials(where: IntegrationCredentialWhereInput! = {}, orderBy: [IntegrationCredentialOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: IntegrationCredentialWhereUniqueInput): [IntegrationCredential!]
+  integrationCredentials(where: IntegrationCredentialWhereInput! = {}, orderBy: [IntegrationCredentialOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: IntegrationCredentialWhereUniqueInput): [IntegrationCredential!]
   integrationCredentialsCount(where: IntegrationCredentialWhereInput! = {}): Int
   organization(where: OrganizationWhereUniqueInput!): Organization
-  organizations(where: OrganizationWhereInput! = {}, orderBy: [OrganizationOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: OrganizationWhereUniqueInput): [Organization!]
+  organizations(where: OrganizationWhereInput! = {}, orderBy: [OrganizationOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: OrganizationWhereUniqueInput): [Organization!]
   organizationsCount(where: OrganizationWhereInput! = {}): Int
   user(where: UserWhereUniqueInput!): User
-  users(where: UserWhereInput! = {}, orderBy: [UserOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: UserWhereUniqueInput): [User!]
+  users(where: UserWhereInput! = {}, orderBy: [UserOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: UserWhereUniqueInput): [User!]
   usersCount(where: UserWhereInput! = {}): Int
   role(where: RoleWhereUniqueInput!): Role
-  roles(where: RoleWhereInput! = {}, orderBy: [RoleOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: RoleWhereUniqueInput): [Role!]
+  roles(where: RoleWhereInput! = {}, orderBy: [RoleOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: RoleWhereUniqueInput): [Role!]
   rolesCount(where: RoleWhereInput! = {}): Int
   member(where: MemberWhereUniqueInput!): Member
-  members(where: MemberWhereInput! = {}, orderBy: [MemberOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MemberWhereUniqueInput): [Member!]
+  members(where: MemberWhereInput! = {}, orderBy: [MemberOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MemberWhereUniqueInput): [Member!]
   membersCount(where: MemberWhereInput! = {}): Int
   membershipTier(where: MembershipTierWhereUniqueInput!): MembershipTier
-  membershipTiers(where: MembershipTierWhereInput! = {}, orderBy: [MembershipTierOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipTierWhereUniqueInput): [MembershipTier!]
+  membershipTiers(where: MembershipTierWhereInput! = {}, orderBy: [MembershipTierOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipTierWhereUniqueInput): [MembershipTier!]
   membershipTiersCount(where: MembershipTierWhereInput! = {}): Int
   membership(where: MembershipWhereUniqueInput!): Membership
-  memberships(where: MembershipWhereInput! = {}, orderBy: [MembershipOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipWhereUniqueInput): [Membership!]
+  memberships(where: MembershipWhereInput! = {}, orderBy: [MembershipOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipWhereUniqueInput): [Membership!]
   membershipsCount(where: MembershipWhereInput! = {}): Int
   membershipPayment(where: MembershipPaymentWhereUniqueInput!): MembershipPayment
-  membershipPayments(where: MembershipPaymentWhereInput! = {}, orderBy: [MembershipPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipPaymentWhereUniqueInput): [MembershipPayment!]
+  membershipPayments(where: MembershipPaymentWhereInput! = {}, orderBy: [MembershipPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipPaymentWhereUniqueInput): [MembershipPayment!]
   membershipPaymentsCount(where: MembershipPaymentWhereInput! = {}): Int
   subscription(where: SubscriptionWhereUniqueInput!): Subscription
-  subscriptions(where: SubscriptionWhereInput! = {}, orderBy: [SubscriptionOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: SubscriptionWhereUniqueInput): [Subscription!]
+  subscriptions(where: SubscriptionWhereInput! = {}, orderBy: [SubscriptionOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: SubscriptionWhereUniqueInput): [Subscription!]
   subscriptionsCount(where: SubscriptionWhereInput! = {}): Int
   gymPayment(where: GymPaymentWhereUniqueInput!): GymPayment
-  gymPayments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
+  gymPayments(where: GymPaymentWhereInput! = {}, orderBy: [GymPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymPaymentWhereUniqueInput): [GymPayment!]
   gymPaymentsCount(where: GymPaymentWhereInput! = {}): Int
   paymentMethod(where: PaymentMethodWhereUniqueInput!): PaymentMethod
-  paymentMethods(where: PaymentMethodWhereInput! = {}, orderBy: [PaymentMethodOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentMethodWhereUniqueInput): [PaymentMethod!]
+  paymentMethods(where: PaymentMethodWhereInput! = {}, orderBy: [PaymentMethodOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentMethodWhereUniqueInput): [PaymentMethod!]
   paymentMethodsCount(where: PaymentMethodWhereInput! = {}): Int
   paymentProvider(where: PaymentProviderWhereUniqueInput!): PaymentProvider
-  paymentProviders(where: PaymentProviderWhereInput! = {}, orderBy: [PaymentProviderOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentProviderWhereUniqueInput): [PaymentProvider!]
+  paymentProviders(where: PaymentProviderWhereInput! = {}, orderBy: [PaymentProviderOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentProviderWhereUniqueInput): [PaymentProvider!]
   paymentProvidersCount(where: PaymentProviderWhereInput! = {}): Int
   paymentSession(where: PaymentSessionWhereUniqueInput!): PaymentSession
-  paymentSessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
+  paymentSessions(where: PaymentSessionWhereInput! = {}, orderBy: [PaymentSessionOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentSessionWhereUniqueInput): [PaymentSession!]
   paymentSessionsCount(where: PaymentSessionWhereInput! = {}): Int
   paymentEvent(where: PaymentEventWhereUniqueInput!): PaymentEvent
-  paymentEvents(where: PaymentEventWhereInput! = {}, orderBy: [PaymentEventOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: PaymentEventWhereUniqueInput): [PaymentEvent!]
+  paymentEvents(where: PaymentEventWhereInput! = {}, orderBy: [PaymentEventOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: PaymentEventWhereUniqueInput): [PaymentEvent!]
   paymentEventsCount(where: PaymentEventWhereInput! = {}): Int
   checkIn(where: CheckInWhereUniqueInput!): CheckIn
-  checkIns(where: CheckInWhereInput! = {}, orderBy: [CheckInOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: CheckInWhereUniqueInput): [CheckIn!]
+  checkIns(where: CheckInWhereInput! = {}, orderBy: [CheckInOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: CheckInWhereUniqueInput): [CheckIn!]
   checkInsCount(where: CheckInWhereInput! = {}): Int
   location(where: LocationWhereUniqueInput!): Location
-  locations(where: LocationWhereInput! = {}, orderBy: [LocationOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: LocationWhereUniqueInput): [Location!]
+  locations(where: LocationWhereInput! = {}, orderBy: [LocationOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: LocationWhereUniqueInput): [Location!]
   locationsCount(where: LocationWhereInput! = {}): Int
   gymSettings(where: GymSettingsWhereUniqueInput!): GymSettings
-  gymSettingsItems(where: GymSettingsWhereInput! = {}, orderBy: [GymSettingsOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymSettingsWhereUniqueInput): [GymSettings!]
+  gymSettingsItems(where: GymSettingsWhereInput! = {}, orderBy: [GymSettingsOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymSettingsWhereUniqueInput): [GymSettings!]
   gymSettingsItemsCount(where: GymSettingsWhereInput! = {}): Int
   workoutLog(where: WorkoutLogWhereUniqueInput!): WorkoutLog
-  workoutLogs(where: WorkoutLogWhereInput! = {}, orderBy: [WorkoutLogOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WorkoutLogWhereUniqueInput): [WorkoutLog!]
+  workoutLogs(where: WorkoutLogWhereInput! = {}, orderBy: [WorkoutLogOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: WorkoutLogWhereUniqueInput): [WorkoutLog!]
   workoutLogsCount(where: WorkoutLogWhereInput! = {}): Int
   workoutSet(where: WorkoutSetWhereUniqueInput!): WorkoutSet
-  workoutSets(where: WorkoutSetWhereInput! = {}, orderBy: [WorkoutSetOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WorkoutSetWhereUniqueInput): [WorkoutSet!]
+  workoutSets(where: WorkoutSetWhereInput! = {}, orderBy: [WorkoutSetOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: WorkoutSetWhereUniqueInput): [WorkoutSet!]
   workoutSetsCount(where: WorkoutSetWhereInput! = {}): Int
   exercise(where: ExerciseWhereUniqueInput!): Exercise
-  exercises(where: ExerciseWhereInput! = {}, orderBy: [ExerciseOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ExerciseWhereUniqueInput): [Exercise!]
+  exercises(where: ExerciseWhereInput! = {}, orderBy: [ExerciseOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ExerciseWhereUniqueInput): [Exercise!]
   exercisesCount(where: ExerciseWhereInput! = {}): Int
   waitlist(where: WaitlistWhereUniqueInput!): Waitlist
-  waitlists(where: WaitlistWhereInput! = {}, orderBy: [WaitlistOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: WaitlistWhereUniqueInput): [Waitlist!]
+  waitlists(where: WaitlistWhereInput! = {}, orderBy: [WaitlistOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: WaitlistWhereUniqueInput): [Waitlist!]
   waitlistsCount(where: WaitlistWhereInput! = {}): Int
   attendanceRecord(where: AttendanceRecordWhereUniqueInput!): AttendanceRecord
-  attendanceRecords(where: AttendanceRecordWhereInput! = {}, orderBy: [AttendanceRecordOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: AttendanceRecordWhereUniqueInput): [AttendanceRecord!]
+  attendanceRecords(where: AttendanceRecordWhereInput! = {}, orderBy: [AttendanceRecordOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: AttendanceRecordWhereUniqueInput): [AttendanceRecord!]
   attendanceRecordsCount(where: AttendanceRecordWhereInput! = {}): Int
   classType(where: ClassTypeWhereUniqueInput!): ClassType
-  classTypes(where: ClassTypeWhereInput! = {}, orderBy: [ClassTypeOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassTypeWhereUniqueInput): [ClassType!]
+  classTypes(where: ClassTypeWhereInput! = {}, orderBy: [ClassTypeOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassTypeWhereUniqueInput): [ClassType!]
   classTypesCount(where: ClassTypeWhereInput! = {}): Int
   classSchedule(where: ClassScheduleWhereUniqueInput!): ClassSchedule
-  classSchedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
+  classSchedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
   classSchedulesCount(where: ClassScheduleWhereInput! = {}): Int
   classBooking(where: ClassBookingWhereUniqueInput!): ClassBooking
-  classBookings(where: ClassBookingWhereInput! = {}, orderBy: [ClassBookingOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassBookingWhereUniqueInput): [ClassBooking!]
+  classBookings(where: ClassBookingWhereInput! = {}, orderBy: [ClassBookingOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassBookingWhereUniqueInput): [ClassBooking!]
   classBookingsCount(where: ClassBookingWhereInput! = {}): Int
   instructor(where: InstructorWhereUniqueInput!): Instructor
-  instructors(where: InstructorWhereInput! = {}, orderBy: [InstructorOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: InstructorWhereUniqueInput): [Instructor!]
+  instructors(where: InstructorWhereInput! = {}, orderBy: [InstructorOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: InstructorWhereUniqueInput): [Instructor!]
   instructorsCount(where: InstructorWhereInput! = {}): Int
   classInstance(where: ClassInstanceWhereUniqueInput!): ClassInstance
-  classInstances(where: ClassInstanceWhereInput! = {}, orderBy: [ClassInstanceOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: ClassInstanceWhereUniqueInput): [ClassInstance!]
+  classInstances(where: ClassInstanceWhereInput! = {}, orderBy: [ClassInstanceOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassInstanceWhereUniqueInput): [ClassInstance!]
   classInstancesCount(where: ClassInstanceWhereInput! = {}): Int
   gymResource(where: GymResourceWhereUniqueInput!): GymResource
-  gymResources(where: GymResourceWhereInput! = {}, orderBy: [GymResourceOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymResourceWhereUniqueInput): [GymResource!]
+  gymResources(where: GymResourceWhereInput! = {}, orderBy: [GymResourceOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymResourceWhereUniqueInput): [GymResource!]
   gymResourcesCount(where: GymResourceWhereInput! = {}): Int
   trainerAvailability(where: TrainerAvailabilityWhereUniqueInput!): TrainerAvailability
-  trainerAvailabilities(where: TrainerAvailabilityWhereInput! = {}, orderBy: [TrainerAvailabilityOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAvailabilityWhereUniqueInput): [TrainerAvailability!]
+  trainerAvailabilities(where: TrainerAvailabilityWhereInput! = {}, orderBy: [TrainerAvailabilityOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAvailabilityWhereUniqueInput): [TrainerAvailability!]
   trainerAvailabilitiesCount(where: TrainerAvailabilityWhereInput! = {}): Int
   trainerAppointment(where: TrainerAppointmentWhereUniqueInput!): TrainerAppointment
-  trainerAppointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
+  trainerAppointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
   trainerAppointmentsCount(where: TrainerAppointmentWhereInput! = {}): Int
   onboardingRun(where: OnboardingRunWhereUniqueInput!): OnboardingRun
-  onboardingRuns(where: OnboardingRunWhereInput! = {}, orderBy: [OnboardingRunOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: OnboardingRunWhereUniqueInput): [OnboardingRun!]
+  onboardingRuns(where: OnboardingRunWhereInput! = {}, orderBy: [OnboardingRunOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: OnboardingRunWhereUniqueInput): [OnboardingRun!]
   onboardingRunsCount(where: OnboardingRunWhereInput! = {}): Int
   gymRefundAttempt(where: GymRefundAttemptWhereUniqueInput!): GymRefundAttempt
-  gymRefundAttempts(where: GymRefundAttemptWhereInput! = {}, orderBy: [GymRefundAttemptOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: GymRefundAttemptWhereUniqueInput): [GymRefundAttempt!]
+  gymRefundAttempts(where: GymRefundAttemptWhereInput! = {}, orderBy: [GymRefundAttemptOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GymRefundAttemptWhereUniqueInput): [GymRefundAttempt!]
   gymRefundAttemptsCount(where: GymRefundAttemptWhereInput! = {}): Int
   membershipBillingAttempt(where: MembershipBillingAttemptWhereUniqueInput!): MembershipBillingAttempt
-  membershipBillingAttempts(where: MembershipBillingAttemptWhereInput! = {}, orderBy: [MembershipBillingAttemptOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: MembershipBillingAttemptWhereUniqueInput): [MembershipBillingAttempt!]
+  membershipBillingAttempts(where: MembershipBillingAttemptWhereInput! = {}, orderBy: [MembershipBillingAttemptOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipBillingAttemptWhereUniqueInput): [MembershipBillingAttempt!]
   membershipBillingAttemptsCount(where: MembershipBillingAttemptWhereInput! = {}): Int
   authRateLimitBucket(where: AuthRateLimitBucketWhereUniqueInput!): AuthRateLimitBucket
-  authRateLimitBuckets(where: AuthRateLimitBucketWhereInput! = {}, orderBy: [AuthRateLimitBucketOrderByInput!]! = [], take: Int, skip: Int! = 0, cursor: AuthRateLimitBucketWhereUniqueInput): [AuthRateLimitBucket!]
+  authRateLimitBuckets(where: AuthRateLimitBucketWhereInput! = {}, orderBy: [AuthRateLimitBucketOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: AuthRateLimitBucketWhereUniqueInput): [AuthRateLimitBucket!]
   authRateLimitBucketsCount(where: AuthRateLimitBucketWhereInput! = {}): Int
   keystone: KeystoneMeta!
   authenticatedItem: AuthenticatedItem
   validateUserPasswordResetToken(email: String!, token: String!): ValidateUserPasswordResetTokenResult
   gymSettingsEditor: JSON!
-  operationsWorkspace(caseAfterId: ID): JSON!
-  participationWorkspace: JSON!
+  operationsWorkspace(caseAfterId: ID, noticeSkip: Int, eventSkip: Int, resourceSkip: Int, credentialScope: String, credentialSkip: Int, memberQuery: String): JSON!
+  participationWorkspace(evidenceAfterId: ID): JSON!
   exportOperatingData(kind: String!, from: String!, to: String!): JSON!
   redirectToInit: Boolean
   checkClassAvailability(classInstanceId: ID!): ClassAvailabilityResult!
   getBillingStats: BillingStats!
-  billingWorkspace(q: String, recoverySkip: Int, failedSkip: Int, planSkip: Int, refundSkip: Int): JSON!
+  billingWorkspace(q: String, recoverySkip: Int, failedSkip: Int, planSkip: Int, refundSkip: Int, tierQuery: String, tierSkip: Int, pinnedTierId: ID): JSON!
   memberProfile: MemberProfileProjection!
   memberCheckInCode: MemberCheckInCode!
+  myUpcomingBookingPage(status: String!, skip: Int = 0, take: Int = 20, before: DateTime): JSON!
   schedulingWorkspace(start: DateTime!, end: DateTime!, userId: ID): JSON!
   instructorAccount: JSON
-  instructorClaimQueue: JSON!
   rosterSessions(q: String, state: String, from: String, to: String, sort: String, skip: Int): JSON!
-  rosterDetail(classInstanceId: ID!): JSON
+  rosterDetail(classInstanceId: ID!, confirmedSkip: Int, waitlistSkip: Int, otherSkip: Int): JSON
   frontDeskWorkspace(query: String, visitQuery: String, visitLocationId: ID, visitOrder: String, visitSkip: Int): JSON!
   reportsDashboard: JSON!
   kioskSearchMembers(query: String!, organizationId: ID!, credential: String!): [KioskSearchMember!]!
   discoveryClasses(credential: String!, partner: String, from: String, to: String, dayOfWeek: String, locationId: ID, locationName: String, limit: Int, skip: Int): JSON!
   publicGymSettings: PublicGymSettings
   storefrontOrganization: ID
-  publicGymClassTypes(limit: Int = 50, skip: Int = 0): [PublicGymClassType!]!
+  publicGymClassTypes(limit: Int = 50, skip: Int = 0, after: ID, q: String, difficulty: String, duration: String): [PublicGymClassType!]!
   publicGymClassType(id: ID!): PublicGymClassType
   publicGymSchedules(dayOfWeek: String, instructorId: ID, limit: Int = 50): [PublicGymSchedule!]!
   publicGymSchedule(id: ID!): PublicGymSchedule
-  publicGymClassInstances(from: DateTime, to: DateTime, scheduleId: ID, instructorId: ID, classTypeId: ID, locationId: ID, skip: Int = 0, limit: Int = 50): [PublicGymClassInstance!]!
+  publicGymClassInstances(from: DateTime, to: DateTime, scheduleId: ID, instructorId: ID, classTypeId: ID, locationId: ID, search: String, skip: Int = 0, limit: Int = 50): [PublicGymClassInstance!]!
   publicGymClassInstance(id: ID!): PublicGymClassInstance
-  publicGymInstructors(limit: Int = 50, skip: Int = 0): [PublicGymInstructor!]!
+  publicGymInstructors(limit: Int = 50, skip: Int = 0, after: ID): [PublicGymInstructor!]!
   publicGymInstructor(id: ID!): PublicGymInstructor
-  publicGymMembershipTiers(limit: Int = 50, skip: Int = 0): [PublicGymMembershipTier!]!
+  publicGymMembershipTiers(limit: Int = 50, skip: Int = 0, after: ID): [PublicGymMembershipTier!]!
   publicGymMembershipTier(id: ID!): PublicGymMembershipTier
-  trainingWorkspace(skip: Int = 0): JSON!
-  retailWorkspace(skip: Int = 0): JSON!
+  trainingWorkspace(skip: Int = 0, cardSkip: Int = 0, availabilitySkip: Int = 0, memberQuery: String): JSON!
+  retailWorkspace(skip: Int = 0, cardSkip: Int = 0, itemSkip: Int = 0, itemSite: ID): JSON!
+  retailSaleItems(locationId: ID!, q: String, skip: Int = 0): JSON!
+  myStaffIntent(id: ID!): JSON
+  myPendingStaffIntents(workspace: String!): [JSON!]!
+  eligibleCoachAccounts(q: String, skip: Int): JSON!
 }
 
 union AuthenticatedItem = User
@@ -7225,6 +7377,7 @@ enum KeystoneAdminUISortDirection {
 
 type PublicGymSettings {
   id: ID!
+  salesOpen: Boolean!
   name: String!
   tagline: String
   logoIcon: String
@@ -7393,7 +7546,6 @@ type MemberProfileProjection {
 input MemberProfileUpdateInput {
   name: String
   email: String
-  currentPassword: String
   expectedUpdatedAt: String
   phone: String
   dateOfBirth: String
@@ -7414,18 +7566,16 @@ input InviteMemberInput {
   phone: String
 }
 
+type EmailChangeRequest {
+  pendingEmail: String!
+  mail: String!
+}
+
 type InviteMemberResult {
   userId: ID!
   memberId: ID!
   email: String!
-}
-
-type AccessLinkResult {
-  userId: ID
-  email: String!
-  delivered: String!
-  url: String
-  expiresAt: String!
+  created: Boolean!
 }
 
 type SchedulingGenerationResult {

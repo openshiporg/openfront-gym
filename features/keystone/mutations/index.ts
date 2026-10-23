@@ -552,7 +552,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         memberProfile: getMemberProfile,
         memberCheckInCode: getMemberCheckInCode,
         myUpcomingBookingPage: getMyUpcomingBookingPage,
-        staffIntent: getStaffIntent,
+        myStaffIntent: getStaffIntent,
         myPendingStaffIntents: getMyPendingStaffIntents,
         eligibleCoachAccounts,
         schedulingWorkspace: getSchedulingWorkspace,

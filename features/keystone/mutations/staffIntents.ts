@@ -141,7 +141,7 @@ export async function recordIntentResult(tx: any, organizationId: string, reques
 
 export const staffIntentTypeDefs = `
   extend type Query {
-    staffIntent(id: ID!): JSON
+    myStaffIntent(id: ID!): JSON
     myPendingStaffIntents(workspace: String!): [JSON!]!
   }
   extend type Mutation {

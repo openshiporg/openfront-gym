@@ -18,7 +18,9 @@ export function requiredRelationshipDb(relationName: string) {
  * validateDelete explains the supported alternative first; this is the authority.)
  */
 export function restrictDeleteDb(field: string) {
-  return field.replace(/@relation\(([^)]*)\)/, "@relation($1, onDelete: Restrict)");
+  // Keystone also passes the back-reference side of a one-sided relationship through here;
+  // Prisma accepts onDelete only on the side that holds the foreign key (fields: [...]).
+  return field.replace(/@relation\(([^)]*fields:[^)]*)\)/, "@relation($1, onDelete: Restrict)");
 }
 
 export function compoundUniqueDb(...constraints: string[]) {

@@ -44,6 +44,8 @@ export async function getSchedulingWorkspaceData(
     resources: any[];
     upcomingInstances: any[];
     timeZone: string;
+    eventsComplete: boolean;
+    truncated: Partial<Record<"schedules" | "instructors" | "classTypes" | "locations" | "resources", boolean>>;
   };
 }
 
