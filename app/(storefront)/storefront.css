@@ -368,8 +368,9 @@ html:not(.dark) body:has(.sf-root) { background: #ffffff; }
     background: var(--sf-ink); color: var(--sf-canvas); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.02em;
   }
   .sf-avatar[data-size="lg"] { width: 52px; height: 52px; font-size: 1rem; }
+  /* No display here: .sf-desktop-only shows it from 1080px, and a display set here would override its phone hide. */
   .sf-avatar-btn {
-    display: inline-flex; min-height: 44px; align-items: center; gap: 8px; border: 1px solid var(--sf-line); border-radius: 999px;
+    min-height: 44px; align-items: center; gap: 8px; border: 1px solid var(--sf-line); border-radius: 999px;
     padding: 4px 12px 4px 5px; background: var(--sf-raised); color: var(--sf-ink); font-size: 0.875rem; font-weight: 600; cursor: pointer;
   }
   .sf-avatar-btn:hover { border-color: var(--sf-line-strong); }
@@ -626,6 +627,15 @@ html:not(.dark) body:has(.sf-root) { background: #ffffff; }
   .sf-compare tbody th { width: 11rem; color: var(--sf-ink-3); font-weight: 500; }
   .sf-compare td { font-variant-numeric: tabular-nums; }
   .sf-compare td[data-muted] { color: var(--sf-ink-3); }
+  /* Phones: each detail label sits above its row, so the plan columns get the full width side by side. */
+  @media (max-width: 639px) {
+    .sf-compare { min-width: calc(var(--sf-compare-cols, 2) * 140px); }
+    .sf-compare tr { display: grid; grid-template-columns: repeat(var(--sf-compare-cols, 2), minmax(0, 1fr)); border-bottom: 1px solid var(--sf-line); }
+    .sf-compare tr:last-child { border-bottom: 0; }
+    .sf-compare th, .sf-compare td { border-bottom: 0; padding: 10px 14px; }
+    .sf-compare thead th:first-child { display: none; }
+    .sf-compare tbody th { grid-column: 1 / -1; width: auto; padding-bottom: 0; font-size: 0.8125rem; }
+  }
 
   /* ---------- forms */
   .sf-form { display: grid; gap: 16px; }

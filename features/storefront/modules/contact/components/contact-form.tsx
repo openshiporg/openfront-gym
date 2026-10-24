@@ -27,7 +27,7 @@ export function ContactForm({
   const [state, action, pending] = useActionState(submitContactFormAction, initialState);
   const selectedTopic = CONTACT_TOPICS.find((item) => item.key === topic)?.label ?? CONTACT_TOPICS[0].label;
   const fallback = phone
-    ? <a className="sf-link" href={`tel:${phone}`}>Call {phone}</a>
+    ? <a className="sf-link" href={`tel:${phone.replace(/[^\d+]/g, "")}`}>Call {phone}</a>
     : supportEmail ? <a className="sf-link" href={`mailto:${supportEmail}`}>Email {supportEmail}</a> : undefined;
 
   return (

@@ -25,7 +25,9 @@ export async function MainLayout({ children, user }: MainLayoutProps) {
     );
   }
 
-  const promo = config.promoBanner?.trim();
+  const same = (a?: string | null, b?: string | null) => Boolean(a && b) && a!.replace(/\s+/g, " ").trim().toLowerCase() === b!.replace(/\s+/g, " ").trim().toLowerCase();
+  // The tagline already sits under the logo, so a banner repeating it is left out.
+  const promo = same(config.promoBanner, config.tagline) ? null : config.promoBanner?.trim();
 
   return (
     <div className="sf-root">

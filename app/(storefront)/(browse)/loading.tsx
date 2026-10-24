@@ -1,3 +1,4 @@
+// Class and coach detail pages sit outside (browse): under this boundary their notFound() would arrive after a 200.
 export default function StorefrontLoading() {
   return (
     <div className="sf-page" role="status" aria-label="Loading">

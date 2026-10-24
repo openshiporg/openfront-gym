@@ -270,7 +270,8 @@ export async function signUp(
     }
   } catch (error: any) {
     // Read the GraphQL error itself: the client error message also embeds the request.
-    return signUpFailure(error?.response?.errors?.[0]?.message ?? (error instanceof Error ? error.message : String(error)));
+    const failure = error?.response?.errors?.[0];
+    return signUpFailure(failure?.extensions?.code, failure?.message ?? (error instanceof Error ? error.message : String(error)));
   }
 
   revalidatePath("/", "layout");
@@ -278,7 +279,18 @@ export async function signUp(
 }
 
 /** Customer wording for registerMember failures; server detail never reaches the page. */
-function signUpFailure(message: string) {
+const SIGN_UP_FAILURES: Record<string, string> = {
+  ACCOUNT_EXISTS: "An account with that email already exists. Sign in instead, or reset your password if you’ve forgotten it.",
+  RATE_LIMITED: "Too many attempts. Try again in an hour.",
+  INVALID_EMAIL: "Enter a valid email address.",
+  INVALID_NAME: "Enter your name (up to 120 characters).",
+  INVALID_PASSWORD: "Use a password of 12 to 128 characters.",
+  INVALID_PHONE: "Phone number must be 40 characters or fewer.",
+  SIGNUP_UNAVAILABLE: "Online sign-up is unavailable right now. Contact the club to open an account.",
+};
+
+function signUpFailure(code: unknown, message: string) {
+  if (typeof code === "string" && SIGN_UP_FAILURES[code]) return SIGN_UP_FAILURES[code];
   const normalized = message.toLowerCase();
   if (normalized.includes("already exists") || normalized.includes("unique constraint") || normalized.includes("email_unique")) return "An account with that email already exists. Sign in instead, or reset your password if you’ve forgotten it.";
   if (normalized.includes("too many")) return "Too many attempts. Try again in an hour.";

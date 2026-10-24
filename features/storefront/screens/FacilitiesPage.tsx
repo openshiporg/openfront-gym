@@ -59,7 +59,7 @@ export async function FacilitiesPage() {
           <div className="sf-split">
             <div className="sf-stack">
               {config?.address ? <p className="sf-h3">{config.address}</p> : <p className="sf-text-2">Address not published</p>}
-              {config?.phone ? <a className="sf-link" href={`tel:${config.phone}`}>{config.phone}</a> : null}
+              {config?.phone ? <a className="sf-link" href={`tel:${config.phone.replace(/[^\d+]/g, "")}`}>{config.phone}</a> : null}
               <div className="sf-actions">
                 {config?.address ? (
                   <a className="sf-btn" data-variant="secondary" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(config.address)}`} target="_blank" rel="noreferrer">

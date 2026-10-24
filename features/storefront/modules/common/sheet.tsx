@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
@@ -27,6 +27,7 @@ export function Sheet({
   dismissible?: boolean;
   onCloseAutoFocus?: (event: Event) => void;
 }) {
+  const contentRef = useRef<HTMLDivElement>(null);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => { if (next || dismissible) onOpenChange(next); }}>
       <DialogPrimitive.Portal>
@@ -35,6 +36,10 @@ export function Sheet({
           className="sf-portal sf-sheet"
           {...(role ? { role } : {})}
           {...(description ? {} : { "aria-describedby": undefined })}
+          ref={contentRef}
+          // Open on the sheet itself, not its first control: a focus ring on an unselected toggle
+          // reads as the selected one, and focusing a field would raise the phone keyboard.
+          onOpenAutoFocus={(event) => { event.preventDefault(); contentRef.current?.focus(); }}
           onCloseAutoFocus={onCloseAutoFocus}
           onPointerDownOutside={(event) => { if (!dismissible) event.preventDefault(); }}
           onEscapeKeyDown={(event) => { if (!dismissible) event.preventDefault(); }}

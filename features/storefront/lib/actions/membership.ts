@@ -8,6 +8,8 @@ import { getAuthHeaders } from "@/features/storefront/lib/data/cookies";
 import { getUser } from "@/features/storefront/lib/data/user";
 import { publicAppUrl } from "@/features/keystone/lib/internal-origin";
 import { customerErrorMessage } from "@/features/storefront/lib/customer-error";
+import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
+import { localDateStart, nextDateKey, normalizeTimeZone } from "@/lib/timezone";
 
 /**
  * The confirmed operation's key comes from the form (rendered once per page view and carried
@@ -72,9 +74,11 @@ export async function freezeMembershipAction(formData: FormData): Promise<void> 
   try {
     const user = await requireUserWithMembership();
     const endDate = formData.get("endDate")?.toString();
-    if (!endDate) throw new Error("Freeze end date is required.");
+    if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) throw new Error("Choose the date the freeze ends.");
 
-    const end = new Date(`${endDate}T23:59:59.999Z`);
+    // The member picks a date on the club's calendar; the freeze runs to the end of that day there.
+    const timeZone = normalizeTimeZone((await getStorefrontConfig())?.timezone);
+    const end = new Date(localDateStart(nextDateKey(endDate), timeZone).getTime() - 1);
     if (Number.isNaN(end.getTime()) || end <= new Date()) {
       throw new Error("Freeze end date must be in the future.");
     }

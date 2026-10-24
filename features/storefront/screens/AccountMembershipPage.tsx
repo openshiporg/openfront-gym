@@ -56,12 +56,22 @@ export default async function AccountMembershipPage({
   const currentUser = refreshed.error ? user : await getUser();
   const membership = refreshed.membership ? { ...currentUser?.membership, ...refreshed.membership } : user.membership;
   const timeZone = config?.timezone || "UTC";
-  const creditDate = (value: string) => new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(value));
+  const creditDate = (value: string) => new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone }).format(new Date(value));
   const agreement = membership?.agreementSnapshot;
   const freezeAllowed = agreement?.freezeAllowed ?? membership?.tier?.freezeAllowed;
   const currencyCode = config?.currencyCode || user.organization?.defaultCurrency || "USD";
   const hasStripeCustomer = Boolean(user.stripeCustomerId);
   const hasStripeSubscription = Boolean(membership?.stripeSubscriptionId);
+  const freezeUnavailable = !hasStripeSubscription
+    ? "Freezes are arranged by the front desk for this membership."
+    : !freezeAllowed
+      ? "Not included in this plan."
+      : !membership?.autoRenew
+        ? "Not available while renewal is ending."
+        : membership?.status !== "active"
+          ? "Only active memberships can be frozen."
+          : null;
+  const renewalEnded = membership?.status === "cancelled" || !membership?.autoRenew;
 
   const allowance = agreement?.classCreditsPerMonth ?? membership?.tier?.classCreditsPerMonth;
 
@@ -135,64 +145,61 @@ export default async function AccountMembershipPage({
                     </SubmitButton>
                   </form>
                 </>
+              ) : freezeUnavailable ? (
+                <p className="sf-text-2">{freezeUnavailable}</p>
               ) : (
                 <form action={freezeMembershipAction} className="sf-form">
                   <input type="hidden" name="operationKey" value={keyFor("freeze")} />
                   <label className="sf-field">
-                    Freeze until (UTC)
+                    Freeze until
                     <input name="endDate" type="date" required />
-                    <small>Starts now and ends at 23:59 UTC on this date.</small>
+                    <small>Starts now and ends at the end of this day.</small>
                   </label>
-                  <SubmitButton
-                    variant="secondary"
-                    block
-                    pendingLabel="Freezing…"
-                    disabled={!hasStripeSubscription || !membership.autoRenew || !freezeAllowed || membership.status !== "active"}
-                  >
-                    {!hasStripeSubscription
-                      ? "Freeze needs online billing"
-                      : !membership.autoRenew
-                        ? "Renewal already ending"
-                        : !freezeAllowed
-                          ? "Not included in this plan"
-                          : membership.status !== "active"
-                            ? "Only active memberships"
-                            : "Freeze membership"}
-                  </SubmitButton>
+                  <SubmitButton variant="secondary" block pendingLabel="Freezing…">Freeze membership</SubmitButton>
                 </form>
               )}
             </section>
           </div>
 
-          <section className="sf-danger-zone" aria-labelledby="end-renewal">
-            <h2 id="end-renewal" className="sf-h3">End renewal</h2>
-            <p className="sf-text-2">Renewal stops after the current paid period. Access continues until then. No refund is issued.</p>
-            <form action={cancelMembershipAction} className="sf-form">
-              <input type="hidden" name="operationKey" value={keyFor("cancel")} />
-              <label htmlFor="cancel-reason" className="sf-field">Reason (optional)
-                <textarea id="cancel-reason" name="reason" maxLength={500} rows={3} />
-              </label>
-              <label className="sf-check">
-                <input type="checkbox" name="confirmEndOfTerm" value="yes" required />
-                <span>End renewal after the current paid period</span>
-              </label>
-              <div>
-                <SubmitButton
-                  variant="danger"
-                  pendingLabel="Ending renewal…"
-                  disabled={!hasStripeSubscription || membership.status === "cancelled" || !membership.autoRenew}
-                >
-                  {!hasStripeSubscription
-                    ? "Contact the front desk to cancel"
-                    : membership.status === "cancelled"
-                      ? "Membership already ended"
-                      : !membership.autoRenew
-                        ? "Renewal already ended"
-                        : "End renewal"}
-                </SubmitButton>
+          {renewalEnded ? (
+            <section className="sf-card" aria-labelledby="end-renewal">
+              <div className="sf-titleline">
+                <h2 id="end-renewal" className="sf-h3">Renewal</h2>
+                <span className="sf-state" data-tone={membership.status === "cancelled" ? "neutral" : "low"}>{membership.status === "cancelled" ? "Ended" : `Ends ${formatDate(membership.nextBillingDate)}`}</span>
               </div>
-            </form>
-          </section>
+              {membership.status !== "cancelled" ? (
+                hasStripeCustomer ? (
+                  <form action={openBillingPortalAction}>
+                    <SubmitButton variant="secondary" pendingLabel="Opening billing…">Keep membership in billing portal</SubmitButton>
+                  </form>
+                ) : (
+                  <ArrowLink href={MEMBERSHIP_CONTACT} size="sm">Ask the club to keep your membership</ArrowLink>
+                )
+              ) : null}
+            </section>
+          ) : (
+            <section className="sf-danger-zone" aria-labelledby="end-renewal">
+              <h2 id="end-renewal" className="sf-h3">End renewal</h2>
+              <p className="sf-text-2">Renewal stops after the current paid period. Access continues until then. No refund is issued.</p>
+              {hasStripeSubscription ? (
+                <form action={cancelMembershipAction} className="sf-form">
+                  <input type="hidden" name="operationKey" value={keyFor("cancel")} />
+                  <label htmlFor="cancel-reason" className="sf-field">Reason (optional)
+                    <textarea id="cancel-reason" name="reason" maxLength={500} rows={3} />
+                  </label>
+                  <label className="sf-check">
+                    <input type="checkbox" name="confirmEndOfTerm" value="yes" required />
+                    <span>End renewal after the current paid period</span>
+                  </label>
+                  <div>
+                    <SubmitButton variant="danger" pendingLabel="Ending renewal…">End renewal</SubmitButton>
+                  </div>
+                </form>
+              ) : (
+                <ArrowLink href={MEMBERSHIP_CONTACT} size="sm">Contact the front desk to cancel</ArrowLink>
+              )}
+            </section>
+          )}
         </>
       ) : (
         <EmptyState headingLevel={2} title="No membership on this account" action={<Link href="/memberships" className="sf-btn" data-variant="accent" data-size="sm">Compare plans</Link>} />

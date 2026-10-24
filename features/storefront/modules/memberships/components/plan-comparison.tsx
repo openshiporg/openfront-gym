@@ -1,4 +1,5 @@
 "use client";
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { MembershipTierData } from "@/features/storefront/lib/data/memberships";
@@ -65,7 +66,7 @@ export default function PlanComparison({ tiers, currencyCode }: { tiers: Members
       <section className="sf-stack" aria-labelledby="compare-plans">
         <h2 id="compare-plans" className="sf-h2">Compare</h2>
         <div className="sf-compare-wrap">
-          <table className="sf-compare">
+          <table className="sf-compare" style={{ "--sf-compare-cols": tiers.length } as CSSProperties}>
             <thead><tr><th scope="col"><span className="sr-only">Plan detail</span></th>{tiers.map(tier => <th key={tier.id} scope="col">{tier.name}</th>)}</tr></thead>
             <tbody>
               <tr><th scope="row">Monthly</th>{tiers.map(tier => <td key={tier.id}>{formatMajorUnits(tier.monthlyPrice, currencyCode)}</td>)}</tr>

@@ -92,6 +92,15 @@ export default async function AccountTrainingPage({ searchParams }: { searchPara
   const date = (value?: string) => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: zone }).format(new Date(value)) : "Date not available";
   const clock = (value?: string) => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: zone }).format(new Date(value)) : null;
   const day = (value?: string) => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: zone }).format(new Date(value)) : "Date not available";
+  const dayKey = (value: string | number) => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: zone }).format(new Date(value));
+  const calendarDate = (value?: string) => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: zone }).format(new Date(value)) : "Date not available";
+  // Availability stores wall-clock "HH:MM"; show it in the same 12-hour style as the rest of the page.
+  const wallClock = (value?: string) => {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(value || "");
+    if (!match) return value || "";
+    const hour = Number(match[1]);
+    return `${hour % 12 || 12}:${match[2]} ${hour < 12 ? "AM" : "PM"}`;
+  };
   const name = (rows: any[], id: string) => rows.find(row => row.id === id)?.name || "Not published";
   const currentPackages = packages.filter(pack => isTrainingPackageSelectable(pack, now));
 
@@ -99,8 +108,9 @@ export default async function AccountTrainingPage({ searchParams }: { searchPara
 
   const availability: any[] = data.availability || [];
   const recurring = availability.filter(row => row.type === "recurring");
+  const today = dayKey(now);
   const dated = availability
-    .filter(row => row.type !== "recurring")
+    .filter(row => row.type !== "recurring" && Number.isFinite(Date.parse(row.date)) && dayKey(row.date) >= today)
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
 
   return <>
@@ -161,15 +171,15 @@ export default async function AccountTrainingPage({ searchParams }: { searchPara
 
         <aside className="sf-panel" aria-labelledby="coach-hours-heading">
           <h3 id="coach-hours-heading" className="sf-h3">Coaching hours</h3>
-          {availability.length ? <>
+          {recurring.length || dated.length ? <>
             {recurring.length > 0 ? <div className="sf-hours-week">{WEEK.map(weekday => {
               const rows = recurring.filter(row => Number(row.dayOfWeek) === weekday.index);
               return <div key={weekday.index}>
                 <span title={weekday.long}>{weekday.short}</span>
-                {rows.length ? <ul>{rows.map(row => <li key={row.id} data-off={!row.isAvailable || undefined}><strong>{row.startTime}–{row.endTime}</strong><span>{name(data.instructors, row.instructorId)} · {name(data.locations, row.locationId)}{row.isAvailable ? "" : " · Unavailable"}</span></li>)}</ul> : <span>None</span>}
+                {rows.length ? <ul>{rows.map(row => <li key={row.id} data-off={!row.isAvailable || undefined}><strong>{wallClock(row.startTime)}–{wallClock(row.endTime)}</strong><span>{name(data.instructors, row.instructorId)} · {name(data.locations, row.locationId)}{row.isAvailable ? "" : " · Unavailable"}</span></li>)}</ul> : <span>None</span>}
               </div>;
             })}</div> : null}
-            {dated.length > 0 ? <div className="sf-stack" data-gap="sm"><p className="sf-label">Date changes</p><ul className="sf-hours-week">{dated.map(row => <li key={row.id} data-off={!row.isAvailable || undefined}><strong>{date(row.date)}</strong><span>{row.startTime}–{row.endTime} · {name(data.instructors, row.instructorId)} · {name(data.locations, row.locationId)} · {row.isAvailable ? "Working" : "Unavailable"}</span></li>)}</ul></div> : null}
+            {dated.length > 0 ? <div className="sf-stack" data-gap="sm"><p className="sf-label">Date changes</p><ul className="sf-hours-week">{dated.map(row => <li key={row.id} data-off={!row.isAvailable || undefined}><strong>{calendarDate(row.date)}</strong><span>{wallClock(row.startTime)}–{wallClock(row.endTime)} · {name(data.instructors, row.instructorId)} · {name(data.locations, row.locationId)}{row.isAvailable ? "" : " · Unavailable"}</span></li>)}</ul></div> : null}
           </> : <p className="sf-text-2">Not published</p>}
         </aside>
       </div>

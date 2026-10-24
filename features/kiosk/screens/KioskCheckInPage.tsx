@@ -291,8 +291,8 @@ export default function KioskCheckInPage({ brandName = "Front desk" }: { brandNa
         {authorization === "checking" ? (
           <p role="status" className="sf-text-2">Checking this kiosk…</p>
         ) : authorization === "unconfigured" ? (
-          <Banner tone="bad" title="Kiosk isn’t configured">
-            Set KIOSK_ORGANIZATION_ID and a KIOSK_API_TOKEN of at least 32 characters, then reload.
+          <Banner tone="bad" title="Kiosk not set up">
+            Check-in at this screen isn’t set up yet. Ask a member of staff to check you in.
           </Banner>
         ) : (
           <form className="sf-form" onSubmit={handleUnlock}>

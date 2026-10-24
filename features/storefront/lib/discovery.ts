@@ -29,5 +29,5 @@ export function matchesSession(item: DiscoverableSession, filters: { q?: string;
   return terms.every(term => text.includes(term)) && (!filters.coach || item.instructorId === filters.coach) && (!filters.format || item.classTypeId === filters.format) && (filters.availability !== "open" || item.spots > 0);
 }
 export function creditLabel(value: number | null | undefined) {
-  return value === -1 ? "Unlimited classes" : value === 0 ? "No classes included" : typeof value === "number" ? `${value} classes each service month` : "Class allowance not available";
+  return value === -1 ? "Unlimited classes" : value === 0 ? "No classes included" : typeof value === "number" ? `${value} ${value === 1 ? "class" : "classes"} per month` : "Class allowance not available";
 }
