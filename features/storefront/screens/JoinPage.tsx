@@ -73,7 +73,7 @@ export default async function JoinPage({ tier, cycle: requestedCycle, checkoutEr
             <div><dt>Minimum term</dt><dd>{termLabel(selected.contractLength)}</dd></div>
             {selected.guestPasses > 0 ? <div><dt>Guest passes</dt><dd>{selected.guestPasses}, arranged with the club</dd></div> : null}
             {selected.personalTrainingSessions > 0 ? <div><dt>Personal training</dt><dd>{selected.personalTrainingSessions} sessions, arranged with the club</dd></div> : null}
-            <div><dt>Billing</dt><dd>{currency}, {cycle === "annual" ? "yearly, paid in full; class credits renew monthly" : "monthly"}</dd></div>
+            <div><dt>Billing</dt><dd>{currency}, {cycle === "annual" ? `yearly, paid in full${selected.classCreditsPerMonth > 0 ? "; class credits renew monthly" : ""}` : "monthly"}</dd></div>
           </dl>
           <div><ArrowLink href="/policies" size="sm">Policies</ArrowLink></div>
         </section>
