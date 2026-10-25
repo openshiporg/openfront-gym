@@ -6,14 +6,14 @@ Openfront Gym is a self-hostable platform for gyms and fitness studios. It combi
 
 ## Demo
 
-<a href="https://kinetic.openship.org"><img src="public/images/training-floor.jpg" alt="Training floor image used by the Gym storefront" width="600"></a>
+<a href="https://gym.openship.org"><img src="public/images/training-floor.jpg" alt="Training floor image used by the Gym storefront" width="600"></a>
 
 Kinetic Performance Club
 
 | | |
 |---|---|
-| **Storefront** | [kinetic.openship.org](https://kinetic.openship.org) |
-| **Dashboard** | [kinetic.openship.org/dashboard](https://kinetic.openship.org/dashboard) |
+| **Storefront** | [gym.openship.org](https://gym.openship.org) |
+| **Dashboard** | [gym.openship.org/dashboard](https://gym.openship.org/dashboard) |
 | **User** | `kinetic@openship.org` |
 | **Password** | `TKMZFA2uDt2WRtvmwRyK` |
 
