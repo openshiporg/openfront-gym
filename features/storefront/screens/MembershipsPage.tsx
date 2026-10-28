@@ -18,13 +18,15 @@ export async function MembershipsPage({ searchParams }: { searchParams?: Promise
     <div className="sf-page">
       <div className="sf-wrap">
         <PageHead title="Memberships" aside={<ArrowLink href={contactPath("membership", "/memberships")} size="sm">Membership questions</ArrowLink>} />
-        <MembershipTiers after={after} />
-        <Banner
-          title="Drop-ins and trial visits"
-          action={<ArrowLink href={contactPath("trial", "/memberships")} size="sm">Ask about a visit</ArrowLink>}
-        >
-          Day passes aren’t sold online. The front desk arranges drop-in and trial visits.
-        </Banner>
+        <div className="sf-stack" data-gap="lg">
+          <MembershipTiers after={after} />
+          <Banner
+            title="Drop-ins and trial visits"
+            action={<ArrowLink href={contactPath("trial", "/memberships")} size="sm">Ask about a visit</ArrowLink>}
+          >
+            Day passes aren’t sold online. The front desk arranges drop-in and trial visits.
+          </Banner>
+        </div>
       </div>
     </div>
   );

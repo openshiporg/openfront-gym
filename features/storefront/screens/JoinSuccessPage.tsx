@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getUser } from "@/features/storefront/lib/data/user";
 import { cookies } from "next/headers";
-import { CheckCircle2, Clock3 } from "lucide-react";
+import { CheckCircle2, Clock3, Receipt } from "lucide-react";
 import {
   clearCheckoutReturnAndRedirect,
   completeMembershipCheckoutAction,
@@ -15,7 +15,7 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
   let result: { ok: true; tierName: string; billingCycle: string } | { ok: false; message: string };
 
   if (!sessionId) {
-    result = { ok: false, message: "This link has no checkout confirmation. Check your membership, or use the link from your checkout." };
+    result = { ok: false, message: "This page confirms a new membership after checkout, and this link didn’t come from one. If you just paid, check your membership or open the link from your checkout." };
   } else {
     try {
       const provisioned = await completeMembershipCheckoutAction(sessionId);
@@ -29,7 +29,7 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
     } catch {
       result = {
         ok: false,
-        message: "Activation isn’t confirmed yet. Don’t start another payment; check your membership or contact the front desk with the checkout time.",
+        message: "We haven’t confirmed your membership yet. This can take a minute. Please don’t start another payment: check again shortly, or contact the front desk with your checkout time.",
       };
     }
   }
@@ -54,14 +54,25 @@ export default async function JoinSuccessPage({ sessionId }: { sessionId?: strin
               </CheckoutReturnButton>
             </div>
           </>
-        ) : (
+        ) : sessionId ? (
           <>
             <span className="sf-outcome-mark" data-tone="warn"><Clock3 aria-hidden="true" /></span>
-            <h1 className="sf-h1">Payment not yet verified</h1>
+            <h1 className="sf-h1">Confirming your payment</h1>
             <p className="sf-lead">{result.message}</p>
-            <div className="sf-actions">
+            <div className="sf-actions" data-stack>
+              <Link href={`/join/success?session_id=${encodeURIComponent(sessionId)}`} className="sf-btn">Check again</Link>
+              <Link href="/account/membership" className="sf-btn" data-variant="secondary">Check membership</Link>
+              <Link href="/contact" className="sf-btn" data-variant="ghost">Contact the front desk</Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="sf-outcome-mark"><Receipt aria-hidden="true" /></span>
+            <h1 className="sf-h1">No checkout to confirm</h1>
+            <p className="sf-lead">{result.message}</p>
+            <div className="sf-actions" data-stack>
               <Link href="/account/membership" className="sf-btn">Check membership</Link>
-              {sessionId ? <Link href={`/join/success?session_id=${encodeURIComponent(sessionId)}`} className="sf-btn" data-variant="secondary">Check again</Link> : null}
+              <Link href="/memberships" className="sf-btn" data-variant="secondary">View memberships</Link>
               <Link href="/contact" className="sf-btn" data-variant="ghost">Contact</Link>
             </div>
           </>
@@ -83,7 +94,7 @@ function CheckoutReturnButton({
   return (
     <form action={clearCheckoutReturnAndRedirect}>
       <input type="hidden" name="destination" value={destination} />
-      <button type="submit" className="sf-btn" data-variant={variant} data-size="lg">{children}</button>
+      <button type="submit" className="sf-btn" data-variant={variant}>{children}</button>
     </form>
   );
 }

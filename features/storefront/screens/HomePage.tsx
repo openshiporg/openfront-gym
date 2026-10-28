@@ -102,7 +102,9 @@ export async function HomePage() {
               })}
             </div>
           ) : (
-            <EmptyState icon={<CalendarSearch aria-hidden="true" />} title="No sessions this week" action={<ArrowLink href="/classes">Classes</ArrowLink>} />
+            <EmptyState icon={<CalendarSearch aria-hidden="true" />} title="No sessions this week" action={<ArrowLink href="/classes">Browse classes</ArrowLink>}>
+              This week’s timetable isn’t published yet. See the class formats, or ask the front desk what’s on.
+            </EmptyState>
           )}
           <p className="sf-meta">Times in {zone}</p>
         </section>
@@ -210,7 +212,7 @@ export async function HomePage() {
                 </a>
               ) : null}
               {config?.phone ? <a className="sf-btn" data-variant="secondary" href={`tel:${config.phone.replace(/[^\d+]/g, "")}`}>{config.phone}</a> : null}
-              <Link className="sf-btn" data-variant="ghost" href="/contact">Contact</Link>
+              <Link className="sf-btn" data-variant="secondary" href="/contact">Contact</Link>
             </div>
           </div>
           <div className="sf-panel">

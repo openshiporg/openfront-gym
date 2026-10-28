@@ -63,7 +63,7 @@ export default function PlanComparison({ tiers, currencyCode }: { tiers: Members
     </div>
 
     {tiers.length > 1 ? (
-      <section className="sf-stack" aria-labelledby="compare-plans">
+      <section className="sf-stack sf-compare-block" aria-labelledby="compare-plans">
         <h2 id="compare-plans" className="sf-h2">Compare</h2>
         <div className="sf-compare-wrap">
           <table className="sf-compare" style={{ "--sf-compare-cols": tiers.length } as CSSProperties}>
