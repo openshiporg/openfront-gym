@@ -2,6 +2,8 @@
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fopenshiporg%2Fopenfront-gym&env=DATABASE_URL%2CSESSION_SECRET%2CNEXTAUTH_URL%2CS3_BUCKET_NAME%2CS3_REGION%2CS3_ENDPOINT%2CS3_ACCESS_KEY_ID%2CS3_SECRET_ACCESS_KEY)
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/openfront-gym)
+
 Openfront Gym is a self-hostable platform for gyms and fitness studios. It combines a public membership and class-booking site with member accounts and a staff dashboard for schedules, rosters, check-in, billing, personal training, retail sales, and facility operations.
 
 **Documentation:** [docs.openship.org/docs/openfront/gym](https://docs.openship.org/docs/openfront/gym)
