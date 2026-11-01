@@ -1265,3 +1265,8 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   @media (min-width: 900px) { .sf-rg-visit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; padding: 32px; } }
 }
 
+/* Rigel: coaches without a photo get the same dark initials tile as the home page. */
+@layer components {
+  .sf-coach-photo:has(> .sf-monogram) { background: linear-gradient(145deg, #2a2c34, #15161b); box-shadow: var(--sf-card-shadow); }
+  .sf-coach-photo > .sf-monogram { color: #fff; }
+}
