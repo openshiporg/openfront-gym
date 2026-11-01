@@ -1094,12 +1094,14 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-rg-hero-media img { object-fit: cover; object-position: 70% 50%; }
   .sf-rg-hero::after { content: ""; position: absolute; inset: auto var(--sf-gutter) 0; height: 1px; background: var(--sf-line); }
   @media (min-width: 900px) {
-    .sf-rg-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 460px); align-items: center; gap: 48px; padding-block: 24px 20px; }
+    /* Design proportions: the photo is ~36% of the column and the headline keeps to two lines. */
+    .sf-rg-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 360px); align-items: center; gap: 40px; padding-block: 24px 20px; }
+    .sf-rg-title { font-size: clamp(2.25rem, 1.2rem + 1.9vw, 2.875rem); text-wrap: pretty; }
     .sf-rg-hero::after { display: none; }
     .sf-rg-hero-copy { max-width: none; gap: 16px; padding-left: 24px; }
     .sf-rg-sub { max-width: 30rem; color: var(--sf-ink-2); font-size: 1.125rem; }
     .sf-rg-actions { display: flex; }
-    .sf-rg-hero-media { position: relative; inset: auto; aspect-ratio: 460 / 300; border-radius: var(--sf-r-lg); -webkit-mask-image: none; mask-image: none; box-shadow: var(--sf-card-shadow); }
+    .sf-rg-hero-media { position: relative; inset: auto; aspect-ratio: 456 / 293; border-radius: var(--sf-r-lg); -webkit-mask-image: none; mask-image: none; box-shadow: var(--sf-card-shadow); }
     .sf-rg-hero-media img { object-position: 50% 50%; }
   }
 
