@@ -412,7 +412,7 @@ export function SchedulingClient({
                             {!schedule.isActive ? <StatusPill>Paused</StatusPill> : null}
                           </div>
                           <p className="truncate text-xs tabular-nums text-muted-foreground">
-                            {schedule.startTime}–{schedule.endTime} · {schedule.classType?.name || 'No class type'} · {schedule.maxCapacity} spots
+                            {schedule.startTime}–{schedule.endTime} · {schedule.classType?.name || 'No class type'} · {schedule.maxCapacity} {schedule.maxCapacity === 1 ? "spot" : "spots"}
                           </p>
                           <p className={schedule.instructor?.user?.name ? 'mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground' : 'mt-0.5 flex items-center gap-1.5 truncate text-xs text-amber-700 dark:text-amber-400'}>
                             <GraduationCap className="size-3.5 shrink-0" aria-hidden /> {schedule.instructor?.user?.name || 'No coach assigned'}

@@ -329,7 +329,7 @@ export function InstanceEditorDialog({
               items={[
                 template.dayOfWeek ? `${capitalize(template.dayOfWeek)}s` : null,
                 `${formatClock(template.startTime)}–${formatClock(template.endTime)}`,
-                `${template.maxCapacity} spots`,
+                `${template.maxCapacity} ${template.maxCapacity === 1 ? "spot" : "spots"}`,
                 templateInstructorName ? `Coach ${templateInstructorName}` : "No template coach",
                 template.location?.name ?? null,
               ]}
