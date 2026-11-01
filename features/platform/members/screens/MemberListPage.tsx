@@ -16,6 +16,7 @@ import {
 } from "@/features/platform/components/platform-ui";
 import { MemberInviteForm } from "../components/MemberInviteForm";
 import { requirePeopleManager } from "@/features/platform/lib/current-user";
+import { resolveGymTimeZone } from "@/lib/timezone";
 import { normalizeDashboardListPagination } from "@/lib/list-pagination";
 import MemberListPageClient, {
   type MemberSummary,
@@ -126,13 +127,16 @@ export default async function MemberListPage({
   }
 
   // Count first, then load the page that is actually shown, so the label and rows agree.
-  const counted = await keystoneClient<{ membersCount: number; membershipTiers: { id: string; name?: string | null }[] }>(`
+  const counted = await keystoneClient<{ membersCount: number; membershipTiers: { id: string; name?: string | null }[]; gymSettingsItems: { timezone?: string | null }[] }>(`
     query MemberDirectoryCount($where: MemberWhereInput) {
       membersCount(where: $where)
       membershipTiers(orderBy: [{ name: asc }]) { id name }
+      gymSettingsItems(take: 1, orderBy: [{ createdAt: asc }]) { timezone }
     }
   `, { where });
   const totalCount = counted.success ? counted.data.membersCount : 0;
+  // Dates are formatted in the gym's zone on both server and browser, so hydration text matches.
+  const timeZone = resolveGymTimeZone(counted.success ? counted.data.gymSettingsItems?.[0]?.timezone : null);
   const membershipTiers = counted.success ? counted.data.membershipTiers : [];
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const currentPage = Math.min(requestedPage, totalPages);
@@ -263,11 +267,12 @@ export default async function MemberListPage({
                 canManagePeople={canManagePeople}
                 hasFilters={hasFilters}
                 resetHref={basePath}
+                timeZone={timeZone}
               />
 
               <div className="border-t px-4 py-3">
                 <PaginationBar
-                  summary={totalCount ? `Showing ${firstShown}–${lastShown} of ${totalCount} members` : "No members to show"}
+                  summary={totalCount ? `Showing ${firstShown}–${lastShown} of ${totalCount} ${totalCount === 1 ? "member" : "members"}` : "No members to show"}
                   pageLabel={`Page ${currentPage} of ${totalPages}`}
                   previousHref={currentPage > 1 ? `${basePath}?${buildSearchString(params, { page: (currentPage - 1).toString() })}` : null}
                   nextHref={currentPage < totalPages ? `${basePath}?${buildSearchString(params, { page: (currentPage + 1).toString() })}` : null}

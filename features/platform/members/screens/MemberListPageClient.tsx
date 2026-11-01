@@ -30,6 +30,8 @@ interface Props {
   canManagePeople?: boolean;
   hasFilters?: boolean;
   resetHref?: string;
+  /** The gym's business zone; formatting in a fixed zone keeps server and browser text identical. */
+  timeZone?: string;
 }
 
 const statusTone: Record<MemberStatus, Tone> = {
@@ -44,17 +46,19 @@ const statusLabel: Record<MemberStatus, string> = {
   cancelled: "Cancelled",
 };
 
-function formatDate(value?: string | null) {
+function formatDate(value: string | null | undefined, timeZone: string) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone }).format(date);
 }
+
+const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
 const columns = "lg:grid-cols-[minmax(0,2.2fr)_7.5rem_minmax(0,1.3fr)_8.5rem_7.5rem_6.5rem]";
 
 // Staff never issue or see password links: members recover their own account with Forgot password.
-export default function MemberDirectoryClient({ members, viewProfileBasePath, suspendMember, canManagePeople = false, hasFilters = false, resetHref }: Props) {
+export default function MemberDirectoryClient({ members, viewProfileBasePath, suspendMember, canManagePeople = false, hasFilters = false, resetHref, timeZone = "UTC" }: Props) {
   if (!members.length) {
     return hasFilters ? (
       <EmptyBlock
@@ -86,8 +90,8 @@ export default function MemberDirectoryClient({ members, viewProfileBasePath, su
         {members.map((member) => {
           const status = member.status ?? "active";
           const canClose = !member.membershipTier && (member.bookingsCount ?? 0) === 0 && (member.paymentsCount ?? 0) === 0 && (member.checkInsCount ?? 0) === 0;
-          const joined = formatDate(member.joinDate);
-          const lastVisit = formatDate(member.lastCheckIn);
+          const joined = formatDate(member.joinDate, timeZone);
+          const lastVisit = formatDate(member.lastCheckIn, timeZone);
           const profileHref = `${viewProfileBasePath}/${member.id}`;
           return (
             <div key={member.id} role="row" className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/30 lg:gap-y-0 ${columns}`}>
@@ -116,7 +120,7 @@ export default function MemberDirectoryClient({ members, viewProfileBasePath, su
               </div>
 
               <div role="cell" className="hidden text-xs tabular-nums text-muted-foreground lg:block">
-                <p><span className="font-medium text-foreground">{member.bookingsCount ?? 0}</span> bookings</p>
+                <p><span className="font-medium text-foreground">{member.bookingsCount ?? 0}</span> {(member.bookingsCount ?? 0) === 1 ? "booking" : "bookings"}</p>
                 <p><span className="font-medium text-foreground">{member.checkInsCount ?? 0}</span> check-ins</p>
               </div>
 
@@ -126,7 +130,7 @@ export default function MemberDirectoryClient({ members, viewProfileBasePath, su
 
               <div role="cell" className="col-span-2 flex items-center justify-between gap-2 pl-11 lg:col-span-1 lg:justify-end lg:pl-0">
                 <p className="text-xs tabular-nums text-muted-foreground lg:hidden">
-                  {member.bookingsCount ?? 0} bookings · {member.checkInsCount ?? 0} check-ins · last visit {lastVisit ?? "never"}
+                  {plural(member.bookingsCount ?? 0, "booking")} · {plural(member.checkInsCount ?? 0, "check-in")} · last visit {lastVisit ?? "never"}
                 </p>
                 <div className="flex items-center gap-1">
                   <Button asChild size="sm" variant="ghost" className="hidden xl:inline-flex">
