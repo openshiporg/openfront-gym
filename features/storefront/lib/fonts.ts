@@ -1,7 +1,7 @@
-import { Host_Grotesk } from "next/font/google";
+import { Figtree } from "next/font/google";
 
 /** The storefront's single family (OFL): display, interface and numerals. */
-export const storefrontDisplay = Host_Grotesk({
+export const storefrontDisplay = Figtree({
   subsets: ["latin"],
   variable: "--font-sf-display",
   display: "swap",

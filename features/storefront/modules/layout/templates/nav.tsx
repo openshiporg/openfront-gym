@@ -24,14 +24,15 @@ export default function Nav({
   const secondaryCta = config?.heroSecondaryCtaLabel && config?.heroSecondaryCtaHref ? { label: config.heroSecondaryCtaLabel, href: config.heroSecondaryCtaHref } : null;
   return (
     <header className="sf-header">
+      {/* Phone: the logo alone, centred; every destination lives in the bottom tab bar and its menu. */}
       <div className="sf-wrap sf-header-bar">
         <Wordmark brand={brand} />
         <PrimaryNav />
         <div className="sf-header-end">
           <AuthNav user={user} joinCta={primaryCta} />
-          <NavClient user={user} brand={brand} primaryCta={primaryCta} secondaryCta={secondaryCta} />
         </div>
       </div>
+      <NavClient user={user} brand={brand} primaryCta={primaryCta} secondaryCta={secondaryCta} />
     </header>
   );
 }

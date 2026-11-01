@@ -24,15 +24,15 @@ export default function AuthNav({ user, joinCta }: AuthNavProps) {
   if (!user) {
     return (
       <>
-        <Link href="/account" className="sf-btn sf-desktop-only" data-variant="ghost" data-size="sm">Sign in</Link>
-        {joinCta ? <Link href={joinCta.href} className="sf-btn sf-desktop-only" data-size="sm">{joinCta.label}</Link> : null}
+        {joinCta ? <Link href={joinCta.href} className="sf-btn sf-desktop-only" data-variant="accent" data-size="sm">{joinCta.label}</Link> : null}
+        <Link href="/account" className="sf-btn sf-desktop-only" data-variant="secondary" data-size="sm">Log in</Link>
       </>
     );
   }
 
   return (
     <>
-      <Link href="/schedule" className="sf-btn sf-desktop-only" data-size="sm">Book a class</Link>
+      <Link href="/schedule" className="sf-btn sf-desktop-only" data-variant="accent" data-size="sm">Book a class</Link>
       <form ref={signOutForm} action={signOut} hidden />
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>

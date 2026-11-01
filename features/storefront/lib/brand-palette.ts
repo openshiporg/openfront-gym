@@ -55,8 +55,11 @@ export function brandPalette(hueInput: unknown) {
   const fillL = useWhite ? whiteFillL : accessibleLightness(h, 88, 52, [INK], 1, 4.5);
   const textLight = accessibleLightness(h, 80, 44, [WHITE], -1);
   const textDark = accessibleLightness(h, 90, 60, [DARK_CANVAS, NIGHT_RAISED], 1);
+  // Large display type (headline accents) only needs 3:1, so it can sit closer to a soft coral.
+  const display = accessibleLightness(h, 78, 64, [WHITE], -1, 3.1);
   return {
     hue: h,
+    display: hsl(h, 78, display),
     fill: hsl(h, useWhite ? 82 : 88, fillL),
     onFill: useWhite ? "#ffffff" : "#0c0d0f",
     textLight: hsl(h, 80, textLight),
@@ -67,5 +70,5 @@ export function brandPalette(hueInput: unknown) {
 /** CSS custom properties for :root so portalled dialogs and menus share the tenant accent. */
 export function brandPaletteCss(hueInput: unknown) {
   const p = brandPalette(hueInput);
-  return `:root{--brand-hue:${p.hue};--sf-accent-fill:${p.fill};--sf-accent-on:${p.onFill};--sf-accent-text-light:${p.textLight};--sf-accent-text-dark:${p.textDark};}`;
+  return `:root{--brand-hue:${p.hue};--sf-accent-fill:${p.fill};--sf-accent-on:${p.onFill};--sf-accent-text-light:${p.textLight};--sf-accent-text-dark:${p.textDark};--sf-accent-display:${p.display};}`;
 }

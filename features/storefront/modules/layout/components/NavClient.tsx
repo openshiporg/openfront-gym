@@ -4,23 +4,28 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, Menu, X } from "lucide-react";
+import { ArrowUpRight, CalendarDays, House, Menu, UserRound, WalletCards, X } from "lucide-react";
 import { signOut } from "@/features/storefront/lib/data/user";
 import Wordmark, { type WordmarkBrand } from "./wordmark";
 import ThemeSwitch from "./theme-switch";
 
 const NAV_LINKS = [
+  { label: "Home", href: "/" },
+  { label: "Classes", href: "/classes" },
+  { label: "Schedule", href: "/schedule" },
+  { label: "Memberships", href: "/memberships" },
+  { label: "Coaches", href: "/instructors" },
+  { label: "About", href: "/facilities" },
+];
+
+const MOBILE_NAV_LINKS = [
+  { label: "Home", href: "/" },
   { label: "Schedule", href: "/schedule" },
   { label: "Classes", href: "/classes" },
   { label: "Memberships", href: "/memberships" },
   { label: "Coaches", href: "/instructors" },
   { label: "Facilities", href: "/facilities" },
   { label: "Contact", href: "/contact" },
-];
-
-const MOBILE_NAV_LINKS = [
-  { label: "Home", href: "/" },
-  ...NAV_LINKS,
 ];
 
 type NavCta = { label: string; href: string };
@@ -42,7 +47,10 @@ export function PrimaryNav() {
   );
 }
 
-/** Phone header controls: a Book shortcut and the full-screen menu. Hidden from 1080px. */
+/**
+ * Phone navigation: a fixed bottom tab bar (Home, Schedule, Plans, Account, More) so the header
+ * only carries the logo and never overflows. "More" opens the full-screen menu. Hidden from 1080px.
+ */
 export default function NavClient({
   user,
   brand,
@@ -125,21 +133,21 @@ export default function NavClient({
 
   return (
     <>
-      {pathname !== "/schedule" ? (
-        <Link href="/schedule" className="sf-btn sf-mobile-only" data-size="sm">Book</Link>
-      ) : null}
-
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label="Open menu"
-        aria-controls="storefront-mobile-menu"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-        className="sf-icon-btn sf-mobile-only"
-      >
-        <Menu aria-hidden="true" />
-      </button>
+      <nav className="sf-tabbar sf-mobile-only" aria-label="Quick navigation">
+        <Link href="/" aria-current={pathname === "/" ? "page" : undefined}><House aria-hidden="true" /><span>Home</span></Link>
+        <Link href="/schedule" aria-current={isActive(pathname, "/schedule") ? "page" : undefined}><CalendarDays aria-hidden="true" /><span>Schedule</span></Link>
+        <Link href="/memberships" aria-current={isActive(pathname, "/memberships") || isActive(pathname, "/join") ? "page" : undefined}><WalletCards aria-hidden="true" /><span>Plans</span></Link>
+        <Link href="/account" aria-current={isActive(pathname, "/account") || isActive(pathname, "/member") ? "page" : undefined}><UserRound aria-hidden="true" /><span>{user ? "Account" : "Sign in"}</span></Link>
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-controls="storefront-mobile-menu"
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+        >
+          <Menu aria-hidden="true" /><span>More</span>
+        </button>
+      </nav>
 
       {open ? createPortal(
         <div

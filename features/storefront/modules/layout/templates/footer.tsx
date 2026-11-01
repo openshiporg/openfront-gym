@@ -68,7 +68,7 @@ export default function Footer({
   const timeZone = config?.timezone || "UTC";
 
   return (
-    <footer className="sf-footer sf-on-night">
+    <footer className="sf-footer">
       <div className="sf-wrap">
         <div className="sf-footer-grid">
           <div className="sf-footer-brand">
@@ -102,7 +102,7 @@ export default function Footer({
 
         <div className="sf-footer-bottom">
           <p>© {new Date().getFullYear()} {copyrightName}</p>
-          <ThemeSwitch night />
+          <ThemeSwitch />
         </div>
       </div>
     </footer>

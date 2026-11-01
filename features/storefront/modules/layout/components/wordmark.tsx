@@ -21,8 +21,15 @@ export function wordmarkBrand(
  * publicGymSettings; a tenant that never chose a logo gets the library default,
  * and the saved logo color turns the mark's own paints (currentColor parts take the accent).
  */
-export default function Wordmark({ brand, onNavigate }: { brand: WordmarkBrand; onNavigate?: () => void }) {
+/** "Kinetic Performance Club" → ["Kinetic", "Performance Club"]: the lockup sets the first word large over the rest. */
+export function splitBrandName(name: string): [string, string | null] {
+  const words = name.trim().split(/\s+/);
+  return words.length > 1 ? [words[0], words.slice(1).join(" ")] : [name.trim(), null];
+}
+
+export default function Wordmark({ brand, onNavigate, showTagline = false }: { brand: WordmarkBrand; onNavigate?: () => void; showTagline?: boolean }) {
   const mark = resolveStorefrontBrand(brand);
+  const [lead, rest] = splitBrandName(brand.name);
   return (
     <Link href="/" onClick={onNavigate} className="sf-wordmark" aria-label={`${brand.name} home`}>
       <span
@@ -31,8 +38,9 @@ export default function Wordmark({ brand, onNavigate }: { brand: WordmarkBrand; 
         dangerouslySetInnerHTML={{ __html: mark.svg }}
       />
       <span className="sf-wordmark-copy">
-        <strong>{brand.name}</strong>
-        {brand.tagline ? <span>{brand.tagline}</span> : null}
+        <strong>{lead}</strong>
+        {rest ? <span>{rest}</span> : null}
+        {showTagline && brand.tagline ? <em>{brand.tagline}</em> : null}
       </span>
     </Link>
   );
