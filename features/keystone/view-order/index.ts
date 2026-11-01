@@ -17,7 +17,6 @@ export const VIEW_ORDER = [
   "json",
   "select",
   "password",
-  "custom",
   "image",
   "virtual",
   "document",
