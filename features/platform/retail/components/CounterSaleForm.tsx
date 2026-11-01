@@ -1,5 +1,5 @@
 "use client";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Boxes } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CheckField, DataTable, EmptyBlock, FieldInput, FormField, NativeSelect, Notice, Td, Th, Tr } from "@/features/platform/components/platform-ui";
@@ -63,7 +63,13 @@ export function CounterSaleForm({ action, loadItems, quote: requestQuote, locati
       setReview(result);
     });
   };
-  const reviewed = review && new Date(review.expiresAt).getTime() > Date.now() ? review : null;
+  // A reviewed quote is dropped when it expires, so a stale price can never be submitted.
+  useEffect(() => {
+    if (!review) return;
+    const timer = setTimeout(() => setReview(null), Math.max(0, new Date(review.expiresAt).getTime() - Date.now()));
+    return () => clearTimeout(timer);
+  }, [review]);
+  const reviewed = review;
 
   return (
     <form action={action} className="grid gap-4">

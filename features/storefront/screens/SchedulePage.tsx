@@ -51,8 +51,11 @@ export async function SchedulePage({ searchParams = {} }: { searchParams?: Recor
     getClassTypes().catch(() => []),
   ]);
   const membershipStatus = user?.membership?.status;
+  // The member's own bookings across the same 14-day window, plus a day of margin.
+  const bookingHorizon = new Date();
+  bookingHorizon.setTime(bookingHorizon.getTime() + 15 * 86_400_000);
   const [upcoming, participation] = user?.id && user.organization?.id
-    ? await Promise.all([getUpcomingBookingsBefore(new Date(Date.now() + 15 * 86_400_000).toISOString()).catch(() => []), getParticipationStatus()])
+    ? await Promise.all([getUpcomingBookingsBefore(bookingHorizon.toISOString()).catch(() => []), getParticipationStatus()])
     : [[], null];
   const terms = config?.participationTerms;
   const viewer: BookingViewer = {
