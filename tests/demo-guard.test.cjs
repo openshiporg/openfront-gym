@@ -82,6 +82,19 @@ test('4. a demo user cannot change the store name, logo or URL settings', async 
   await refused(run('Organization', 'update', DEMO, { item: { id: 'o' }, inputData: { name: 'x' } }));
 });
 
+test('4b. unchanged protected values pass, changed ones are refused', async () => {
+  const item = { id: 's', name: 'Kinetic', logoIcon: 'a', logoColor: '#111111', brandHue: 40 };
+  await run('GymSettings', 'update', DEMO, { item, inputData: { name: ' Kinetic ', logoIcon: 'a', logoColor: '#111111', brandHue: 40, timezone: 'UTC', taxRate: 8 } });
+  await refused(run('GymSettings', 'update', DEMO, { item, inputData: { name: 'Other', timezone: 'UTC' } }));
+  await refused(run('GymSettings', 'update', DEMO, { item, inputData: { name: 'Kinetic', brandHue: 41 } }));
+  await refused(run('GymSettings', 'update', DEMO, { inputData: { name: 'Kinetic' } }));
+  await run('Organization', 'update', DEMO, { item: { id: 'o', name: 'Org', slug: 'org' }, inputData: { name: 'Org', slug: 'org' } });
+  await refused(run('Organization', 'update', DEMO, { item: { id: 'o', name: 'Org', slug: 'org' }, inputData: { slug: 'new' } }));
+  await run('Member', 'update', DEMO, { item: { id: 'm', email: 'a@b.c' }, inputData: { email: 'a@b.c' } });
+  await refused(run('Member', 'update', DEMO, { item: { id: 'm', email: 'a@b.c' }, inputData: { email: 'z@b.c' } }));
+  await refused(run('User', 'update', DEMO, { item: { id: 'demo', password: 'x' }, inputData: { password: 'x' } }));
+});
+
 test('a demo user can still edit a catalogue item and its own onboarding state', async () => {
   await run('MembershipTier', 'update', DEMO, { item: { id: 'p' }, inputData: { name: 'Edited' } });
   assert.equal(productHookRan, 1, 'the existing MembershipTier hook still runs');
