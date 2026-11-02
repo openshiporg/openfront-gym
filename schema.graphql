@@ -7223,6 +7223,7 @@ type Query {
   reportsDashboard: JSON!
   kioskSearchMembers(query: String!, organizationId: ID!, credential: String!): [KioskSearchMember!]!
   discoveryClasses(credential: String!, partner: String, from: String, to: String, dayOfWeek: String, locationId: ID, locationName: String, limit: Int, skip: Int): JSON!
+  discoveryClassCalendar(credential: String!, partner: String, from: String, to: String, locationId: ID): String!
   publicGymSettings: PublicGymSettings
   storefrontOrganization: ID
   publicGymClassTypes(limit: Int = 50, skip: Int = 0, after: ID, q: String, difficulty: String, duration: String): [PublicGymClassType!]!

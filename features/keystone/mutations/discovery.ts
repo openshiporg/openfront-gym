@@ -4,6 +4,7 @@ import { budgetKey, consumeAuthAttempt, releaseAuthAttempt, reserveAuthAttempt }
 import { isKnownSource, requestClientSource } from "../../../lib/clientSource";
 import { createCapacityControlledBooking } from "./classCapacity";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
+import { serializeClassCalendar } from "../lib/class-calendar";
 
 function resolveWindow(from?: string | null, to?: string | null) {
   const now = new Date();
@@ -380,4 +381,21 @@ export async function bookDiscoveryClass(
     memberEmail,
   });
   return { success: true, ...access, booking };
+}
+
+/** The partner class feed as an iCalendar (RFC 5545) document, paged to at most 1,000 sessions. */
+export async function getDiscoveryClassCalendar(
+  _root: unknown,
+  args: { credential: string; partner?: string | null; from?: string | null; to?: string | null; locationId?: string | null },
+  context: any,
+) {
+  const access = await authorizeDiscovery(context, args.credential, args.partner || "", "classes:read");
+  const classes: any[] = [];
+  for (let skip = 0, page = 0; page < 5; page += 1) {
+    const rows = await getDiscoveryClassFeed(context, { organizationId: access.organizationId, from: args.from, to: args.to, locationId: args.locationId, limit: 201, skip });
+    classes.push(...rows.slice(0, 200));
+    if (rows.length <= 200) break;
+    skip += 200;
+  }
+  return serializeClassCalendar({ organizationId: access.organizationId, classes });
 }

@@ -73,7 +73,7 @@ import {
   kioskRecordMemberCheckIn,
   kioskSearchMembers,
 } from "./kiosk";
-import { bookDiscoveryClass, getDiscoveryClasses } from "./discovery";
+import { bookDiscoveryClass, getDiscoveryClassCalendar, getDiscoveryClasses } from "./discovery";
 import { submitContactForm } from "./contact";
 import { replayPaymentEvent } from './paymentWebhook';
 import { operationsWorkspace, participationWorkspace, runOperationsCommand, exportOperatingData } from './operations';
@@ -122,6 +122,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
           limit: Int
           skip: Int
         ): JSON!
+        discoveryClassCalendar(credential: String!, partner: String, from: String, to: String, locationId: ID): String!
 
         publicGymSettings: PublicGymSettings
         storefrontOrganization: ID
@@ -569,6 +570,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         reportsDashboard: getReportsDashboard,
         kioskSearchMembers,
         discoveryClasses: getDiscoveryClasses,
+        discoveryClassCalendar: getDiscoveryClassCalendar,
         publicGymSettings: getPublicGymSettings,
         // Accounts, history and recovery bind to the configured tenant even while its sales are paused.
         storefrontOrganization: async (_root: unknown, _args: unknown, context: any) => (await configuredStorefrontOrganization(context))?.id ?? null,
