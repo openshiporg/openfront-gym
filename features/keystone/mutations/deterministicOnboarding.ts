@@ -9,6 +9,7 @@ import { saveControlledOccurrence } from "../lib/class-scheduling";
 import { futureLocalOccurrence, localWeekdayAtOffset } from "../../../lib/timezone";
 import { businessTimeZone } from "../lib/business-time-zone";
 import { lockCurrentActor } from "../lib/current-actor";
+import { assertNotDemo } from "../lib/demo-guard";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { publicCheckoutProviderEnabled } from "../queries/publicGym";
 import { isParticipationTermsPlaceholder } from "../lib/participation-terms";
@@ -186,6 +187,8 @@ export async function runDeterministicOnboarding(
   args: { template: string; data?: unknown },
   context: any,
 ) {
+  // Onboarding writes roles, users and store identity through Prisma, past the list hooks.
+  await assertNotDemo(context);
   const template = args.template;
   const onboardingSeed = resolveOnboardingSeed(template, args.data);
   const { userId, organizationId } = actorOrganization(context);
