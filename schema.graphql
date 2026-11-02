@@ -6988,6 +6988,7 @@ type Mutation {
   refundGymPayment(paymentId: ID!, amount: Int, reason: String, idempotencyKey: String!): GymPayment!
   createStripeSetupIntent(userId: ID!): SetupIntentResult!
   cancelMembership(membershipId: ID!, reason: String, idempotencyKey: String!): MembershipActionResult!
+  cancelMembershipNow(membershipId: ID!, reason: String, idempotencyKey: String!): MembershipActionResult!
   freezeMembership(membershipId: ID!, endDate: String!, idempotencyKey: String!): MembershipActionResult!
   unfreezeMembership(membershipId: ID!, idempotencyKey: String!): MembershipActionResult!
   changeMembershipTier(membershipId: ID!, newTierId: ID!, idempotencyKey: String!): MembershipActionResult!

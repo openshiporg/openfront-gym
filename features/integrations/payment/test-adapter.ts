@@ -152,6 +152,10 @@ export const testPaymentProviderAdapter: PaymentProviderAdapter = {
     });
   },
 
+  async cancelSubscriptionNow(subscriptionId) {
+    return updateTestSubscription(subscriptionId, { status: "canceled", cancel_at_period_end: false });
+  },
+
   async pauseSubscription(subscriptionId) {
     return updateTestSubscription(subscriptionId, {
       status: "active",

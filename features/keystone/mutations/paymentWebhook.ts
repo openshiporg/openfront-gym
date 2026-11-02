@@ -246,7 +246,7 @@ export async function syncSubscription(
       autoRenew: subscription.status !== "canceled" && !subscription.cancel_at_period_end,
       stripeSubscriptionId: subscription.id,
       ...(membershipStatus === "cancelled"
-        ? { cancelledAt: eventTime, freezeStartDate: null, freezeEndDate: null }
+        ? { cancelledAt: membership?.status === "cancelled" && membership.cancelledAt ? membership.cancelledAt : eventTime, freezeStartDate: null, freezeEndDate: null }
         : membershipStatus === "frozen"
           ? {}
           : subscription.cancel_at_period_end

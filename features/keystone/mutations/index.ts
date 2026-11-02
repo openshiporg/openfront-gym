@@ -31,6 +31,7 @@ import {
 import {
   createStripeSetupIntent,
   cancelMembership,
+  cancelMembershipNow,
   freezeMembership,
   unfreezeMembership,
   changeMembershipTier,
@@ -326,6 +327,8 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         createStripeSetupIntent(userId: ID!): SetupIntentResult!
 
         cancelMembership(membershipId: ID!, reason: String, idempotencyKey: String!): MembershipActionResult!
+
+        cancelMembershipNow(membershipId: ID!, reason: String, idempotencyKey: String!): MembershipActionResult!
 
         freezeMembership(
           membershipId: ID!
@@ -631,6 +634,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         refundGymPayment,
         createStripeSetupIntent,
         cancelMembership,
+        cancelMembershipNow,
         freezeMembership,
         unfreezeMembership,
         changeMembershipTier,

@@ -11,3 +11,15 @@ export function parseCancelRenewalForm(form: { get(name: string): unknown }): Ca
   if (idempotencyKey.length < 12 || idempotencyKey.length > 200) throw new Error("This form is missing its request key; reload the page");
   return { membershipId, reason, idempotencyKey };
 }
+
+/** Validates a staff "Cancel now" submission: the membership ends today. */
+export function parseCancelNowForm(form: { get(name: string): unknown }): CancelRenewalInput {
+  const membershipId = String(form.get("membershipId") ?? "").trim();
+  const reason = String(form.get("reason") ?? "").trim();
+  const idempotencyKey = String(form.get("idempotencyKey") ?? "");
+  if (!membershipId) throw new Error("Choose the membership to cancel");
+  if (form.get("confirmCancelNow") !== "yes") throw new Error("Confirm that the membership ends now");
+  if (reason.length < 3 || reason.length > 500) throw new Error("Give a reason between 3 and 500 characters");
+  if (idempotencyKey.length < 12 || idempotencyKey.length > 200) throw new Error("This form is missing its request key; reload the page");
+  return { membershipId, reason, idempotencyKey };
+}

@@ -30,6 +30,7 @@ export const MembershipBillingAttempt = list({
       type: "string",
       options: [
         { label: "Cancel", value: "cancel" },
+        { label: "Cancel now", value: "cancel-now" },
         { label: "Freeze", value: "freeze" },
         { label: "Unfreeze", value: "unfreeze" },
         { label: "Tier change", value: "tier-change" },

@@ -193,6 +193,15 @@ export const stripePaymentProviderAdapter: PaymentProviderAdapter = {
     );
   },
 
+  /** Ends the subscription immediately (no further renewals); no refund is created. */
+  cancelSubscriptionNow(subscriptionId, idempotencyKey) {
+    return getStripeClient().subscriptions.cancel(
+      subscriptionId,
+      {},
+      idempotencyKey ? { idempotencyKey } : undefined,
+    );
+  },
+
   pauseSubscription(subscriptionId, resumeDate, idempotencyKey) {
     return getStripeClient().subscriptions.update(subscriptionId, {
       pause_collection: {

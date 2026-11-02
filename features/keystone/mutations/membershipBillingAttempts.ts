@@ -5,7 +5,7 @@ import { enqueueOperationalNotice } from "../lib/operational-notices";
 import { lockTransactionKey } from "./classCapacity";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
-export type MembershipBillingOperation = "cancel" | "freeze" | "unfreeze" | "tier-change";
+export type MembershipBillingOperation = "cancel" | "cancel-now" | "freeze" | "unfreeze" | "tier-change";
 
 type AttemptScope = {
   organizationId: string;
@@ -165,7 +165,7 @@ export async function claimMembershipBillingAttempt(
       };
     }
     const unresolvedRemote = await transaction.membershipBillingAttempt.findFirst({
-      where: { organizationId: scope.organizationId, membershipId: scope.membershipId, operation: { in: ["cancel", "freeze", "unfreeze", "tier-change"] }, status: "processing" },
+      where: { organizationId: scope.organizationId, membershipId: scope.membershipId, operation: { in: ["cancel", "cancel-now", "freeze", "unfreeze", "tier-change"] }, status: "processing" },
       select: { id: true, operation: true },
     });
     if (unresolvedRemote instanceof Error) throw unresolvedRemote;

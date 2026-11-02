@@ -61,6 +61,7 @@ export interface PaymentProviderAdapter {
   expireCounterCheckout?(providerSessionId: string): Promise<Stripe.Checkout.Session>;
   createSetupIntent(customerId: string): Promise<{ id: string; clientSecret: string | null }>;
   cancelSubscriptionAtPeriodEnd(subscriptionId: string, idempotencyKey?: string): Promise<Stripe.Subscription>;
+  cancelSubscriptionNow(subscriptionId: string, idempotencyKey?: string): Promise<Stripe.Subscription>;
   pauseSubscription(subscriptionId: string, resumeDate?: Date, idempotencyKey?: string): Promise<Stripe.Subscription>;
   resumeSubscription(subscriptionId: string, idempotencyKey?: string): Promise<Stripe.Subscription>;
   changeSubscriptionPrice(

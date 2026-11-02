@@ -106,8 +106,9 @@ export async function BillingDashboardPage({
           ...membership,
           idempotencyKey: retryKeyFor(retry, 'tierChange', membership.id, crypto.randomUUID),
           retainedTierId: retryValue(retry, 'tierChange', 'newTierId', membership.id),
-          retained: Boolean(retryIntentFor(retry, 'tierChange', membership.id)) || Boolean(retryIntentFor(retry, 'cancelRenewal', membership.id)),
+          retained: Boolean(retryIntentFor(retry, 'tierChange', membership.id)) || Boolean(retryIntentFor(retry, 'cancelRenewal', membership.id)) || Boolean(retryIntentFor(retry, 'cancelNow', membership.id)),
           cancelKey: retryKeyFor(retry, 'cancelRenewal', membership.id, crypto.randomUUID),
+          cancelNowKey: retryKeyFor(retry, 'cancelNow', membership.id, crypto.randomUUID),
         }))}
         retry={retry}
         pendingIntents={pendingIntents.filter((row) => row.id !== retry?.intentId)}
@@ -135,6 +136,8 @@ export async function BillingDashboardPage({
             ? 'Refund completed.'
             : firstParam(resolved.success) === 'renewal-cancelled'
               ? 'Renewal cancelled. The member keeps access until the end of the paid period and is not charged again.'
+            : firstParam(resolved.success) === 'membership-cancelled'
+              ? 'Membership cancelled now. The member is not charged again. Refunds are separate.'
             : firstParam(resolved.success) === 'tier-updated'
               ? 'Membership plan changed. Stripe prorates the difference and this month’s class credits match the new plan.'
               : firstParam(resolved.success, 200) || undefined

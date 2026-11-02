@@ -21,7 +21,7 @@ import type {
   MembershipTierOption,
   RefundablePaymentRow,
 } from '../actions/billing';
-import { cancelMembershipRenewalOperatorAction, changeMembershipTierOperatorAction, refundPaymentAction } from '../actions/billing';
+import { cancelMembershipNowOperatorAction, cancelMembershipRenewalOperatorAction, changeMembershipTierOperatorAction, refundPaymentAction } from '../actions/billing';
 import { markPaymentRecoveryContacted } from '../actions/cleanup';
 import { formatMinorUnits } from '@/features/platform/lib/currency';
 import type { RetryDraft } from '@/features/platform/lib/retry-draft';
@@ -146,7 +146,7 @@ export function BillingDashboardClient({
         // The retained request is shown and retried from its own record, whether or not its
         // membership or payment is still in the queue page being viewed.
         <div className="grid gap-2">
-          <form action={retry.operation === 'refund' ? refundPaymentAction : retry.operation === 'cancelRenewal' ? cancelMembershipRenewalOperatorAction : changeMembershipTierOperatorAction} className="grid gap-2">
+          <form action={retry.operation === 'refund' ? refundPaymentAction : retry.operation === 'cancelRenewal' ? cancelMembershipRenewalOperatorAction : retry.operation === 'cancelNow' ? cancelMembershipNowOperatorAction : changeMembershipTierOperatorAction} className="grid gap-2">
             <input type="hidden" name="intentId" value={retry.intentId} />
             <RetainedRequestNotice retry={retry} summary={
               <p className="mt-1 text-xs">
@@ -154,10 +154,12 @@ export function BillingDashboardClient({
                   ? `Refund of payment ${retry.values.paymentId}: ${retry.values.amount ? retry.values.amount : 'the full remaining balance at the time it was requested'}${retry.values.reason ? ` · ${retry.values.reason}` : ''}`
                   : retry.operation === 'cancelRenewal'
                     ? `Renewal cancellation for membership ${retry.values.membershipId}${retry.values.reason ? ` · ${retry.values.reason}` : ''}`
+                    : retry.operation === 'cancelNow'
+                      ? `Cancel now for membership ${retry.values.membershipId}${retry.values.reason ? ` · ${retry.values.reason}` : ''}`
                     : `Plan change for membership ${retry.values.membershipId} to plan ${retry.values.newTierId}`}
               </p>
             } />
-            <div className="flex justify-end"><Button type="submit" size="sm">{retry.operation === 'refund' ? 'Retry refund' : retry.operation === 'cancelRenewal' ? 'Retry renewal cancellation' : 'Retry plan change'}</Button></div>
+            <div className="flex justify-end"><Button type="submit" size="sm">{retry.operation === 'refund' ? 'Retry refund' : retry.operation === 'cancelRenewal' ? 'Retry renewal cancellation' : retry.operation === 'cancelNow' ? 'Retry cancel now' : 'Retry plan change'}</Button></div>
           </form>
           <DiscardRetainedRequest intentId={retry.intentId} returnTo="/dashboard/platform/billing" />
         </div>
@@ -332,29 +334,52 @@ export function BillingDashboardClient({
                             </p>
                           )}
                         </form>}
-                        {hasProvider && membership.autoRenew !== false && !membership.retained ? (
-                          <Disclosure summary="Cancel renewal…" tone="danger" className="mt-3">
-                            <form action={cancelMembershipRenewalOperatorAction} className="grid gap-3">
-                              <input type="hidden" name="returnQuery" value={returnQuery} />
-                              <input type="hidden" name="membershipId" value={membership.id} />
-                              <input type="hidden" name="operation" value="cancelRenewal" />
-                              <input type="hidden" name="retryScope" value={membership.id} />
-                              <input type="hidden" name="idempotencyKey" value={membership.cancelKey || ''} />
-                              <p className="text-pretty text-xs text-muted-foreground">
-                                Stops renewal through the payment provider. {membership.member?.name || 'The member'} keeps access and class credits until {membership.nextBillingDate ? formatDate(membership.nextBillingDate, timeZone) : 'the end of the paid period'}, and is not charged again. Refunds are separate, below.
-                              </p>
-                              <FormField label="Reason">
-                                <FieldInput name="reason" required minLength={3} maxLength={500} placeholder="Member request" />
-                              </FormField>
-                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                                <CheckField name="confirmCancelRenewal" value="yes" required confirm className="flex-1">
-                                  I confirm this membership stops renewing after the current paid period.
-                                </CheckField>
-                                <Button type="submit" variant="destructive" size="sm" disabled={!membership.cancelKey}>Cancel renewal</Button>
-                              </div>
-                            </form>
-                          </Disclosure>
-                        ) : hasProvider && membership.autoRenew === false ? (
+                        {hasProvider && !membership.retained ? (
+                          <div className="mt-3 grid items-start gap-2 sm:grid-cols-2">
+                            {membership.autoRenew !== false ? (
+                              <Disclosure summary="Cancel renewal…" tone="danger">
+                                <form action={cancelMembershipRenewalOperatorAction} className="grid gap-3">
+                                  <input type="hidden" name="returnQuery" value={returnQuery} />
+                                  <input type="hidden" name="membershipId" value={membership.id} />
+                                  <input type="hidden" name="operation" value="cancelRenewal" />
+                                  <input type="hidden" name="retryScope" value={membership.id} />
+                                  <input type="hidden" name="idempotencyKey" value={membership.cancelKey || ''} />
+                                  <p className="text-pretty text-xs text-muted-foreground">
+                                    Stops renewal through the payment provider. {membership.member?.name || 'The member'} keeps access and class credits until {membership.nextBillingDate ? formatDate(membership.nextBillingDate, timeZone) : 'the end of the paid period'}, and is not charged again. Refunds are separate, below.
+                                  </p>
+                                  <FormField label="Reason">
+                                    <FieldInput name="reason" required minLength={3} maxLength={500} placeholder="Member request" />
+                                  </FormField>
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                    <CheckField name="confirmCancelRenewal" value="yes" required confirm className="flex-1">
+                                      I confirm this membership stops renewing after the current paid period.
+                                    </CheckField>
+                                    <Button type="submit" variant="destructive" size="sm" disabled={!membership.cancelKey}>Cancel renewal</Button>
+                                  </div>
+                                </form>
+                              </Disclosure>
+                            ) : null}
+                            <Disclosure summary="Cancel now…" tone="danger">
+                              <form action={cancelMembershipNowOperatorAction} className="grid gap-3">
+                                <input type="hidden" name="returnQuery" value={returnQuery} />
+                                <input type="hidden" name="membershipId" value={membership.id} />
+                                <input type="hidden" name="operation" value="cancelNow" />
+                                <input type="hidden" name="retryScope" value={membership.id} />
+                                <input type="hidden" name="idempotencyKey" value={membership.cancelNowKey || ''} />
+                                <FormField label="Reason">
+                                  <FieldInput name="reason" required minLength={3} maxLength={500} placeholder="Member request" />
+                                </FormField>
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                  <CheckField name="confirmCancelNow" value="yes" required confirm className="flex-1">
+                                    I confirm this membership ends now.
+                                  </CheckField>
+                                  <Button type="submit" variant="destructive" size="sm" disabled={!membership.cancelNowKey}>Cancel now</Button>
+                                </div>
+                              </form>
+                            </Disclosure>
+                          </div>
+                        ) : null}
+                        {hasProvider && membership.autoRenew === false && !membership.retained ? (
                           <p className="mt-2 text-xs text-muted-foreground">Renewal cancelled; ends {membership.nextBillingDate ? formatDate(membership.nextBillingDate, timeZone) : 'after the paid period'}.</p>
                         ) : null}
                       </li>

@@ -138,6 +138,63 @@ export async function cancelMembership(
   }
 }
 
+/** Ends the membership now. Stripe cancels immediately; no refund is created (refunds stay separate). */
+export async function cancelMembershipNow(
+  root: unknown,
+  { membershipId, reason, idempotencyKey }: { membershipId: string; reason?: string; idempotencyKey: string },
+  context: Context
+) {
+  const { membership, actor } = await getAuthorizedMembership(context, membershipId);
+  const organizationId = actor.organizationId;
+  const normalizedReason = reason?.trim() || "";
+  if (normalizedReason.length > 500) throw new Error("Cancellation reason must be 500 characters or fewer");
+  const scope = await adoptPendingMembershipBillingKey(context, billingAttemptScope(organizationId, membershipId, "cancel-now", idempotencyKey, { reason: normalizedReason }));
+  if (await isCompletedMembershipBillingAttempt(context, scope)) {
+    return { membership: await currentMembership(context, membershipId), message: "Membership cancellation already completed" };
+  }
+  // A membership already ended (here or by the Stripe webhook) is a no-op: Stripe is not called again.
+  if (["cancelled", "expired"].includes(membership.status)) {
+    return { membership: await currentMembership(context, membershipId), message: "Membership is already cancelled" };
+  }
+  if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
+  const attempt = await claimMembershipBillingAttempt(context, scope, {
+    status: membership.status,
+    autoRenew: membership.autoRenew,
+    stripeSubscriptionId: membership.stripeSubscriptionId,
+  });
+  if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership cancellation already completed" };
+  let providerExecutionStarted = false;
+  try {
+    const { adapter } = await getAdapter(context, organizationId);
+    providerExecutionStarted = true;
+    const providerSubscription = await adapter.cancelSubscriptionNow(
+      membership.stripeSubscriptionId,
+      attempt.providerIdempotencyKey,
+    );
+    if (providerSubscription?.id !== membership.stripeSubscriptionId) throw new Error("The provider returned a different subscription; reconcile it before cancelling");
+    if (providerSubscription.status !== "canceled") throw new Error("The provider has not ended this subscription yet; check again before cancelling");
+    const endedAt = new Date();
+    await finishMembershipBillingAttempt(context, attempt, {
+      status: "cancelled",
+      autoRenew: false,
+      cancelReason: normalizedReason,
+      cancelledAt: endedAt,
+      freezeStartDate: null,
+      freezeEndDate: null,
+    }, async (transaction: any) => {
+      // The local subscription record follows; the later customer.subscription.deleted event re-applies the same state.
+      await transaction.subscription.updateMany({
+        where: { organizationId, stripeSubscriptionId: membership.stripeSubscriptionId },
+        data: { status: "cancelled", cancelledAt: endedAt, pausedAt: null },
+      });
+    });
+    return { membership: await currentMembership(context, membershipId), message: "Membership cancelled now. No refund was issued; refunds are separate." };
+  } catch (error) {
+    await failMembershipBillingAttempt(context, attempt, error, providerExecutionStarted ? "unknown" : "definite");
+    throw error;
+  }
+}
+
 export async function freezeMembership(
   root: unknown,
   { membershipId, endDate, idempotencyKey }: { membershipId: string; endDate: string; idempotencyKey: string },

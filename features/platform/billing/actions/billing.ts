@@ -6,7 +6,7 @@
  import { parseMajorUnitsToMinor } from '@/features/platform/lib/currency';
  import { staffActionError } from '@/features/platform/lib/action-error';
  import { openStaffIntent, settleStaffIntent } from '@/features/platform/lib/staff-intent';
- import { parseCancelRenewalForm } from '../lib/cancel-renewal';
+ import { parseCancelNowForm, parseCancelRenewalForm } from '../lib/cancel-renewal';
 
  const BILLING_PATH = '/dashboard/platform/billing';
  const RETURN_PARAMS = ['q', 'recoverySkip', 'failedSkip', 'planSkip', 'refundSkip', 'tierQuery', 'tierSkip'];
@@ -39,6 +39,7 @@
    retainedTierId?: string;
    retained?: boolean;
    cancelKey?: string;
+   cancelNowKey?: string;
    autoRenew?: boolean | null;
    nextBillingDate?: string | null;
    status: string;
@@ -338,6 +339,33 @@
    revalidatePath(BILLING_PATH);
    revalidatePath('/account/membership');
    redirect(`${BILLING_PATH}?${returnQuery(formData, { success: 'renewal-cancelled' })}#plan-changes`);
+ }
+
+/** Staff cancel now: the membership and its Stripe subscription end today. No refund is created. */
+ export async function cancelMembershipNowOperatorAction(submitted: FormData): Promise<void> {
+   let intentId = '';
+   let formData = submitted;
+   try {
+     const intent = await openStaffIntent('billing', submitted, 'idempotencyKey');
+     intentId = intent.id;
+     formData = intent.form;
+     const { membershipId, reason } = parseCancelNowForm({ get: (name: string) => name === 'idempotencyKey' ? intent.requestKey : formData.get(name) });
+     const response = await keystoneClient(`
+       mutation OperatorCancelMembershipNow($membershipId: ID!, $reason: String, $idempotencyKey: String!) {
+         cancelMembershipNow(membershipId: $membershipId, reason: $reason, idempotencyKey: $idempotencyKey) { message }
+       }
+     `, { membershipId, reason, idempotencyKey: intent.requestKey });
+     if (!response.success) throw new Error(staffActionError(response, 'Cancellation did not complete. Retry it: the same request is never applied twice.'));
+     await settleStaffIntent(intentId, 'succeeded');
+   } catch (error) {
+     const message = error instanceof Error ? error.message : 'Cancellation failed';
+     if (intentId) await settleStaffIntent(intentId, 'failed', message);
+     redirect(`${BILLING_PATH}?${returnQuery(formData, { error: message, ...(intentId ? { intent: intentId } : {}) })}#plan-changes`);
+   }
+
+   revalidatePath(BILLING_PATH);
+   revalidatePath('/account/membership');
+   redirect(`${BILLING_PATH}?${returnQuery(formData, { success: 'membership-cancelled' })}#plan-changes`);
  }
 
  export async function refundPaymentAction(submitted: FormData): Promise<void> {
