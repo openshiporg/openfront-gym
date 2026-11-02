@@ -60,6 +60,16 @@ export async function markClassAttendance(
   return context.db.AttendanceRecord.findOne({ where: { id: result.id } });
 }
 
+/** Staff correction: close a confirmed booking on a class that started and was never marked. */
+export async function cancelPastClassBooking(root: unknown, args: { bookingId: string; reason: string }, context: Context) {
+  const result = await cancelCapacityControlledBooking(context.prisma, {
+    bookingId: args.bookingId,
+    pastBookingReason: args.reason ?? "",
+    actor: await actorFromContext(context),
+  });
+  return { bookingId: result.bookingId, classInstanceId: result.classInstanceId, cancelled: result.cancelled };
+}
+
 /** Staff correction: return a booking to Unmarked after a mistaken check-in. */
 export async function undoClassAttendance(root: unknown, args: { bookingId: string }, context: Context) {
   return undoCapacityControlledAttendance(context.prisma, { bookingId: args.bookingId, actor: await actorFromContext(context) });

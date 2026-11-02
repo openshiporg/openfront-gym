@@ -4,11 +4,13 @@ export const operationKey = (organizationId: string, key: string) => createHash(
 
 export async function enqueueOperationalNotice(tx: any, input: {
   organizationId: string; memberId: string; key: string; kind: string; message: string;
+  /** Staff audit entries ({ action, at, actorId, note }) recorded with the notice. */
+  history?: Array<Record<string, unknown>>;
 }) {
   const key = operationKey(input.organizationId, input.key);
   return tx.operationalNotice.upsert({ where: { key }, update: {}, create: {
     organizationId: input.organizationId, memberId: input.memberId, key,
-    kind: input.kind, message: input.message.slice(0, 2000), status: 'pending', history: [],
+    kind: input.kind, message: input.message.slice(0, 2000), status: 'pending', history: input.history ?? [],
   } });
 }
 

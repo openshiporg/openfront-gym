@@ -41,3 +41,9 @@ export const UNDO_CLASS_ATTENDANCE_DOCUMENT = `
     undoClassAttendance(bookingId: $bookingId)
   }
 `;
+
+export const CANCEL_PAST_CLASS_BOOKING_DOCUMENT = `
+  mutation CancelPastClassBooking($bookingId: ID!, $reason: String!) {
+    cancelPastClassBooking(bookingId: $bookingId, reason: $reason)
+  }
+`;

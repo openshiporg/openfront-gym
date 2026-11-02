@@ -6958,6 +6958,7 @@ type Mutation {
   cancelClassInstance(classInstanceId: ID!, reason: String!): ClassInstanceCancellationResult!
   markClassAttendance(bookingId: ID!, outcome: String!, minutesLate: Int, notes: String): AttendanceRecord!
   undoClassAttendance(bookingId: ID!): JSON!
+  cancelPastClassBooking(bookingId: ID!, reason: String!): JSON!
   recordMemberCheckIn(memberId: ID!, locationId: ID, method: String!): CheckInTransitionResult!
   checkOutMember(checkInId: ID!): CheckInTransitionResult!
   upsertGymSettings(data: GymSettingsUpdateInput!, expectedUpdatedAt: String): GymSettings!

@@ -49,6 +49,7 @@ import {
   checkOutMember,
   markClassAttendance,
   undoClassAttendance,
+  cancelPastClassBooking,
   recordMemberCheckIn,
 } from "./gymLifecycleResolvers";
 import { runDeterministicOnboarding } from "./deterministicOnboarding";
@@ -274,6 +275,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
           notes: String
         ): AttendanceRecord!
         undoClassAttendance(bookingId: ID!): JSON!
+        cancelPastClassBooking(bookingId: ID!, reason: String!): JSON!
         recordMemberCheckIn(memberId: ID!, locationId: ID, method: String!): CheckInTransitionResult!
         checkOutMember(checkInId: ID!): CheckInTransitionResult!
         upsertGymSettings(data: GymSettingsUpdateInput!, expectedUpdatedAt: String): GymSettings!
@@ -600,6 +602,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         cancelClassInstance,
         markClassAttendance,
         undoClassAttendance,
+        cancelPastClassBooking,
         recordMemberCheckIn,
         checkOutMember,
         upsertGymSettings,

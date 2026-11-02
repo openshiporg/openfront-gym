@@ -43,9 +43,17 @@ function assertOwnerOrOperator(actor: LifecycleActor, ownerUserId?: string | nul
 
 export async function cancelCapacityControlledBooking(
   prisma: any,
-  input: { bookingId: string; actor: LifecycleActor }
+  input: { bookingId: string; actor: LifecycleActor; pastBookingReason?: string }
 ) {
   prisma = guardKeystonePrismaResults(prisma);
+  // Staff correction for a confirmed booking on a class that already started and was never
+  // marked: same locks, credit handling and member notice as a normal cancel, plus a reason.
+  const past = input.pastBookingReason !== undefined;
+  const reason = (input.pastBookingReason ?? "").trim();
+  if (past) {
+    if (reason.length < 3 || reason.length > 1000) throw new Error("A reason between 3 and 1000 characters is required");
+    if (!input.actor.canManageAllRecords) throw new Error("Booking management permission required");
+  }
   const result = await prisma.$transaction(async (transaction: any) => {
     await lockParticipationPolicy(transaction, input.actor.organizationId!);
     const identity = await transaction.classBooking.findFirst({
@@ -59,7 +67,7 @@ export async function cancelCapacityControlledBooking(
     const booking = await transaction.classBooking.findFirst({
       where: { id: input.bookingId, organizationId: input.actor.organizationId },
       include: {
-        classInstance: { select: { id: true, date: true, organizationId: true } },
+        classInstance: { select: { id: true, date: true, organizationId: true, isCancelled: true } },
         member: {
           include: {
             user: {
@@ -92,7 +100,13 @@ export async function cancelCapacityControlledBooking(
     if (!['confirmed', 'waitlist'].includes(booking.status)) {
       throw new Error(`Booking cannot be cancelled from ${booking.status}`);
     }
-    if (booking.classInstance.date.getTime() <= Date.now()) {
+    if (past) {
+      if (booking.status !== "confirmed") throw new Error("Only a confirmed booking can be cancelled after the class");
+      if (booking.classInstance.isCancelled) throw new Error("This class was cancelled; its bookings are already closed");
+      if (booking.classInstance.date.getTime() > Date.now()) throw new Error("This class hasn't started; use the normal cancel");
+      const marked = await transaction.attendanceRecord.findFirst({ where: { bookingId: booking.id, organizationId: input.actor.organizationId }, select: { id: true } });
+      if (marked) throw new Error("This booking has an attendance mark; undo the check-in first");
+    } else if (booking.classInstance.date.getTime() <= Date.now()) {
       throw new Error("A class booking cannot be cancelled after the class starts");
     }
 
@@ -108,7 +122,8 @@ export async function cancelCapacityControlledBooking(
 
     if (booking.status === "confirmed") await restoreBookingCredit(transaction, booking.id);
     await enqueueOperationalNotice(transaction, { organizationId: input.actor.organizationId!, memberId: booking.memberId,
-      key: `booking:${booking.id}:cancelled`, kind: "cancellation", message: "Your class booking has been cancelled. Any restorable credit returns to its original service month." });
+      key: `booking:${booking.id}:cancelled`, kind: "cancellation", message: "Your class booking has been cancelled. Any restorable credit returns to its original service month.",
+      ...(past ? { history: [{ action: "past_booking_cancelled", at: new Date().toISOString(), actorId: input.actor.userId, note: reason }] } : {}) });
 
     const waiting = await transaction.classBooking.findMany({
       where: {
@@ -128,7 +143,8 @@ export async function cancelCapacityControlledBooking(
     );
 
     const releasedConfirmedSpot = booking.status === "confirmed";
-    const promotion = releasedConfirmedSpot
+    // A class that already started never promotes from its waitlist.
+    const promotion = releasedConfirmedSpot && !past
       ? await promoteCapacityControlledWaitlistBookingInTransaction(
           transaction,
           booking.classInstance.id,

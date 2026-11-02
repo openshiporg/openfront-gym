@@ -24,6 +24,7 @@ import {
   type Tone,
 } from "@/features/platform/components/platform-ui";
 import { requireDashboardUser } from "@/features/platform/lib/current-user";
+import { CancelPastBookingDialog } from "../components/CancelPastBookingDialog";
 import {
   getRosterDetail,
   markRosterAttendance,
@@ -72,10 +73,13 @@ function AttendanceControls({
   booking,
   classScheduleId,
   classInstanceId,
+  canCancelPast = false,
 }: {
   booking: any;
   classScheduleId: string;
   classInstanceId: string;
+  /** Confirmed booking on a started, non-cancelled class with no attendance mark. */
+  canCancelPast?: boolean;
 }) {
   const currentNotes = booking.attendance?.noShowReason || "";
   const currentMinutesLate = booking.attendance?.minutesLate || "";
@@ -118,6 +122,8 @@ function AttendanceControls({
             <Button type="submit" variant="outline" size="sm" aria-label={`Confirm undo check-in for ${name}`}>Yes, undo check-in</Button>
           </form>
         </Disclosure>
+      ) : canCancelPast ? (
+        <CancelPastBookingDialog bookingId={booking.id} classInstanceId={classInstanceId} memberName={name} />
       ) : null}
     </div>
   );
@@ -298,7 +304,7 @@ export async function RosterDetailPage({ id, searchParams = {} }: { id: string; 
                         </div>
                         {attendanceOpen ? (
                           <div className="sm:pl-11">
-                            <AttendanceControls booking={booking} classScheduleId={session.classSchedule?.id} classInstanceId={session.id} />
+                            <AttendanceControls booking={booking} classScheduleId={session.classSchedule?.id} classInstanceId={session.id} canCancelPast={(booking.status ?? "confirmed") === "confirmed" && !booking.attendance} />
                           </div>
                         ) : null}
                       </li>
