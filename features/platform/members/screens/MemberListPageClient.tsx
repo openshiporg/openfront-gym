@@ -101,7 +101,7 @@ export default function MemberDirectoryClient({ members, viewProfileBasePath, su
                   <Link href={profileHref} className="block truncate text-sm font-medium text-foreground underline-offset-4 hover:underline">
                     {member.name}
                   </Link>
-                  <p className="truncate text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground [overflow-wrap:anywhere] sm:truncate">
                     {member.email}
                     {member.phone ? <span className="hidden sm:inline"> · {member.phone}</span> : null}
                   </p>

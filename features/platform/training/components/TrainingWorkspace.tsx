@@ -425,7 +425,7 @@ export function TrainingWorkspace({ data, member = false, error, success, retry,
                   <p className="text-sm font-semibold">{lead.name}</p>
                   <StatusPill tone={leadTone(lead.status)}>{humanize(lead.status)}</StatusPill>
                 </div>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{lead.email} · source {lead.source}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground [overflow-wrap:anywhere]">{lead.email} · source {lead.source}</p>
               </div>
               <p className="shrink-0 text-xs text-muted-foreground">Next action {lead.nextActionAt ? date(lead.nextActionAt) : "not scheduled"}</p>
             </div>

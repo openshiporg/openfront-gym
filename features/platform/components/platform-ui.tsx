@@ -673,7 +673,7 @@ export function DataTable({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("w-full min-w-0 overflow-x-auto", className)}>
+    <div className={cn("relative w-full min-w-0 overflow-x-auto", className)}>
       <table
         aria-label={label}
         className="w-full border-collapse text-sm [&_tbody_tr:last-child>td]:border-b-0"
