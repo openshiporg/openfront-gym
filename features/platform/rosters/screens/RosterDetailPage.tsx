@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, ArrowUpRight, Check, ClipboardCheck, Hourglass, Info, ListOrdered, UserX } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Check, ClipboardCheck, Hourglass, Info, ListOrdered, Undo2, UserX } from "lucide-react";
 import { PageContainer } from "@/features/dashboard/components/PageContainer";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +27,7 @@ import { requireDashboardUser } from "@/features/platform/lib/current-user";
 import {
   getRosterDetail,
   markRosterAttendance,
+  undoRosterAttendance,
   promoteWaitlistBooking,
 } from "../actions/rosters";
 import {
@@ -81,7 +82,7 @@ function AttendanceControls({
   const name = booking.member?.name ?? booking.memberName ?? "member";
 
   return (
-    <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] sm:items-start">
+    <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] sm:items-start sm:[&>*:nth-child(4)]:col-span-3">
       <form action={markRosterAttendance}>
         <AttendanceHiddenFields booking={booking} classScheduleId={classScheduleId} classInstanceId={classInstanceId} outcome="attended" />
         <Button type="submit" variant="outline" size="sm" className="h-[34px] w-full sm:w-auto" aria-label={`Mark ${name} attended`}>
@@ -106,6 +107,18 @@ function AttendanceControls({
           <Button type="submit" variant="destructive" size="sm">Save no-show</Button>
         </form>
       </Disclosure>
+      {booking.attendance ? (
+        <Disclosure summary={<span className="inline-flex items-center gap-1.5"><Undo2 className="size-3.5" aria-hidden /> Undo check-in…</span>}>
+          <form action={undoRosterAttendance} className="grid gap-2">
+            <input type="hidden" name="bookingId" value={booking.id} />
+            <input type="hidden" name="classInstanceId" value={classInstanceId} />
+            <p className="text-xs text-muted-foreground">
+              Clears the {booking.attendance.attended ? "check-in" : "no-show"} for {name} and puts the booking back to Unmarked. The booking and its class credit are not changed.
+            </p>
+            <Button type="submit" variant="outline" size="sm" aria-label={`Confirm undo check-in for ${name}`}>Yes, undo check-in</Button>
+          </form>
+        </Disclosure>
+      ) : null}
     </div>
   );
 }

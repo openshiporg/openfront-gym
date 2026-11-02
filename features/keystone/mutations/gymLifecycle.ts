@@ -253,6 +253,50 @@ export async function cancelCapacityControlledClassInstance(
   });
 }
 
+/**
+ * Loads a booking for a staff attendance change under its attendance lock and applies the
+ * shared rules: same organization, confirmed booking, class not cancelled and already
+ * started, and the actor is an operator or the session's current active coach. Marking and
+ * undoing attendance both go through here.
+ */
+async function loadStaffAttendanceBooking(transaction: any, bookingId: string, actor: LifecycleActor) {
+  await lockTransactionKey(transaction, `attendance:${bookingId}`);
+  const booking = await transaction.classBooking.findFirst({
+    where: { id: bookingId, organizationId: actor.organizationId },
+    include: {
+      member: { include: { user: { include: { membership: true } } } },
+      classInstance: {
+        include: {
+          instructor: { include: { user: { select: { id: true } } } },
+          classSchedule: {
+            include: { instructor: { include: { user: { select: { id: true } } } } },
+          },
+        },
+      },
+    },
+  });
+  if (!booking?.memberId || !booking.classInstance?.classScheduleId) {
+    throw new Error("Attendance booking is missing its member or schedule");
+  }
+  assertActorOrganization(actor, booking.member.organizationId);
+  assertActorOrganization(actor, booking.classInstance.organizationId);
+  if (booking.status !== "confirmed") {
+    throw new Error("Attendance can only be marked for a confirmed booking");
+  }
+  if (booking.classInstance.isCancelled) throw new Error("Attendance cannot be marked for a cancelled class");
+  if (booking.classInstance.date.getTime() > Date.now()) {
+    throw new Error("Attendance cannot be marked before the class starts");
+  }
+  // Only the session's current, active coach (or an operator) records attendance; a retired
+  // coach keeps no operational authority over past assignments.
+  const effectiveInstructor = booking.classInstance.instructor ?? booking.classInstance.classSchedule?.instructor ?? null;
+  const assignedToActor = Boolean(effectiveInstructor?.isActive && effectiveInstructor?.user?.id === actor.userId);
+  if (!actor.canManageAllRecords && !(actor.isInstructor && assignedToActor)) {
+    throw new Error("Attendance management permission required");
+  }
+  return booking;
+}
+
 export async function markCapacityControlledAttendance(
   prisma: any,
   input: {
@@ -267,40 +311,7 @@ export async function markCapacityControlledAttendance(
   const outcome = normalizeAttendanceOutcome(input.outcome);
   return prisma.$transaction(async (transaction: any) => {
     await lockParticipationPolicy(transaction, input.actor.organizationId!);
-    await lockTransactionKey(transaction, `attendance:${input.bookingId}`);
-    const booking = await transaction.classBooking.findFirst({
-      where: { id: input.bookingId, organizationId: input.actor.organizationId },
-      include: {
-        member: { include: { user: { include: { membership: true } } } },
-        classInstance: {
-          include: {
-            instructor: { include: { user: { select: { id: true } } } },
-            classSchedule: {
-              include: { instructor: { include: { user: { select: { id: true } } } } },
-            },
-          },
-        },
-      },
-    });
-    if (!booking?.memberId || !booking.classInstance?.classScheduleId) {
-      throw new Error("Attendance booking is missing its member or schedule");
-    }
-    assertActorOrganization(input.actor, booking.member.organizationId);
-    assertActorOrganization(input.actor, booking.classInstance.organizationId);
-    if (booking.status !== "confirmed") {
-      throw new Error("Attendance can only be marked for a confirmed booking");
-    }
-    if (booking.classInstance.isCancelled) throw new Error("Attendance cannot be marked for a cancelled class");
-    if (booking.classInstance.date.getTime() > Date.now()) {
-      throw new Error("Attendance cannot be marked before the class starts");
-    }
-    // Only the session's current, active coach (or an operator) records attendance; a retired
-    // coach keeps no operational authority over past assignments.
-    const effectiveInstructor = booking.classInstance.instructor ?? booking.classInstance.classSchedule?.instructor ?? null;
-    const assignedToActor = Boolean(effectiveInstructor?.isActive && effectiveInstructor?.user?.id === input.actor.userId);
-    if (!input.actor.canManageAllRecords && !(input.actor.isInstructor && assignedToActor)) {
-      throw new Error("Attendance management permission required");
-    }
+    const booking = await loadStaffAttendanceBooking(transaction, input.bookingId, input.actor);
 
     if (outcome !== "no-show") {
       await lockTransactionKey(transaction, `member:${booking.memberId}`);
@@ -344,6 +355,26 @@ export async function markCapacityControlledAttendance(
       ? await transaction.attendanceRecord.update({ where: { id: existing.id }, data })
       : await transaction.attendanceRecord.create({ data });
     return { id: record.id, outcome };
+  });
+}
+
+/**
+ * Staff correction for a mistaken check-in or attendance mark: the booking goes back to
+ * Unmarked by removing its attendance record. Same permissions and session rules as
+ * marking. Credits are untouched (they are debited at booking, not at attendance).
+ */
+export async function undoCapacityControlledAttendance(
+  prisma: any,
+  input: { bookingId: string; actor: LifecycleActor }
+) {
+  prisma = guardKeystonePrismaResults(prisma);
+  return prisma.$transaction(async (transaction: any) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId!);
+    const booking = await loadStaffAttendanceBooking(transaction, input.bookingId, input.actor);
+    const removed = await transaction.attendanceRecord.deleteMany({
+      where: { bookingId: booking.id, organizationId: input.actor.organizationId },
+    });
+    return { bookingId: booking.id, removed: removed.count as number };
   });
 }
 

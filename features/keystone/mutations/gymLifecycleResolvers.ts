@@ -6,6 +6,7 @@ import {
   cancelCapacityControlledClassInstance,
   checkOutControlledMember,
   markCapacityControlledAttendance,
+  undoCapacityControlledAttendance,
   recordCapacityControlledMemberCheckIn,
   type LifecycleActor,
 } from "./gymLifecycle";
@@ -57,6 +58,11 @@ export async function markClassAttendance(
     actor: await actorFromContext(context),
   });
   return context.db.AttendanceRecord.findOne({ where: { id: result.id } });
+}
+
+/** Staff correction: return a booking to Unmarked after a mistaken check-in. */
+export async function undoClassAttendance(root: unknown, args: { bookingId: string }, context: Context) {
+  return undoCapacityControlledAttendance(context.prisma, { bookingId: args.bookingId, actor: await actorFromContext(context) });
 }
 
 /**

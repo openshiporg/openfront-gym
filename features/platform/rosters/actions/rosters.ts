@@ -8,6 +8,7 @@ import {
   PROMOTE_FROM_WAITLIST_DOCUMENT,
   ROSTER_DETAIL_DOCUMENT,
   ROSTER_SESSIONS_DOCUMENT,
+  UNDO_CLASS_ATTENDANCE_DOCUMENT,
 } from "../graphql";
 
 function revalidateRosterViews(classInstanceId: string) {
@@ -51,6 +52,16 @@ export async function markRosterAttendance(formData: FormData): Promise<void> {
     minutesLate: Number.isFinite(parsedMinutesLate) ? parsedMinutesLate : null,
     notes: notes || null,
   });
+  if (!response.success) throw new Error(response.error);
+  revalidateRosterViews(classInstanceId);
+}
+
+/** Staff correction: put a mistakenly checked-in booking back to Unmarked. */
+export async function undoRosterAttendance(formData: FormData): Promise<void> {
+  const bookingId = formData.get("bookingId")?.toString();
+  const classInstanceId = formData.get("classInstanceId")?.toString();
+  if (!bookingId || !classInstanceId) throw new Error("Missing attendance inputs.");
+  const response = await keystoneClient(UNDO_CLASS_ATTENDANCE_DOCUMENT, { bookingId });
   if (!response.success) throw new Error(response.error);
   revalidateRosterViews(classInstanceId);
 }

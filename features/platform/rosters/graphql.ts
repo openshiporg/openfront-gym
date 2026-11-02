@@ -35,3 +35,9 @@ export const PROMOTE_FROM_WAITLIST_DOCUMENT = `
     }
   }
 `;
+
+export const UNDO_CLASS_ATTENDANCE_DOCUMENT = `
+  mutation UndoClassAttendance($bookingId: ID!) {
+    undoClassAttendance(bookingId: $bookingId)
+  }
+`;
