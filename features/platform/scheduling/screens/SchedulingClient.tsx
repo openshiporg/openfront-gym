@@ -24,7 +24,7 @@ import { ExperimentalCalendar } from "../components/experimental-calendar/Experi
 import type { CalendarEvent as ExperimentalCalendarEvent } from "../components/experimental-calendar/types"
 import { ScheduleEditorDialog } from "../components/ScheduleEditorDialog"
 import { InstanceEditorDialog } from "../components/InstanceEditorDialog"
-import { cancelClassInstanceAction, generateUpcomingInstances } from "../actions/scheduling"
+import { cancelClassInstanceAction, deleteClassSchedule, generateUpcomingInstances, previewClassScheduleDelete, type ClassScheduleDeletePreview } from "../actions/scheduling"
 import { formatRosterDayHeading, rosterDayKey } from "../../rosters/timezone"
 
 type Event = {
@@ -131,6 +131,9 @@ export function SchedulingClient({
   const [cancellingInstance, setCancellingInstance] = useState<UpcomingInstance | null>(null)
   const [cancellationReason, setCancellationReason] = useState("")
   const [isCancelling, setIsCancelling] = useState(false)
+  const [deletingSchedule, setDeletingSchedule] = useState<ScheduleTemplate | null>(null)
+  const [deletePreview, setDeletePreview] = useState<ClassScheduleDeletePreview | null>(null)
+  const [deleteState, setDeleteState] = useState<"idle" | "checking" | "deleting">("idle")
 
   const calendarEvents = useMemo<ExperimentalCalendarEvent[]>(
     () =>
@@ -179,6 +182,42 @@ export function SchedulingClient({
     } finally {
       setIsCancelling(false)
     }
+  }
+
+  const openDeleteDialog = async (schedule: ScheduleTemplate) => {
+    setDeletingSchedule(schedule)
+    setDeletePreview(null)
+    setDeleteState("checking")
+    const result = await previewClassScheduleDelete(schedule.id)
+    setDeleteState("idle")
+    if (!result.ok) {
+      setDeletingSchedule(null)
+      toast.error(result.error)
+      return
+    }
+    setDeletePreview(result.data)
+  }
+
+  const closeDeleteDialog = () => {
+    if (deleteState === "deleting") return
+    setDeletingSchedule(null)
+    setDeletePreview(null)
+  }
+
+  const confirmDeleteSchedule = async () => {
+    if (!deletingSchedule || !deletePreview || deletePreview.blockedReason) return
+    setDeleteState("deleting")
+    const result = await deleteClassSchedule(deletingSchedule.id)
+    setDeleteState("idle")
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    const count = result.data.sessionCount
+    toast.success(`Template deleted with its ${count} ${count === 1 ? "session" : "sessions"}.`)
+    setDeletingSchedule(null)
+    setDeletePreview(null)
+    router.refresh()
   }
 
   const generateInstances = async (weeks: number) => {
@@ -420,11 +459,12 @@ export function SchedulingClient({
                         </div>
                       </div>
                       {canManageWorkspace ? (
-                        <div className="mt-2 flex gap-3 pl-14 text-xs font-medium">
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 pl-14 text-xs font-medium [&>button]:whitespace-nowrap">
                           <button type="button" onClick={() => setEditingSchedule(schedule)} className="text-foreground underline-offset-4 hover:underline">Edit template</button>
                           {schedule.isActive ? (
                             <button type="button" onClick={() => { setEditingInstance(null); setDefaultScheduleForInstance(schedule); setIsCreateInstanceOpen(true) }} className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Add one-off session</button>
                           ) : null}
+                          <button type="button" onClick={() => openDeleteDialog(schedule)} className="text-destructive underline-offset-4 hover:underline">Delete template</button>
                         </div>
                       ) : null}
                     </li>
@@ -473,6 +513,36 @@ export function SchedulingClient({
             <Button variant="destructive" onClick={cancelInstance} disabled={isCancelling || cancellationReason.trim().length < 3}>
               {isCancelling ? 'Cancelling…' : 'Cancel session'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingSchedule)} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>
+        <DialogContent className="w-[calc(100vw-2rem)] rounded-xl sm:max-w-lg">
+          <DialogHeader className="text-left">
+            <DialogTitle>
+              {deletePreview && !deletePreview.blockedReason
+                ? `Delete template and its ${deletePreview.sessionCount} ${deletePreview.sessionCount === 1 ? "session" : "sessions"}?`
+                : deletePreview?.blockedReason ? `${deletingSchedule?.name || "This template"} can't be deleted yet` : `Delete ${deletingSchedule?.name || "template"}?`}
+            </DialogTitle>
+            <DialogDescription className="text-pretty">
+              {deleteState === "checking" || !deletePreview
+                ? "Checking bookings and attendance…"
+                : deletePreview.blockedReason
+                  ? "Nothing was changed."
+                  : `${deletingSchedule?.name || "The template"} and every session generated from it are removed. This cannot be undone. To stop it without deleting, pause it instead.`}
+            </DialogDescription>
+          </DialogHeader>
+          {deletePreview?.blockedReason ? <Notice tone="warning">{deletePreview.blockedReason}</Notice> : null}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={closeDeleteDialog} disabled={deleteState === "deleting"}>
+              {deletePreview?.blockedReason ? "Close" : "Keep template"}
+            </Button>
+            {deletePreview && !deletePreview.blockedReason ? (
+              <Button variant="destructive" onClick={confirmDeleteSchedule} disabled={deleteState !== "idle"}>
+                {deleteState === "deleting" ? "Deleting…" : "Delete template"}
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>

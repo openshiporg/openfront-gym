@@ -71,6 +71,25 @@ export async function saveClassSchedule(data: Record<string, unknown>, id?: stri
   return { ok: true as const, data: result.data.saveGymClassSchedule };
 }
 
+export type ClassScheduleDeletePreview = { scheduleId: string; name: string; sessionCount: number; blockedReason: string | null; deleted: boolean };
+
+/** Read-only check used before the confirmation dialog opens. */
+export async function previewClassScheduleDelete(id: string) {
+  const result = await keystoneClient<{ deleteGymClassSchedule: ClassScheduleDeletePreview }>(`
+    mutation PreviewDeleteGymClassSchedule($id: ID!) { deleteGymClassSchedule(id: $id, dryRun: true) }
+  `, { id });
+  if (!result.success) return { ok: false as const, error: staffActionError(result, "Could not check this template. Refresh and try again.") };
+  return { ok: true as const, data: result.data.deleteGymClassSchedule };
+}
+
+export async function deleteClassSchedule(id: string) {
+  const result = await keystoneClient<{ deleteGymClassSchedule: ClassScheduleDeletePreview }>(`
+    mutation DeleteGymClassSchedule($id: ID!) { deleteGymClassSchedule(id: $id) }
+  `, { id });
+  if (!result.success) return { ok: false as const, error: staffActionError(result, "The template was not deleted. Refresh and try again.") };
+  return { ok: true as const, data: result.data.deleteGymClassSchedule };
+}
+
 export async function saveClassInstance(data: Record<string, unknown>, id?: string | null) {
   const result = await keystoneClient<{ saveGymClassInstance: { id: string } }>(`
     mutation SaveGymClassInstance($id: ID, $data: JSON!) { saveGymClassInstance(id: $id, data: $data) { id } }
