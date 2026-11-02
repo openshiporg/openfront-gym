@@ -1,4 +1,5 @@
 "use server";
+import { revalidatePath } from "next/cache";
 import { gymGraphql as keystoneClient } from "@/features/platform/lib/gym-graphql";
 import { staffActionError } from "@/features/platform/lib/action-error";
 
@@ -17,6 +18,8 @@ export async function saveGymSettings(data: Record<string, unknown>, expectedUpd
   `, { data, expectedUpdatedAt });
   // Returned, not thrown: production Server Actions hide thrown messages.
   if (!response.success) return { success: false as const, error: staffActionError(response, "Settings were not saved. Check the highlighted values and try again.") };
+  revalidatePath("/dashboard/platform/store-settings");
+  revalidatePath("/", "layout");
   return { success: true as const, id: response.data.upsertGymSettings.id };
 }
 

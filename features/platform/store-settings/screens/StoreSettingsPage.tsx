@@ -2,7 +2,14 @@
 
 import { useState, type ReactNode } from 'react'
 import { Building2, Clock, Contact, FileText, Globe2, Megaphone, Plus, Save, Sparkles, Store, Trash2, type LucideIcon } from 'lucide-react'
+import * as SelectPrimitive from '@radix-ui/react-select'
+import { Code } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Select, SelectContent, SelectItem, SelectValue } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 import { PageContainer } from '@/features/dashboard/components/PageContainer'
 import { FieldInput, FieldTextarea, FormField, Notice, Panel, PanelBody, PanelHeader } from '@/features/platform/components/platform-ui'
 import { sameDraft, useUnsavedChangesWarning } from '@/features/platform/components/record-editor'
@@ -11,7 +18,9 @@ import { editorWeeklyHours, parseDayHours } from '@/features/keystone/lib/gym-ho
 import { SETTINGS_LIMITS, publicCtaHref } from '@/features/keystone/lib/gym-settings-content'
 import { isConfiguredPublicEmail } from '@/features/storefront/lib/contact-config'
 import { loadGymSettingsEditor, publishParticipationTerms, saveGymSettings } from '../actions/store-settings'
-import { LogoColorField, LogoMark, LogoPicker } from '../components/LogoPicker'
+import { LogoMark } from '../components/LogoMark'
+import { StoreSettingsSaveBar } from '../components/StoreSettingsSaveBar'
+import { HUE_PRESETS, LOGO_ICONS } from '../lib/icon-registry'
 import { DEFAULT_GYM_LOGO_ICON, DEFAULT_LIBRARY_LOGO_COLOR, normalizeGymLogoColor } from '../lib/storefront-branding'
 
 type Settings = Record<string, any> | null
@@ -151,6 +160,13 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
   useUnsavedChangesWarning(dirty || termsDirty)
 
   const form = draft.form
+  // Same names as the E-commerce logo block, over this page's form state.
+  const logoIcon = draft.logoIcon || DEFAULT_GYM_LOGO_ICON
+  const logoColor = draft.logoColor
+  const setLogoIcon = (value: string) => setDraft((current) => ({ ...current, logoIcon: value }))
+  const setLogoColor = (value: string) => setDraft((current) => ({ ...current, logoIcon: current.logoIcon || DEFAULT_GYM_LOGO_ICON, logoColor: value }))
+  // Find matching preset icon, but don't default to first icon if not found
+  const selectedIcon = LOGO_ICONS.find((icon) => icon.lightSvg === logoIcon)
   const set = (key: TextField) => (event: { target: { value: string } }) =>
     setDraft((current) => ({ ...current, form: { ...current.form, [key]: event.target.value } }))
   const setHours = (update: (hours: HoursState) => HoursState) => setDraft((current) => ({ ...current, hours: update(current.hours) }))
@@ -235,7 +251,7 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
       </div>
       <div className="flex items-center gap-2">
         {dirty ? <span className="text-xs text-muted-foreground">Unsaved changes</span> : savedAt ? <span className="text-xs text-muted-foreground">Saved {savedAt}</span> : null}
-        <Button onClick={onSave} disabled={isSaving || !dirty || Boolean(loadError)}>
+        <Button className="hidden md:inline-flex" onClick={onSave} disabled={isSaving || !dirty || Boolean(loadError)}>
           <Save className="size-4" aria-hidden />
           {isSaving ? 'Saving…' : 'Save changes'}
         </Button>
@@ -249,7 +265,7 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
 
   return (
     <PageContainer title="Store Settings" header={header} breadcrumbs={breadcrumbs}>
-      <div className="grid gap-6 px-4 pb-8 md:px-6">
+      <div className="grid gap-6 px-4 pb-24 md:px-6 md:pb-8">
         {loadError ? <Notice tone="danger" title="Settings could not be loaded">{loadError} Nothing on this page reflects saved values; reload before editing.</Notice> : null}
         {error ? <Notice tone="danger" title="Not saved">{error}</Notice> : null}
 
@@ -268,16 +284,132 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
                 <FormField label="Description" hint="Used in search previews and the footer.">
                   <FieldInput value={form.description} onChange={set('description')} maxLength={2000} />
                 </FormField>
-                <div className="grid gap-4 border-t pt-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
-                  <div className="grid min-w-0 content-start gap-1.5">
-                    <span className="text-xs font-medium">Logo</span>
-                    <LogoPicker value={draft.logoIcon} hue={draft.logoColor} onChange={(logoIcon) => setDraft((current) => ({ ...current, logoIcon }))} />
+                <div className="space-y-6 border-t pt-4">
+                {/* Logo Icon Selector */}
+                <div>
+                  <Label>Logo Icon</Label>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Select
+                      value={selectedIcon?.id || ''}
+                      onValueChange={(id) => {
+                        const icon = LOGO_ICONS.find((i) => i.id === id);
+                        if (icon) setLogoIcon(icon.lightSvg);
+                      }}
+                    >
+                      <SelectPrimitive.Trigger
+                        className={cn(
+                          'flex h-12 w-12 shrink-0 rounded-lg border border-input bg-background focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 p-0 overflow-hidden items-center justify-center'
+                        )}
+                      >
+                        <div
+                          dangerouslySetInnerHTML={{ __html: logoIcon }}
+                          style={{ filter: `hue-rotate(${logoColor}deg)` }}
+                          className="[&>svg]:w-6 [&>svg]:h-6"
+                        />
+                      </SelectPrimitive.Trigger>
+                      <SelectContent className="border-border dark:border-blue-700">
+                        {LOGO_ICONS.map((icon) => (
+                          <SelectItem key={icon.id} value={icon.id}>
+                            <span className="flex items-center gap-3">
+                              <div
+                                dangerouslySetInnerHTML={{ __html: icon.lightSvg }}
+                                style={{ filter: `hue-rotate(${logoColor}deg)` }}
+                                className="[&>svg]:w-6 [&>svg]:h-6"
+                              />
+                              <span>
+                                <span className="block font-medium text-gray-900 dark:text-gray-100">
+                                  {icon.name}
+                                </span>
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {/* SVG Code Editor Popover */}
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-12 w-12 shrink-0"
+                          type="button"
+                        >
+                          <Code className="h-4 w-4" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[min(500px,calc(100vw-2rem))]" align="start">
+                        <div className="space-y-4">
+                          <div>
+                            <h4 className="font-medium mb-2">Edit SVG Code</h4>
+                            <p className="text-sm text-muted-foreground mb-4">
+                              Edit the SVG code directly. Changes will be reflected in the icon preview.
+                            </p>
+                          </div>
+                          <Textarea
+                            value={logoIcon}
+                            onChange={(e) => setLogoIcon(e.target.value)}
+                            className="font-mono text-xs min-h-[300px]"
+                            placeholder="<svg>...</svg>"
+                          />
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm text-muted-foreground">Preview:</div>
+                            <div
+                              dangerouslySetInnerHTML={{ __html: logoIcon }}
+                              style={{ filter: `hue-rotate(${logoColor}deg)` }}
+                              className="[&>svg]:w-8 [&>svg]:h-8 flex items-center justify-center p-2 border rounded"
+                            />
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
-                  <LogoColorField
-                    value={draft.logoColor}
-                    svg={draft.logoIcon || DEFAULT_GYM_LOGO_ICON}
-                    onChange={(logoColor) => setDraft((current) => ({ ...current, logoIcon: current.logoIcon || DEFAULT_GYM_LOGO_ICON, logoColor }))}
-                  />
+                </div>
+
+                {/* Logo Color Selector */}
+                <div>
+                  <Label>Logo Color</Label>
+                  <div className="mt-2">
+                    <Select
+                      value={logoColor}
+                      onValueChange={(value) => setLogoColor(value)}
+                    >
+                      <SelectPrimitive.Trigger
+                        className={cn(
+                          'flex h-12 w-12 shrink-0 rounded-lg border border-input bg-background focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 p-0 overflow-hidden items-center justify-center'
+                        )}
+                      >
+                        <SelectValue>
+                          <div
+                            className="w-6 h-6 rounded-full"
+                            style={{
+                              background: `hsl(${(240 + parseInt(logoColor)) % 360}, 70%, 50%)`
+                            }}
+                          />
+                        </SelectValue>
+                      </SelectPrimitive.Trigger>
+                      <SelectContent className="border-border dark:border-blue-700">
+                        <div className="grid grid-cols-4 gap-2 p-2">
+                          {HUE_PRESETS.map((preset) => (
+                            <SelectItem
+                              key={preset.value}
+                              value={preset.value.toString()}
+                              className="cursor-pointer p-0 h-12 w-12 flex items-center justify-center [&>span:first-child]:hidden"
+                            >
+                              <div
+                                className="w-6 h-6 rounded-full"
+                                style={{
+                                  background: `hsl(${(240 + preset.value) % 360}, 70%, 50%)`
+                                }}
+                              />
+                            </SelectItem>
+                          ))}
+                        </div>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
                 </div>
                 <div className="grid gap-1.5">
                   <span className="text-xs font-medium">Storefront header</span>
@@ -286,7 +418,7 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
                       <div key={String(onDark)} className={onDark ? 'flex min-w-0 items-center gap-2.5 rounded-lg bg-zinc-950 px-4 py-3 text-white' : 'flex min-w-0 items-center gap-2.5 rounded-lg border bg-white px-4 py-3 text-zinc-950'}>
                         <LogoMark svg={draft.logoIcon || DEFAULT_GYM_LOGO_ICON} logoColor={draft.logoColor} onDark={onDark} className="size-[30px]" />
                         <span className="grid min-w-0 gap-0.5 leading-none">
-                          <strong className="text-balance break-words text-[17px] font-bold leading-tight tracking-tight">{form.name || 'Gym name'}</strong>
+                          <strong className="text-balance break-words text-lg font-bold leading-tight tracking-tight">{form.name || 'Gym name'}</strong>
                           {form.tagline ? <span className={onDark ? 'text-pretty text-xs leading-snug text-white/60' : 'text-pretty text-xs leading-snug text-zinc-500'}>{form.tagline}</span> : null}
                         </span>
                       </div>
@@ -486,6 +618,17 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
               </PanelBody>
             </Section>
           </div>
+        </div>
+        <div className="md:hidden">
+          <StoreSettingsSaveBar
+            isSaving={isSaving}
+            button={
+              <Button onClick={onSave} disabled={isSaving || !dirty || Boolean(loadError)}>
+                <Save className="size-4" aria-hidden />
+                {isSaving ? 'Saving…' : 'Save changes'}
+              </Button>
+            }
+          />
         </div>
       </div>
     </PageContainer>

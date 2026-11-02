@@ -1,4 +1,4 @@
-import { LOGO_ICONS } from "../../platform/store-settings/lib/untitled-logo-registry";
+import { LOGO_ICONS } from "../../platform/store-settings/lib/icon-registry";
 
 export const DEFAULT_STOREFRONT_HUE = 16;
 
