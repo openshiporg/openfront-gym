@@ -1269,4 +1269,44 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
 @layer components {
   .sf-coach-photo:has(> .sf-monogram) { background: linear-gradient(145deg, #2a2c34, #15161b); box-shadow: var(--sf-card-shadow); }
   .sf-coach-photo > .sf-monogram { color: #fff; }
+
+  /* Rigel fidelity: each day is one compact row (session text, coach photo, date) as in the design. */
+  @media (min-width: 900px) {
+    .sf-rg-week { padding: 10px 18px 12px; }
+    .sf-rg-week .sf-rg-head { margin-bottom: 2px; }
+    .sf-rg-week .sf-rg-head h2 { font-size: 1.125rem; }
+    .sf-rg-strip { gap: 4px; }
+    .sf-rg-strip > li { grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px 8px; }
+    .sf-rg-strip > li > .sf-rg-date { grid-column: 2; grid-row: 1; justify-items: end; text-align: right; }
+    .sf-rg-strip > li > :is(.sf-rg-slot, .sf-rg-rest) { grid-column: 1; grid-row: 1; padding-top: 0; }
+    .sf-rg-slot { grid-template-columns: minmax(0, 1fr) 36px; gap: 3px 6px; }
+    .sf-rg-slot > div { grid-column: 1; grid-row: 1; }
+    .sf-rg-slot > .sf-rg-avatar { grid-column: 2; grid-row: 1 / span 2; width: 36px; height: 36px; border-radius: 999px; font-size: 0.75rem; }
+    .sf-rg-slot time { font-size: 0.875rem; }
+    .sf-rg-slot > div > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .sf-rg-slot > div > :is(a, b) { display: -webkit-box; font-size: 0.75rem; line-height: 1.2; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .sf-rg-pill { grid-column: 1; min-height: 26px; padding: 0 10px; font-size: 0.75rem; }
+  }
+  /* Phone: design-scale headings, day picker and session cards (tap targets stay 44px+). */
+  @media (max-width: 899px) {
+    .sf-rg-hero { gap: 12px; padding-block: 10px 14px; }
+    .sf-rg-hero-copy { gap: 8px; padding-block: 4px; }
+    .sf-rg-title { font-size: clamp(1.5rem, 1.1rem + 1.9vw, 2.125rem); line-height: 1.1; }
+    .sf-rg-sub { font-size: 0.875rem; line-height: 1.4; }
+    .sf-rg-today { padding-top: 14px; }
+    .sf-rg-head h2, .sf-rg-center h2 { font-size: 1.0625rem; }
+    .sf-rg-today .sf-rg-more { font-size: 0.8125rem; }
+    .sf-rg-days { border-radius: 16px; padding: 4px; }
+    .sf-rg-days > button { min-height: 46px; border-radius: 12px; font-size: 0.75rem; }
+    .sf-rg-days > button strong { font-size: 0.8125rem; }
+    .sf-rg-timeline > li { padding-block: 6px; }
+    .sf-rg-time { font-size: 0.875rem; }
+    .sf-rg-class { min-height: 56px; padding: 8px 14px; }
+    .sf-rg-class strong { font-size: 1rem; }
+    .sf-rg-class span { font-size: 0.75rem; }
+    .sf-rg-book { font-size: 0.8125rem; }
+    .sf-header .sf-wordmark-mark { width: 28px; height: 28px; }
+    .sf-header .sf-wordmark-copy strong { font-size: 1.125rem; }
+    .sf-header .sf-wordmark-copy span { font-size: 0.5625rem; }
+  }
 }
