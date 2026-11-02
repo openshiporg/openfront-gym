@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { SfDate } from "../modules/common/controls";
 import SubmitButton from "../modules/common/submit-button";
 import { creditLabel } from "../lib/discovery";
 import { notFound } from "next/navigation";
@@ -151,11 +152,11 @@ export default async function AccountMembershipPage({
               ) : (
                 <form action={freezeMembershipAction} className="sf-form">
                   <input type="hidden" name="operationKey" value={keyFor("freeze")} />
-                  <label className="sf-field">
+                  <div className="sf-field">
                     Freeze until
-                    <input name="endDate" type="date" required />
+                    <SfDate name="endDate" label="Freeze until" required />
                     <small>Starts now and ends at the end of this day.</small>
-                  </label>
+                  </div>
                   <SubmitButton variant="secondary" block pendingLabel="Freezing…">Freeze membership</SubmitButton>
                 </form>
               )}

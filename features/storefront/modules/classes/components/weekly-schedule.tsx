@@ -8,6 +8,7 @@ import { discoveryHref, matchesSession } from "@/features/storefront/lib/discove
 import { difficultyLabel } from "@/features/storefront/lib/presentation";
 import { SessionState, SessionTime } from "@/features/storefront/modules/common/training";
 import { Banner, EmptyState } from "@/features/storefront/modules/common/ui";
+import { SfSelect } from "@/features/storefront/modules/common/controls";
 import ClassBookingModal, { type BookingViewer } from "./class-booking-modal";
 
 type ScheduleItem = {
@@ -173,9 +174,9 @@ export default function WeeklySchedule({ scheduleData, truncated = false, loaded
       <form id="schedule-filters" className="sf-filters" data-open={filtersOpen || undefined} aria-label="Filter sessions" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); setFiltersOpen(false); navigate({ q: String(data.get("q") || ""), coach: String(data.get("coach") || ""), format: String(data.get("format") || ""), availability: String(data.get("availability") || ""), book: null }); }}>
         <h2>Filters</h2>
         <label className="sf-field">Search<input key={filters.q} name="q" type="search" defaultValue={filters.q} placeholder="Class, coach or level" /></label>
-        <label className="sf-field">Coach<select key={filters.coach} name="coach" defaultValue={filters.coach}><option value="">All coaches</option>{coaches.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-        <label className="sf-field">Class<select key={filters.format} name="format" defaultValue={filters.format}><option value="">All classes</option>{formats.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-        <label className="sf-field">Availability<select key={filters.availability} name="availability" defaultValue={filters.availability}><option value="">Include full sessions</option><option value="open">Spaces available</option></select></label>
+        <div className="sf-field">Coach<SfSelect key={filters.coach} name="coach" label="Coach" defaultValue={filters.coach} options={[{ value: "", label: "All coaches" }, ...coaches.map(([id, name]) => ({ value: id, label: name }))]} /></div>
+        <div className="sf-field">Class<SfSelect key={filters.format} name="format" label="Class" defaultValue={filters.format} options={[{ value: "", label: "All classes" }, ...formats.map(([id, name]) => ({ value: id, label: name }))]} /></div>
+        <div className="sf-field">Availability<SfSelect key={filters.availability} name="availability" label="Availability" defaultValue={filters.availability} options={[{ value: "", label: "Include full sessions" }, { value: "open", label: "Spaces available" }]} /></div>
         <button className="sf-btn" data-block type="submit">Apply</button>
       </form>
     </div>

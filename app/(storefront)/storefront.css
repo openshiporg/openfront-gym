@@ -662,6 +662,9 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-field :where(input, select, textarea):hover, .sf-input:hover { border-color: var(--sf-ink-3); }
   .sf-field :where(input, select, textarea):focus, .sf-input:focus { border-color: var(--sf-ink); outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--sf-accent-fill) 22%, transparent); }
   .sf-field :where(input, select, textarea)[aria-invalid="true"] { border-color: var(--sf-bad); }
+  .sf-trigger, .sf-datetime button { min-height: 48px; border-color: var(--sf-line-strong); border-radius: var(--sf-r-sm); background: var(--sf-raised); color: var(--sf-ink); padding: 12px 14px; font-size: 1rem; font-weight: 400; }
+  .sf-trigger:hover, .sf-datetime button:hover { border-color: var(--sf-ink-3); background: var(--sf-raised); }
+  .sf-datetime { display: grid; gap: 8px; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
   .sf-field select, select.sf-input {
     appearance: none; padding-right: 40px;
     background-image: linear-gradient(45deg, transparent 50%, var(--sf-ink-3) 50%), linear-gradient(135deg, var(--sf-ink-3) 50%, transparent 50%);

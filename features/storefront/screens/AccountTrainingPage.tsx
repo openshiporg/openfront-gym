@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { CalendarClock, ClipboardList, Dumbbell } from "lucide-react";
 import { getUser } from "../lib/data/user";
 import { loadTrainingWorkspace, trainingAction } from "@/features/platform/training/actions/training";
+import { SfDateTime, SfSelect } from "../modules/common/controls";
 import SubmitButton from "../modules/common/submit-button";
 import { isTrainingPackageSelectable, trainingPackageDisplayStatus } from "@/features/platform/training/lib/package-availability";
 import { clubDateParts, humanizeLabel } from "@/features/storefront/lib/presentation";
@@ -27,11 +28,12 @@ const WEEK = [
   { index: 0, short: "Sun", long: "Sunday" },
 ];
 
-function Field({ name, label, type = "text", required = true }: { name: string; label: string; type?: string; required?: boolean }) {
+function Field({ name, label, type = "text", required = true, when = false }: { name: string; label: string; type?: string; required?: boolean; when?: boolean }) {
+  if (when) return <div className="sf-field">{label}<SfDateTime name={name} label={label} required={required} /></div>;
   return <label className="sf-field">{label}<input name={name} type={type} required={required} maxLength={type === "text" ? 2000 : undefined} /></label>;
 }
 function Choice({ name, label, rows, optional = false }: { name: string; label: string; rows: Array<{ id: string; name: string }>; optional?: boolean }) {
-  return <label className="sf-field">{label}<select name={name} required={!optional}><option value="">{optional ? "No preference" : "Choose"}</option>{rows.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select></label>;
+  return <div className="sf-field">{label}<SfSelect name={name} label={label} required={!optional} options={[{ value: "", label: optional ? "No preference" : "Choose" }, ...rows.map(row => ({ value: row.id, label: row.name }))]} /></div>;
 }
 function TrainingForm({ operation, scope = "", retry, zone, label, variant = "primary", children }: { operation: string; scope?: string; retry?: RetryDraft; zone: string; label: string; variant?: "primary" | "danger"; children: ReactNode }) {
   // While an earlier request here is unconfirmed, the form resends exactly that request; the
@@ -139,7 +141,7 @@ export default async function AccountTrainingPage({ searchParams }: { searchPara
           {(row.cancellationReason || changeable) ? <div className="sf-booking-extra">
             {row.cancellationReason ? <Banner tone="warn">{row.cancellationReason}</Banner> : null}
             {changeable ? <>
-              <details className="sf-disclosure"><summary>Change time</summary><div><TrainingForm operation="reschedule" scope={row.id} retry={retry} zone={zone} label="Request new time"><input type="hidden" name="appointmentId" value={row.id} /><Choice name="instructorId" label="Coach" rows={data.instructors} optional /><Field name="startTime" label={`New start (${zone})`} type="datetime-local" /><Field name="reason" label="Reason" /><p className="sf-hint">Your current time stays booked if the new time isn’t available.</p></TrainingForm></div></details>
+              <details className="sf-disclosure"><summary>Change time</summary><div><TrainingForm operation="reschedule" scope={row.id} retry={retry} zone={zone} label="Request new time"><input type="hidden" name="appointmentId" value={row.id} /><Choice name="instructorId" label="Coach" rows={data.instructors} optional /><Field name="startTime" label={`New start (${zone})`} when /><Field name="reason" label="Reason" /><p className="sf-hint">Your current time stays booked if the new time isn’t available.</p></TrainingForm></div></details>
               <details className="sf-disclosure"><summary>Cancel appointment</summary><div><p className="sf-meta">Cancelling before the start returns the credit to this package.</p><TrainingForm operation="transition" zone={zone} label="Cancel appointment" variant="danger"><input type="hidden" name="appointmentId" value={row.id} /><input type="hidden" name="status" value="cancelled" /><Field name="reason" label="Reason" /></TrainingForm></div></details>
             </> : null}
           </div> : null}
@@ -164,7 +166,7 @@ export default async function AccountTrainingPage({ searchParams }: { searchPara
                 <div><dt>Session length</dt><dd>{pack.durationMinutes} min</dd></div>
                 <div><dt>Expires</dt><dd>{date(pack.expiresAt)}</dd></div>
               </dl>
-              {selectable ? <details className="sf-disclosure"><summary>Book with this package</summary><div><TrainingForm operation="book" scope={pack.id} retry={retry} zone={zone} label="Reserve"><input type="hidden" name="trainingPackageId" value={pack.id} /><Choice name="instructorId" label="Coach" rows={data.instructors} /><Choice name="resourceId" label="Room or equipment (optional)" rows={data.resources.filter((resource: any) => !resource.locationId || resource.locationId === pack.locationId)} optional /><Field name="startTime" label={`Start (${zone})`} type="datetime-local" /><Field name="memberNotes" label="Notes for your coach (optional)" required={false} /><p className="sf-hint">Availability is checked when you submit. One credit is held on confirmation.</p></TrainingForm></div></details> : null}
+              {selectable ? <details className="sf-disclosure"><summary>Book with this package</summary><div><TrainingForm operation="book" scope={pack.id} retry={retry} zone={zone} label="Reserve"><input type="hidden" name="trainingPackageId" value={pack.id} /><Choice name="instructorId" label="Coach" rows={data.instructors} /><Choice name="resourceId" label="Room or equipment (optional)" rows={data.resources.filter((resource: any) => !resource.locationId || resource.locationId === pack.locationId)} optional /><Field name="startTime" label={`Start (${zone})`} when /><Field name="memberNotes" label="Notes for your coach (optional)" required={false} /><p className="sf-hint">Availability is checked when you submit. One credit is held on confirmation.</p></TrainingForm></div></details> : null}
             </article>;
           })}
         </div>

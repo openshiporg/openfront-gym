@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { Loader2 } from "lucide-react";
 import { submitContactFormAction, type ContactFormState } from "@/features/storefront/lib/actions/contact";
 import { CONTACT_TOPICS } from "@/features/storefront/lib/contact-config";
+import { SfSelect } from "@/features/storefront/modules/common/controls";
 import { Banner } from "@/features/storefront/modules/common/ui";
 
 const initialState: ContactFormState = { status: "idle", message: null, reference: null };
@@ -50,11 +51,9 @@ export function ContactForm({
         <label className="sf-field">Email<input name="email" required maxLength={254} type="email" autoComplete="email" defaultValue={defaults?.email} /></label>
         <label className="sf-field">Phone (optional)<input name="phone" maxLength={40} type="tel" autoComplete="tel" defaultValue={defaults?.phone} /></label>
       </div>
-      <label className="sf-field">Topic
-        <select name="topic" defaultValue={selectedTopic}>
-          {CONTACT_TOPICS.map((item) => <option key={item.key} value={item.label}>{item.label}</option>)}
-        </select>
-      </label>
+      <div className="sf-field">Topic
+        <SfSelect name="topic" label="Topic" defaultValue={selectedTopic} options={CONTACT_TOPICS.map((item) => ({ value: item.label, label: item.label }))} />
+      </div>
       <label className="sf-field">Message<textarea name="message" required maxLength={5000} rows={6} /></label>
       <div>
         <button type="submit" disabled={pending} className="sf-btn" data-size="lg">

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useState, useEffect, useCallback, type ReactNode } from "react"
-import { useForm } from "react-hook-form"
+import { Controller, useForm } from "react-hook-form"
+import { PlatformDateInput } from "@/features/platform/components/PlatformDateTime"
 import { ArrowLeft, ArrowUpRight, Pencil } from "lucide-react"
 import { toast } from "sonner"
 import { getMemberProfileAction, updateMemberProfileAction } from "../actions/member-experience"
@@ -47,7 +48,7 @@ export default function MemberProfilePage() {
   const [saveMessage, setSaveMessage] = useState("")
   const [error, setError] = useState<string | null>(null)
 
-  const { register, handleSubmit, reset, formState: { errors, dirtyFields } } = useForm<ProfileFormData>()
+  const { register, control, handleSubmit, reset, formState: { errors, dirtyFields } } = useForm<ProfileFormData>()
 
   const fetchProfile = useCallback(async () => {
     setIsLoading(true)
@@ -213,7 +214,7 @@ export default function MemberProfilePage() {
               </div>
               <div className="sf-field">
                 <label htmlFor="profile-dateOfBirth">Date of birth</label>
-                {isEditing ? <input id="profile-dateOfBirth" {...register("dateOfBirth")} type="date" /> : readValue(profile.dateOfBirth ? new Date(profile.dateOfBirth).toLocaleDateString() : "Not provided")}
+                {isEditing ? <Controller control={control} name="dateOfBirth" render={({ field }) => <PlatformDateInput id="profile-dateOfBirth" value={field.value ?? ""} onChange={field.onChange} />} /> : readValue(profile.dateOfBirth ? new Date(profile.dateOfBirth).toLocaleDateString() : "Not provided")}
               </div>
             </div>
           </section>
