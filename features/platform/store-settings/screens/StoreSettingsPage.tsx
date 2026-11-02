@@ -286,8 +286,8 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
                       <div key={String(onDark)} className={onDark ? 'flex min-w-0 items-center gap-2.5 rounded-lg bg-zinc-950 px-4 py-3 text-white' : 'flex min-w-0 items-center gap-2.5 rounded-lg border bg-white px-4 py-3 text-zinc-950'}>
                         <LogoMark svg={draft.logoIcon || DEFAULT_GYM_LOGO_ICON} logoColor={draft.logoColor} onDark={onDark} className="size-[30px]" />
                         <span className="grid min-w-0 gap-0.5 leading-none">
-                          <strong className="truncate text-[17px] font-bold tracking-tight">{form.name || 'Gym name'}</strong>
-                          {form.tagline ? <span className={onDark ? 'truncate text-xs text-white/60' : 'truncate text-xs text-zinc-500'}>{form.tagline}</span> : null}
+                          <strong className="text-balance break-words text-[17px] font-bold leading-tight tracking-tight">{form.name || 'Gym name'}</strong>
+                          {form.tagline ? <span className={onDark ? 'text-pretty text-xs leading-snug text-white/60' : 'text-pretty text-xs leading-snug text-zinc-500'}>{form.tagline}</span> : null}
                         </span>
                       </div>
                     ))}

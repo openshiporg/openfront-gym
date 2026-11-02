@@ -68,14 +68,20 @@ export function Field({
   )
 }
 
+/** A short list of strings reads as "Spin, Zumba"; anything else stays as JSON. */
+export function formatJsonCell(value: unknown): string {
+  if (Array.isArray(value) && value.every((entry) => typeof entry === "string" || typeof entry === "number")) return value.join(", ")
+  return JSON.stringify(value)
+}
+
 export function Cell({ item, field, value }: CellProps) {
   const fieldValue = value ?? item[field.path]
   return (
     <div className="flex items-center gap-2">
       {fieldValue ? (
         <>
-          <span className="text-sm font-mono text-muted-foreground truncate max-w-32">
-            {JSON.stringify(fieldValue)}
+          <span className="text-sm font-mono text-muted-foreground break-words">
+            {formatJsonCell(fieldValue)}
           </span>
         </>
       ) : (

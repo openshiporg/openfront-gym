@@ -183,7 +183,7 @@ export async function RosterListPage({ searchParams }: { searchParams?: Promise<
                               </Link>
                               <StatusPill tone={stateMeta[sessionState].tone}>{stateMeta[sessionState].label}</StatusPill>
                             </div>
-                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            <p className="mt-0.5 text-pretty break-words text-xs text-muted-foreground">
                               {instructor ?? <span className="text-amber-700 dark:text-amber-400">Instructor unassigned</span>} · {session.effectiveLocation?.name ?? <span className="text-amber-700 dark:text-amber-400">Location unassigned</span>}
                             </p>
                           </div>
