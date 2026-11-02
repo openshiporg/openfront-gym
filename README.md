@@ -193,7 +193,7 @@ The [Keystone model registry](features/keystone/models/index.ts) and [Prisma sch
 Use a development database for `migrate:gen`; it generates and applies schema changes.
 
 ### Payment Integration
-Membership checkout and Stripe adapters live in [`features/integrations/payment/`](features/integrations/payment). Configure Stripe using [`env.example`](env.example) and payment-provider settings. Stripe webhooks enter at `/api/stripe/webhook`. Personal-training package sales are staff-managed, not a public package-shopping checkout.
+Membership checkout and Stripe adapters live in [`features/integrations/payment/`](features/integrations/payment). Configure Stripe using [`env.example`](env.example) and payment-provider settings. Stripe webhooks enter at the Openfront payment-webhook path, `/api/payment-webhooks/pp_stripe`. Personal-training package sales are staff-managed, not a public package-shopping checkout.
 
 ### Check-In Integration
 The kiosk ([server actions](features/platform/kiosk/actions.ts) over Keystone kiosk mutations) uses a configured organization and kiosk credential. Member QR codes and [check-in commands](features/keystone/queries/checkIn.ts) are separate from payment processing.

@@ -6,6 +6,10 @@ const s3Hostname = process.env.S3_ENDPOINT ? process.env.S3_ENDPOINT.replace(/^h
 const nextConfig: NextConfig = {
   reactCompiler: true,
   devIndicators: false,
+  // Stripe endpoints registered before the Openfront payment-webhook path keep delivering.
+  async rewrites() {
+    return [{ source: '/api/stripe/webhook', destination: '/api/payment-webhooks/pp_stripe' }];
+  },
   serverExternalPackages: ['graphql'],
   // Workaround since we diverged from Keystone reltionship and document views
   // typescript: {
