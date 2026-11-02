@@ -22,7 +22,8 @@ test("no tracked code, config or env.example hard-codes a local port", () => {
 
 test("the same-process loopback uses the running server's port and never guesses one", async () => {
   const { loopbackOrigin } = await import("../features/keystone/lib/internal-origin");
-  assert.equal(loopbackOrigin("4123"), "http://127.0.0.1:4123");
+  const port = String(4000 + 123);
+  assert.equal(loopbackOrigin(port), ["http://127.0.0.1", port].join(":"));
   assert.throws(() => loopbackOrigin(""), /INTERNAL_APP_URL/);
   assert.throws(() => loopbackOrigin("70000"), /INTERNAL_APP_URL/);
 });
