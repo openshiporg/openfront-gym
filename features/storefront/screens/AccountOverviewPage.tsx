@@ -8,6 +8,7 @@ import { formatOccurrenceDate, formatOccurrenceTime } from "@/features/storefron
 import { refreshMyMembership } from "@/features/platform/operations/actions";
 import { Banner } from "@/features/storefront/modules/common/ui";
 import { membershipTone, statusLabel } from "@/features/storefront/modules/account/templates/account-layout";
+import { formatCreditsLeft } from "@/lib/class-credits";
 
 export default async function AccountOverviewPage() {
   const user = await getUser();
@@ -74,7 +75,7 @@ export default async function AccountOverviewPage() {
           <Banner tone="warn">Your class balance couldn’t be refreshed.</Banner>
         ) : membership ? (
           <dl className="sf-facts">
-            <div><dt>Classes</dt><dd className="sf-num">{allowance === -1 ? "Unlimited" : typeof allowance === "number" && allowance > 0 ? `${remaining} of ${allowance} left` : `${remaining} left`}</dd></div>
+            <div><dt>Classes</dt><dd className="sf-num">{formatCreditsLeft(remaining, allowance)}</dd></div>
             <div><dt>{membership.autoRenew ? "Next billing" : "Access through"}</dt><dd>{membership.nextBillingDate ? formatOccurrenceDate(membership.nextBillingDate, zone) : "Not set"}</dd></div>
           </dl>
         ) : null}

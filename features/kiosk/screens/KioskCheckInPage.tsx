@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { Check, X } from "lucide-react"
 import { Banner, EmptyState } from "@/features/storefront/modules/common/ui"
+import { formatClassCreditsLeft } from "@/lib/class-credits"
 
 type CheckInResult = {
   success: boolean
@@ -33,9 +34,7 @@ type RecentCheckIn = {
 const INACTIVITY_RESET_MS = 60_000
 
 function formatCredits(value?: number | null) {
-  if (value === -1) return "Unlimited classes"
-  if (typeof value === "number") return `${value} class credits left`
-  return "Credits unavailable"
+  return formatClassCreditsLeft(value) ?? "Credits unavailable"
 }
 
 export default function KioskCheckInPage({ brandName = "Front desk" }: { brandName?: string } = {}) {

@@ -13,6 +13,7 @@ import { SessionState } from "@/features/storefront/modules/common/training";
 import { Sheet } from "@/features/storefront/modules/common/sheet";
 import { Banner } from "@/features/storefront/modules/common/ui";
 import LoginPage from "@/features/storefront/screens/LoginPage";
+import { formatClassCreditsLeft, isUnlimitedCredits } from "@/lib/class-credits";
 
 /** Who is looking at the booking sheet, resolved on the server so the sheet opens on the right step. */
 export type BookingViewer = {
@@ -79,7 +80,7 @@ export default function ClassBookingModal({
           title: waitlist ? `On the waitlist${res.waitlistPosition ? ` · position ${res.waitlistPosition}` : ""}` : "Booked",
           message: waitlist
             ? "Not a confirmed space yet."
-            : res.creditsRemaining === -1 ? "Unlimited classes on your plan." : `${res.creditsRemaining} class ${res.creditsRemaining === 1 ? "credit" : "credits"} left.`,
+            : isUnlimitedCredits(res.creditsRemaining) ? "Unlimited classes on your plan." : `${formatClassCreditsLeft(res.creditsRemaining) ?? "Booking confirmed"}.`,
         });
         router.refresh();
         onBookingSuccess?.();

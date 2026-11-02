@@ -19,6 +19,7 @@ import { joinPath } from "@/features/storefront/lib/return-path";
 import { contactPath } from "@/features/storefront/lib/contact-config";
 import { ArrowLink, Banner, EmptyState } from "@/features/storefront/modules/common/ui";
 import { membershipTone, statusLabel } from "@/features/storefront/modules/account/templates/account-layout";
+import { formatCreditsLeft, isUnlimitedCredits } from "@/lib/class-credits";
 
 function formatDate(value?: string | null, options?: Intl.DateTimeFormatOptions) {
   if (!value) return "–";
@@ -97,7 +98,7 @@ export default async function AccountMembershipPage({
               {agreement?.amount !== undefined ? `${formatMinorUnits(agreement.amount, agreement.currencyCode || currencyCode)} / ${membership.billingCycle === 'annual' ? 'year' : 'month'}` : 'Price not recorded on this agreement'}
             </p>
             <dl className="sf-facts" data-plain>
-              <div><dt>Classes</dt><dd className="sf-num">{refreshed.error ? "Unavailable" : allowance === -1 ? "Unlimited" : `${membership.classCreditsRemaining ?? 0} left`}</dd></div>
+              <div><dt>Classes</dt><dd className="sf-num">{refreshed.error ? "Unavailable" : formatCreditsLeft(membership.classCreditsRemaining ?? 0, isUnlimitedCredits(allowance) ? allowance : null)}</dd></div>
               <div><dt>Member since</dt><dd>{formatDate(membership.startDate, { month: "short", year: "numeric" })}</dd></div>
               <div><dt>{membership.autoRenew ? "Next billing" : "Access through"}</dt><dd>{formatDate(membership.nextBillingDate)}</dd></div>
               {membership.cancelledAt ? <div><dt>Cancelled</dt><dd>{formatDate(membership.cancelledAt)}</dd></div> : null}

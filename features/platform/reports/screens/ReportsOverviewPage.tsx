@@ -25,11 +25,10 @@ import {
 import { getReportsDashboardData } from '../actions/reports';
 import { formatMinorUnits } from '@/features/platform/lib/currency';
 import { formatReportDate, formatReportDateTime } from '../timezone';
+import { formatCreditsLeft } from '@/lib/class-credits';
 
 function creditsLabel(value?: number | null) {
-  if (value === -1) return 'Unlimited';
-  if (typeof value === 'number') return `${value} left`;
-  return '—';
+  return formatCreditsLeft(value) ?? '—';
 }
 
 function attendanceTone(rate: number): Tone {
