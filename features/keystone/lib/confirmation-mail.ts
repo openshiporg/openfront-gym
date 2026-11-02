@@ -3,7 +3,7 @@ import type { ConfirmationMail } from "./order-confirmation";
 
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] as string));
 
-export async function sendConfirmationMail(mail: ConfirmationMail): Promise<{ sent: boolean; error?: string; messageId?: string }> {
+export async function sendConfirmationMail(mail: ConfirmationMail): Promise<{ sent: boolean; error?: string; messageId?: string; response?: string }> {
   try {
     const info: any = await mailTransport().sendMail({
       to: mail.to,
@@ -16,7 +16,7 @@ export async function sendConfirmationMail(mail: ConfirmationMail): Promise<{ se
       </body>`,
     });
     const rejected = Array.isArray(info?.rejected) && info.rejected.length > 0;
-    return rejected ? { sent: false, error: "recipient_rejected" } : { sent: true, messageId: typeof info?.messageId === "string" ? info.messageId : undefined };
+    return rejected ? { sent: false, error: "recipient_rejected" } : { sent: true, messageId: typeof info?.messageId === "string" ? info.messageId : undefined, response: typeof info?.response === "string" ? info.response : undefined };
   } catch (error) {
     return { sent: false, error: error instanceof Error ? error.message : "send_failed" };
   }
