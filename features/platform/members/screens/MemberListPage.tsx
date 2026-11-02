@@ -233,11 +233,11 @@ export default async function MemberListPage({
                 </NativeSelect>
               </label>
               <label className="relative">
-                <span className="pointer-events-none absolute -top-2 left-2 bg-card px-1 text-[10px] font-medium text-muted-foreground">Joined from</span>
+                <span className="pointer-events-none absolute -top-2 left-2 bg-card px-1 text-xs font-medium text-muted-foreground">Joined from</span>
                 <FieldInput name="joinedFrom" type="date" defaultValue={joinedFrom} aria-label="Joined on or after" />
               </label>
               <label className="relative">
-                <span className="pointer-events-none absolute -top-2 left-2 bg-card px-1 text-[10px] font-medium text-muted-foreground">Joined to</span>
+                <span className="pointer-events-none absolute -top-2 left-2 bg-card px-1 text-xs font-medium text-muted-foreground">Joined to</span>
                 <FieldInput name="joinedTo" type="date" defaultValue={joinedTo} aria-label="Joined on or before" />
               </label>
               <div className="flex gap-2 sm:col-span-2 lg:col-span-1">

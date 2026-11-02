@@ -174,7 +174,7 @@ export function TrainingWorkspace({ data, member = false, error, success, retry,
               <div className="flex items-start gap-4">
                 <div className="w-20 shrink-0 tabular-nums">
                   <p className={row.status === "cancelled" ? "text-sm font-semibold text-muted-foreground line-through" : "text-sm font-semibold"}>{timeOf(row.startTime)}</p>
-                  <p className="text-[11px] text-muted-foreground">{dayOf(row.startTime)}</p>
+                  <p className="text-xs text-muted-foreground">{dayOf(row.startTime)}</p>
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -309,8 +309,8 @@ export function TrainingWorkspace({ data, member = false, error, success, retry,
               <p className="shrink-0 text-xs text-muted-foreground">Due {date(row.dueAt)}</p>
             </div>
             <p className="whitespace-pre-wrap text-pretty text-sm">{row.instructions}</p>
-            {row.memberEvidence ? <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm"><p className="mb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Member progress</p><p className="whitespace-pre-wrap">{row.memberEvidence}</p></div> : null}
-            {row.review ? <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm"><p className="mb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Coach review</p><p className="whitespace-pre-wrap">{row.review}</p></div> : null}
+            {row.memberEvidence ? <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm"><p className="mb-0.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Member progress</p><p className="whitespace-pre-wrap">{row.memberEvidence}</p></div> : null}
+            {row.review ? <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm"><p className="mb-0.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">Coach review</p><p className="whitespace-pre-wrap">{row.review}</p></div> : null}
             {row.status === "assigned" && row.memberId === data.memberId && <Disclosure summary="Submit progress…">
               <Form operation="progress" scope={row.id} {...formProps} submitLabel="Submit progress">
                 <input type="hidden" name="id" value={row.id}/><input type="hidden" name="status" value="submitted"/>
@@ -363,7 +363,7 @@ export function TrainingWorkspace({ data, member = false, error, success, retry,
               <Td className="text-muted-foreground">{name(data.locations, row.locationId)}</Td>
               <Td>{row.type === "recurring" ? `Every ${WEEKDAYS[row.dayOfWeek]}` : row.date ? dayOf(row.date) : "Undated"}</Td>
               <Td className="tabular-nums">{row.startTime}–{row.endTime}</Td>
-              <Td><StatusPill tone={row.isAvailable ? "positive" : "neutral"}>{row.isAvailable ? "Available" : "Unavailable"}</StatusPill>{row.effectiveFrom || row.effectiveTo ? <span className="mt-1 block text-[11px] text-muted-foreground">{row.effectiveFrom ? `from ${dayOf(row.effectiveFrom)}` : ""} {row.effectiveTo ? `until ${dayOf(row.effectiveTo)}` : ""}</span> : null}</Td>
+              <Td><StatusPill tone={row.isAvailable ? "positive" : "neutral"}>{row.isAvailable ? "Available" : "Unavailable"}</StatusPill>{row.effectiveFrom || row.effectiveTo ? <span className="mt-1 block text-xs text-muted-foreground">{row.effectiveFrom ? `from ${dayOf(row.effectiveFrom)}` : ""} {row.effectiveTo ? `until ${dayOf(row.effectiveTo)}` : ""}</span> : null}</Td>
               {data.canManageAppointments ? <Td>
                 <Disclosure summary="Edit">
                   <Form operation="availability" scope={row.id} {...formProps} submitLabel="Save changes" note="Owner and location stay the same; changes that conflict with booked appointments are rejected.">

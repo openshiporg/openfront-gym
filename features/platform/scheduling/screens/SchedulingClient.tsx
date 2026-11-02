@@ -362,7 +362,7 @@ export function SchedulingClient({
                 <div className="max-h-[36rem] overflow-y-auto">
                   {upcomingGroups.map((group) => (
                     <section key={group.key} aria-label={group.heading}>
-                      <h3 className="sticky top-0 z-10 flex items-center justify-between border-b bg-muted/80 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur sm:px-5">
+                      <h3 className="sticky top-0 z-10 flex items-center justify-between border-b bg-muted/80 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur sm:px-5">
                         <span>{group.heading}</span>
                         <span className="font-medium normal-case tracking-normal tabular-nums">{group.items.length}</span>
                       </h3>
@@ -442,7 +442,7 @@ export function SchedulingClient({
                   {sortedSchedules.map((schedule) => (
                     <li key={schedule.id} className={schedule.isActive ? 'px-4 py-3 sm:px-5' : 'bg-muted/20 px-4 py-3 sm:px-5'}>
                       <div className="flex items-start gap-3">
-                        <span className={schedule.isActive ? 'grid h-9 w-11 shrink-0 place-items-center rounded-md border bg-background text-[11px] font-semibold uppercase tracking-wider' : 'grid h-9 w-11 shrink-0 place-items-center rounded-md border border-dashed text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'}>
+                        <span className={schedule.isActive ? 'grid h-9 w-11 shrink-0 place-items-center rounded-md border bg-background text-xs font-semibold uppercase tracking-wider' : 'grid h-9 w-11 shrink-0 place-items-center rounded-md border border-dashed text-xs font-semibold uppercase tracking-wider text-muted-foreground'}>
                           {schedule.dayOfWeek.slice(0, 3)}
                         </span>
                         <div className="min-w-0 flex-1">

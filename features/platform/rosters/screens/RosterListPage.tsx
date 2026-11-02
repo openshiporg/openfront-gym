@@ -115,15 +115,15 @@ export async function RosterListPage({ searchParams }: { searchParams?: Promise<
             <form method="get" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_9.5rem_9.5rem_9rem_auto]">
               {state !== "all" ? <input type="hidden" name="state" value={state} /> : null}
               <SearchField name="q" defaultValue={q} label="Search rosters" placeholder="Class, instructor, or location" />
-              <label className="grid gap-1 text-[11px] text-muted-foreground">
+              <label className="grid gap-1 text-xs text-muted-foreground">
                 From
                 <FieldInput type="date" name="from" defaultValue={from} aria-label="From date" />
               </label>
-              <label className="grid gap-1 text-[11px] text-muted-foreground">
+              <label className="grid gap-1 text-xs text-muted-foreground">
                 To
                 <FieldInput type="date" name="to" defaultValue={to} aria-label="To date" />
               </label>
-              <label className="grid gap-1 text-[11px] text-muted-foreground">
+              <label className="grid gap-1 text-xs text-muted-foreground">
                 Order
                 <NativeSelect name="sort" defaultValue={sort}>
                   <option value="soonest">Soonest first</option>
@@ -133,7 +133,7 @@ export async function RosterListPage({ searchParams }: { searchParams?: Promise<
               </label>
               <Button type="submit" variant="outline" className="self-end">Apply</Button>
             </form>
-            <p className="text-[11px] text-muted-foreground">{from ? "" : "Without a start date the queue begins 24 hours ago. "}Dates use the gym&apos;s time zone{page?.timeZone ? ` (${page.timeZone})` : ""}.</p>
+            <p className="text-xs text-muted-foreground">{from ? "" : "Without a start date the queue begins 24 hours ago. "}Dates use the gym&apos;s time zone{page?.timeZone ? ` (${page.timeZone})` : ""}.</p>
           </div>
 
           {!result.ok ? null : sessions.length === 0 ? (
@@ -156,7 +156,7 @@ export async function RosterListPage({ searchParams }: { searchParams?: Promise<
             <div>
               {groups.map((group) => (
                 <section key={group.key} aria-label={group.heading}>
-                  <h2 className="flex items-center justify-between border-b bg-muted/50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:px-5">
+                  <h2 className="flex items-center justify-between border-b bg-muted/50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-5">
                     <span>{group.heading}</span>
                     <span className="font-medium normal-case tracking-normal tabular-nums">{group.sessions.length} session{group.sessions.length === 1 ? "" : "s"}</span>
                   </h2>
@@ -174,7 +174,7 @@ export async function RosterListPage({ searchParams }: { searchParams?: Promise<
                             <p className={sessionState === "cancelled" ? "text-sm font-semibold text-muted-foreground line-through" : "text-sm font-semibold"}>
                               {formatRosterTime(session.date, session.gymTimezone)}
                             </p>
-                            {sort === "fullest" ? <p className="text-[11px] text-muted-foreground">{formatRosterDayHeading(session.date, session.gymTimezone, now)}</p> : null}
+                            {sort === "fullest" ? <p className="text-xs text-muted-foreground">{formatRosterDayHeading(session.date, session.gymTimezone, now)}</p> : null}
                           </div>
                           <div className="min-w-0">
                             <div className="flex min-w-0 flex-wrap items-center gap-2">

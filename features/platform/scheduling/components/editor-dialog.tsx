@@ -66,7 +66,7 @@ export function EditorSection({
   return (
     <section className="min-w-0 space-y-3">
       <div>
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</h3>
         {description ? <p className="mt-1 text-pretty text-xs leading-5 text-muted-foreground">{description}</p> : null}
       </div>
       {children}

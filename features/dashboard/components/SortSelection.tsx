@@ -124,7 +124,7 @@ export function SortSelection({ listMeta, children }: SortSelectionProps) {
             <Badge
               variant="destructive"
               onClick={resetSort}
-              className="rounded-sm mr-2 text-[10px] uppercase border tracking-wide font-medium py-0 px-1.5 cursor-pointer"
+              className="rounded-sm mr-2 text-xs uppercase border tracking-wide font-medium py-0 px-1.5 cursor-pointer"
             >
               Clear
             </Badge>
@@ -141,7 +141,7 @@ export function SortSelection({ listMeta, children }: SortSelectionProps) {
                   <span className="flex items-center justify-between w-full">
                     {fieldMeta.label}
                     {fieldPath === field && (
-                      <Badge className="rounded-sm border py-0 px-1.5 text-[10px] uppercase tracking-wide font-medium">
+                      <Badge className="rounded-sm border py-0 px-1.5 text-xs uppercase tracking-wide font-medium">
                         {direction}
                       </Badge>
                     )}
@@ -156,7 +156,7 @@ export function SortSelection({ listMeta, children }: SortSelectionProps) {
         className="rounded-l-none pl-3 pr-2"
         onClick={() => handleSortChange(field)}
       >
-        <span className="text-[10px] tracking-wide font-semibold uppercase">
+        <span className="text-xs tracking-wide font-semibold uppercase">
           {direction}
         </span>
         <div className="-space-y-2">

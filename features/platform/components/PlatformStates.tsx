@@ -86,7 +86,7 @@ export function PlatformError({ error, reset }: { error: Error & { digest?: stri
             the dashboard and reopen the page.
           </p>
           {error.digest ? (
-            <p className="mt-3 font-mono text-[11px] text-muted-foreground">Reference {error.digest}</p>
+            <p className="mt-3 font-mono text-xs text-muted-foreground">Reference {error.digest}</p>
           ) : null}
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
             <Button type="button" onClick={reset}>

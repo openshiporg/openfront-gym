@@ -78,7 +78,7 @@ export default function MemberDirectoryClient({ members, viewProfileBasePath, su
 
   return (
     <div role="table" aria-label="Members" className="min-w-0">
-      <div role="row" className={`hidden gap-4 border-b bg-muted/40 px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground lg:grid ${columns}`}>
+      <div role="row" className={`hidden gap-4 border-b bg-muted/40 px-4 py-2 text-xs font-medium uppercase tracking-wider text-muted-foreground lg:grid ${columns}`}>
         <span role="columnheader">Member</span>
         <span role="columnheader">Status</span>
         <span role="columnheader">Plan</span>

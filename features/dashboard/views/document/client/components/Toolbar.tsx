@@ -168,7 +168,7 @@ ToolbarButton.displayName = 'ToolbarButton'
 
 export function KeyboardInTooltip({ children }: { children: ReactNode }) {
   return (
-    <kbd className="ml-auto px-1 py-0 text-[10px] font-sans font-medium bg-muted text-foreground/80 rounded">
+    <kbd className="ml-auto px-1 py-0 text-xs font-sans font-medium bg-muted text-foreground/80 rounded">
       {children}
     </kbd>
   )
@@ -250,8 +250,8 @@ export function DocumentToolbar({ documentFeatures, viewState }: {
   return (
     <TooltipProvider>
       <div className="sticky top-0 z-10 border-b">
-        <div className="flex flex-row justify-between items-center h-10">
-          <div className="flex items-center gap-2 pl-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="flex flex-row justify-between items-start min-h-10">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1 pl-2">
             {!!documentFeatures.formatting.headingLevels.length && (
               <div className="flex [&>*]:rounded-none [&>*:first-child]:rounded-l-md [&>*:last-child]:rounded-r-md [&>*]:border [&>*]:border-input [&>*:not(:first-child)]:-ml-px">
                 <HeadingMenu

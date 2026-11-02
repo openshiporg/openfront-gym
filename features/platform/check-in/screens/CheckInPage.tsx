@@ -194,7 +194,7 @@ export async function CheckInPage({
                     <li key={entry.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
                       <div className="w-14 shrink-0 text-right">
                         <p className="text-sm font-semibold tabular-nums">{formatTime(entry.checkInTime, data.timeZone)}</p>
-                        <p className="text-[11px] text-muted-foreground">{formatDay(entry.checkInTime, data.timeZone)}</p>
+                        <p className="text-xs text-muted-foreground">{formatDay(entry.checkInTime, data.timeZone)}</p>
                       </div>
                       <div className="min-w-0 flex-1 border-l pl-3">
                         <p className="truncate text-sm font-medium">{entry.member?.name || "Unknown member"}</p>

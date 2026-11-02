@@ -235,7 +235,7 @@ export function CountBadge({ value, tone = "neutral" }: { value: number; tone?: 
   return (
     <span
       className={cn(
-        "inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-[11px] font-medium tabular-nums leading-none",
+        "inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-xs font-medium tabular-nums leading-none",
         pillTone[tone],
       )}
     >
@@ -296,7 +296,7 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex h-5 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-[11px] font-medium leading-none",
+        "inline-flex h-5 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-xs font-medium leading-4",
         pillTone[tone],
         className,
       )}
@@ -367,7 +367,7 @@ export function Initials({ name, className }: { name?: string | null; className?
     <span
       aria-hidden
       className={cn(
-        "grid size-8 shrink-0 place-items-center rounded-full bg-muted text-[11px] font-semibold uppercase tracking-wide text-muted-foreground",
+        "grid size-8 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold uppercase tracking-wide text-muted-foreground",
         className,
       )}
     >
@@ -458,7 +458,7 @@ export function SegmentedLinks({
             >
               {item.label}
               {typeof item.count === "number" ? (
-                <span className="tabular-nums text-[11px] text-muted-foreground">{item.count}</span>
+                <span className="tabular-nums text-xs text-muted-foreground">{item.count}</span>
               ) : null}
             </Link>
           </li>
@@ -698,7 +698,7 @@ export function Th({
     <th
       scope="col"
       className={cn(
-        "h-9 whitespace-nowrap border-b bg-muted/40 px-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground first:pl-4 last:pr-4 sm:first:pl-5 sm:last:pr-5",
+        "h-9 whitespace-nowrap border-b bg-muted/40 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground first:pl-4 last:pr-4 sm:first:pl-5 sm:last:pr-5",
         align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left",
         className,
       )}

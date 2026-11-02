@@ -116,7 +116,7 @@ export function CounterSaleForm({ action, loadItems, quote: requestQuote, locati
                 const quantity = cart[item.id]?.quantity || 0;
                 return (
                   <Tr key={item.id}>
-                    <Td><p className="font-medium">{item.name}</p><p className="font-mono text-[11px] text-muted-foreground">{item.sku}</p></Td>
+                    <Td><p className="font-medium">{item.name}</p><p className="font-mono text-xs text-muted-foreground">{item.sku}</p></Td>
                     <Td align="right">{money(item.unitAmount)}</Td>
                     <Td align="right" className={item.stockOnHand > 0 ? "" : "text-amber-700 dark:text-amber-400"}>{item.stockOnHand}</Td>
                     <Td align="right">

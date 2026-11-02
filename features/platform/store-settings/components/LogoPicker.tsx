@@ -126,9 +126,9 @@ export function LogoPicker({ value, hue, onChange }: LogoPickerProps) {
               {selectedIcon ? 'Edit as SVG' : 'Custom SVG'}
             </Button>
             {!value ? (
-              <span className="text-[11px] text-muted-foreground">Default mark · not saved yet</span>
+              <span className="text-xs text-muted-foreground">Default mark · not saved yet</span>
             ) : !selectedIcon ? (
-              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400">
+              <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
                 <CheckCircle2 className="size-3" aria-hidden /> Custom logo
               </span>
             ) : null}
@@ -141,7 +141,7 @@ export function LogoPicker({ value, hue, onChange }: LogoPickerProps) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <label htmlFor={`${editorId}-source`} className="text-xs font-medium">Custom SVG</label>
-              <p className="mt-0.5 text-pretty text-[11px] leading-4 text-muted-foreground">
+              <p className="mt-0.5 text-pretty text-xs leading-4 text-muted-foreground">
                 Paste a complete SVG. Scripts, links, images, styles, event handlers and external references are rejected; gradients and viewBox are kept.
               </p>
             </div>
@@ -161,7 +161,7 @@ export function LogoPicker({ value, hue, onChange }: LogoPickerProps) {
             id={`${editorId}-source`}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            className="mt-3 min-h-32 resize-y font-mono text-[11px] leading-4"
+            className="mt-3 min-h-32 resize-y font-mono text-xs leading-4"
             placeholder='<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">…</svg>'
             spellCheck={false}
             aria-invalid={rejection ? true : undefined}
@@ -180,7 +180,7 @@ export function LogoPicker({ value, hue, onChange }: LogoPickerProps) {
               <p
                 id={`${editorId}-status`}
                 role="status"
-                className={cn('min-w-0 text-pretty text-[11px] leading-4', rejection ? 'text-destructive' : 'text-muted-foreground')}
+                className={cn('min-w-0 text-pretty text-xs leading-4', rejection ? 'text-destructive' : 'text-muted-foreground')}
               >
                 {rejection ?? (hasValidDraft ? (hasDraftChanges ? 'Safe preview. Apply, then save changes to publish.' : 'This is the current logo.') : 'Paste an SVG to preview it.')}
               </p>

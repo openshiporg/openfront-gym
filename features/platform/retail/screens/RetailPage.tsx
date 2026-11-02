@@ -182,7 +182,7 @@ export default async function RetailPage({ searchParams }: { searchParams: Promi
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold tabular-nums">{money(sale.totalAmount)}</p>
                         <StatusPill tone={sale.tender === "cash" ? "neutral" : "info"} dot={false}>{humanize(sale.tender)}</StatusPill>
-                        <span className="font-mono text-[11px] text-muted-foreground">{sale.id}</span>
+                        <span className="font-mono text-xs text-muted-foreground">{sale.id}</span>
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {utcStamp(sale.soldAt)} · {sale.paymentReference || "cash"}
@@ -254,7 +254,7 @@ export default async function RetailPage({ searchParams }: { searchParams: Promi
           )}
           {data.returns.length ? (
             <div className="border-t">
-              <p className="bg-muted/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:px-5">Returns recorded</p>
+              <p className="bg-muted/40 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground sm:px-5">Returns recorded</p>
               <DataTable label="Returns recorded" minWidth="34rem">
                 <thead>
                   <tr><Th>Return</Th><Th>Sale</Th><Th>Reason</Th><Th align="right">Refunded</Th></tr>
@@ -262,8 +262,8 @@ export default async function RetailPage({ searchParams }: { searchParams: Promi
                 <tbody>
                   {data.returns.map((row: any) => (
                     <Tr key={row.id}>
-                      <Td className="font-mono text-[11px]">{row.id}</Td>
-                      <Td className="font-mono text-[11px] text-muted-foreground">{row.saleId}</Td>
+                      <Td className="font-mono text-xs">{row.id}</Td>
+                      <Td className="font-mono text-xs text-muted-foreground">{row.saleId}</Td>
                       <Td className="text-muted-foreground">{row.reason}</Td>
                       <Td align="right">{money(row.refundAmount)}</Td>
                     </Tr>
@@ -298,7 +298,7 @@ export default async function RetailPage({ searchParams }: { searchParams: Promi
               <tbody>
                 {data.items.map((row: any) => (
                   <Tr key={row.id}>
-                    <Td className="font-mono text-[11px]">{row.sku}</Td>
+                    <Td className="font-mono text-xs">{row.sku}</Td>
                     <Td className="font-medium">{row.name}</Td>
                     <Td className="text-muted-foreground">{siteName(row.locationId)}</Td>
                     <Td align="right">{money(row.unitAmount)}</Td>
@@ -387,7 +387,7 @@ export default async function RetailPage({ searchParams }: { searchParams: Promi
                 {data.stockEntries.map((row: any) => (
                   <Tr key={row.id}>
                     <Td className="whitespace-nowrap text-xs text-muted-foreground">{utcStamp(row.createdAt)}</Td>
-                    <Td className="font-mono text-[11px]">{row.item?.sku || row.itemId}</Td>
+                    <Td className="font-mono text-xs">{row.item?.sku || row.itemId}</Td>
                     <Td align="right" className={row.quantity > 0 ? "font-medium text-emerald-700 dark:text-emerald-400" : "font-medium text-rose-600 dark:text-rose-400"}>{row.quantity > 0 ? "+" : ""}{row.quantity}</Td>
                     <Td align="right">{row.balanceAfter}</Td>
                     <Td className="text-muted-foreground">{row.reason}</Td>

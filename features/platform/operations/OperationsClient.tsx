@@ -280,7 +280,7 @@ export function OperationsClient({ data }: { data: any }) {
               <NativeSelect name="kind">{CASE_KINDS.map((kind) => <option key={kind.value} value={kind.value}>{kind.label}</option>)}</NativeSelect>
             </FormField>
             <FormField label="Location">
-              <NativeSelect name="locationId"><option value="">All locations</option>{data.locations.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}</NativeSelect>{data.locationsTruncated ? <span className="text-[11px] text-muted-foreground">Showing the first 500 locations by name.</span> : null}
+              <NativeSelect name="locationId"><option value="">All locations</option>{data.locations.map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}</NativeSelect>{data.locationsTruncated ? <span className="text-xs text-muted-foreground">Showing the first 500 locations by name.</span> : null}
             </FormField>
             <FormField label="Member" optional>
               <NativeSelect name="memberId">{memberOptions}</NativeSelect>
@@ -306,7 +306,7 @@ export function OperationsClient({ data }: { data: any }) {
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill tone={c.kind === 'closure' ? 'danger' : c.kind === 'privacy' ? 'info' : 'neutral'} dot={false}>{CASE_KINDS.find((kind) => kind.value === c.kind)?.label || humanize(c.kind)}</StatusPill>
               <StatusPill tone={caseStatusTone(c.status)}>{humanize(c.status)}</StatusPill>
-              {c.reference ? <span className="font-mono text-[11px] text-muted-foreground">{c.reference}</span> : null}
+              {c.reference ? <span className="font-mono text-xs text-muted-foreground">{c.reference}</span> : null}
             </div>
             <p className="text-pretty text-sm">{c.summary}</p>
             {(c.history || []).length ? (
@@ -476,7 +476,7 @@ export function OperationsClient({ data }: { data: any }) {
                 <StatusPill tone={c.state === 'active' ? 'positive' : c.state === 'expired' ? 'warning' : 'neutral'}>{c.state === 'revoked' ? 'Revoked' : c.state === 'expired' ? `Expired ${stamp(c.expiresAt)}` : `Expires ${stamp(c.expiresAt)}`}</StatusPill>
               </div>
               <div className="mt-1 flex flex-wrap gap-1">
-                {(c.scopes || []).map((scope: string) => <code key={scope} className="rounded border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{scope}</code>)}
+                {(c.scopes || []).map((scope: string) => <code key={scope} className="rounded border bg-muted/50 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{scope}</code>)}
               </div>
             </div>
             {c.state === 'active' && <Button type="button" size="sm" variant="outline" className="text-rose-700 dark:text-rose-400" disabled={busy} onClick={() => run('credential.revoke', { id: c.id })}>Revoke</Button>}
@@ -521,9 +521,9 @@ export function OperationsClient({ data }: { data: any }) {
                 <p className="text-sm font-medium">{e.eventType}</p>
                 <StatusPill tone={eventStatusTone(e.status)}>{humanize(e.status)}</StatusPill>
                 <CountBadge value={e.attempts} />
-                <span className="text-[11px] text-muted-foreground">attempts</span>
+                <span className="text-xs text-muted-foreground">attempts</span>
               </div>
-              <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{e.providerEventId}</p>
+              <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{e.providerEventId}</p>
             </div>
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={async () => { setBusy(true); try { const result = await retryPaymentEvent(e.id); setMessage(result.success ? { tone: 'positive', text: 'Event replayed.' } : { tone: 'danger', text: result.error || 'Replay failed' }); router.refresh(); } catch { setMessage({ tone: 'danger', text: 'Replay request failed; inspect the event before retrying.' }); } finally { setBusy(false); } }}>
               <RefreshCw aria-hidden /> Retry recorded event

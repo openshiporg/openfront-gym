@@ -72,8 +72,8 @@ function EventRow({ event, compact = false }: { event: WallEvent; compact?: bool
         eventTone(event.color, event.isCancelled),
       )}
     >
-      <span className={cn("block truncate font-medium", compact ? "text-[11px] leading-4" : "text-sm")}>{event.title}</span>
-      <span className={cn("flex min-w-0 items-center gap-1.5 text-muted-foreground", compact ? "text-[10px] leading-4" : "mt-0.5 text-xs")}>
+      <span className={cn("block truncate font-medium", compact ? "text-xs leading-4" : "text-sm")}>{event.title}</span>
+      <span className={cn("flex min-w-0 items-center gap-1.5 text-muted-foreground", compact ? "text-xs leading-4" : "mt-0.5 text-xs")}>
         <span className="tabular-nums">{event.startLabel}</span>
         {!compact ? (
           <>
@@ -255,7 +255,7 @@ export function ExperimentalCalendar({
         <div className="overflow-x-auto" aria-label="Month calendar">
           <div className="grid min-w-[720px] grid-cols-7">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-              <div key={day} className="border-b border-r bg-muted/40 px-2 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground last:border-r-0">{day}</div>
+              <div key={day} className="border-b border-r bg-muted/40 px-2 py-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground last:border-r-0">{day}</div>
             ))}
             {monthDays.map((day, index) => {
               const dayEvents = eventsForDay(day)
@@ -287,12 +287,12 @@ export function ExperimentalCalendar({
                     >
                       {format(day, "d")}
                     </span>
-                    {dayEvents.length ? <span className="text-[10px] font-medium tabular-nums text-muted-foreground">{dayEvents.length}</span> : null}
+                    {dayEvents.length ? <span className="text-xs font-medium tabular-nums text-muted-foreground">{dayEvents.length}</span> : null}
                   </button>
                   <div className="space-y-1">
                     {dayEvents.slice(0, 2).map((event) => <EventRow key={event.id} event={event} compact />)}
                     {dayEvents.length > 2 ? (
-                      <button type="button" onClick={() => setSelectedDate(day)} className="px-1 text-[11px] font-medium text-muted-foreground hover:text-foreground">
+                      <button type="button" onClick={() => setSelectedDate(day)} className="px-1 text-xs font-medium text-muted-foreground hover:text-foreground">
                         +{dayEvents.length - 2} more
                       </button>
                     ) : null}
@@ -314,10 +314,10 @@ export function ExperimentalCalendar({
               <div key={day.toISOString()} className={cn("min-w-0 p-3", isToday && "bg-muted/40")}>
                 <div className="mb-2 flex items-center justify-between">
                   <div>
-                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{format(day, "EEE")}</p>
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{format(day, "EEE")}</p>
                     <p className={cn("text-sm font-semibold tabular-nums", isToday && "underline decoration-2 underline-offset-4")}>{format(day, "MMM d")}</p>
                   </div>
-                  <span className="text-[11px] tabular-nums text-muted-foreground">{dayEvents.length || ""}</span>
+                  <span className="text-xs tabular-nums text-muted-foreground">{dayEvents.length || ""}</span>
                 </div>
                 <div className="space-y-1.5">{dayEvents.length ? dayEvents.map((event) => <EventRow key={event.id} event={event} />) : <p className="py-2 text-xs text-muted-foreground">{emptyText("No sessions")}</p>}</div>
               </div>
@@ -336,7 +336,7 @@ export function ExperimentalCalendar({
             if (!dayEvents.length) return null
             return (
               <div key={day.toISOString()} className="grid gap-3 px-4 py-3 sm:grid-cols-[8rem_minmax(0,1fr)] sm:px-5">
-                <h3 className="text-sm font-semibold">{format(day, "EEE, MMM d")}{isSameDay(day, today) ? <span className="ml-2 text-[11px] font-medium text-muted-foreground">Today</span> : null}</h3>
+                <h3 className="text-sm font-semibold">{format(day, "EEE, MMM d")}{isSameDay(day, today) ? <span className="ml-2 text-xs font-medium text-muted-foreground">Today</span> : null}</h3>
                 <div className="grid gap-1.5 md:grid-cols-2">{dayEvents.map((event) => <EventRow key={event.id} event={event} />)}</div>
               </div>
             )

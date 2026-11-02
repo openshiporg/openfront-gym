@@ -194,7 +194,7 @@ export function EditorHeader({
   return (
     <div className="sticky top-2 z-20 flex flex-col gap-3 rounded-xl border bg-card/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/85 sm:flex-row sm:items-center sm:justify-between sm:px-5">
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
           {isNew ? 'New record' : 'Editing'}
         </p>
         <h2 className="truncate text-base font-semibold tracking-tight">{title}</h2>

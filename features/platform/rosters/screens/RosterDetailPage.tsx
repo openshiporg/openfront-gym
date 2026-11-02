@@ -289,7 +289,7 @@ export async function RosterDetailPage({ id, searchParams = {} }: { id: string; 
                           <MemberIdentity booking={booking} />
                           <div className="flex shrink-0 flex-col items-start gap-1 pl-11 sm:items-end sm:pl-0">
                             <StatusPill tone={attendance.tone}>{attendance.label}</StatusPill>
-                            <p className="text-[11px] text-muted-foreground">
+                            <p className="text-xs text-muted-foreground">
                               {booking.attendance?.markedAt
                                 ? `Marked ${formatRosterAuditDateTime(booking.attendance.markedAt, session.gymTimezone)}`
                                 : `Booked ${formatRosterAuditDateTime(booking.bookedAt, session.gymTimezone)}`}
@@ -309,7 +309,7 @@ export async function RosterDetailPage({ id, searchParams = {} }: { id: string; 
                       <MemberIdentity booking={booking} />
                       <div className="flex shrink-0 flex-col items-start gap-1 pl-11 sm:items-end sm:pl-0">
                         <StatusPill>{humanize(booking.status)}</StatusPill>
-                        <p className="text-[11px] text-muted-foreground">Booked {formatRosterAuditDateTime(booking.bookedAt, session.gymTimezone)}</p>
+                        <p className="text-xs text-muted-foreground">Booked {formatRosterAuditDateTime(booking.bookedAt, session.gymTimezone)}</p>
                       </div>
                     </li>
                   ))}
@@ -369,7 +369,7 @@ export async function RosterDetailPage({ id, searchParams = {} }: { id: string; 
                             {booking.eligibilityReviewReason ? (
                               <p className="mt-1 text-xs font-medium text-rose-700 dark:text-rose-400">Review: {booking.eligibilityReviewReason}</p>
                             ) : null}
-                            <p className="mt-1 text-[11px] text-muted-foreground">Joined {formatRosterAuditDateTime(booking.bookedAt, session.gymTimezone)}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Joined {formatRosterAuditDateTime(booking.bookedAt, session.gymTimezone)}</p>
                           </div>
                         </div>
                         {index === 0 && (pages.waitlist?.skip ?? 0) === 0 ? (

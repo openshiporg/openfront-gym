@@ -299,7 +299,7 @@ export function BillingDashboardClient({
                             />
                             <div className="flex shrink-0 flex-col items-end gap-1">
                               <BillingStatus status={membership.status} />
-                              {!hasProvider ? <span className="text-[11px] text-muted-foreground">No provider subscription</span> : null}
+                              {!hasProvider ? <span className="text-xs text-muted-foreground">No provider subscription</span> : null}
                             </div>
                           </div>
                           {hasProvider ? (
@@ -356,11 +356,11 @@ export function BillingDashboardClient({
                         <div className="flex items-start justify-between gap-3">
                           <PersonCell
                             name={payment.member?.name || 'Unknown member'}
-                            detail={<span className="font-mono text-[11px]">{payment.receiptNumber || payment.description || payment.id}</span>}
+                            detail={<span className="font-mono text-xs">{payment.receiptNumber || payment.description || payment.id}</span>}
                           />
                           <div className="shrink-0 text-right">
                             <p className="text-sm font-semibold tabular-nums">{formatMinorUnits(remaining, payment.currencyCode)}</p>
-                            <p className="text-[11px] text-muted-foreground">
+                            <p className="text-xs text-muted-foreground">
                               refundable{payment.refundAmount ? ` · ${formatMinorUnits(payment.refundAmount, payment.currencyCode)} already refunded` : ''}
                             </p>
                           </div>
@@ -449,7 +449,7 @@ export function BillingDashboardClient({
                         <p className="font-medium tabular-nums">
                           {formatMinorUnits(payment.amount - (payment.refundAmount || 0), payment.currencyCode || stats?.currencyCode || 'USD')}
                         </p>
-                        {payment.refundAmount ? <p className="text-[11px] text-muted-foreground">net after refund</p> : null}
+                        {payment.refundAmount ? <p className="text-xs text-muted-foreground">net after refund</p> : null}
                       </div>
                     </li>
                   ))}
