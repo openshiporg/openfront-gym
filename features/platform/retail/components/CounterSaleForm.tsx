@@ -1,4 +1,5 @@
 "use client";
+import { ViewerTime } from "@/features/dashboard/components/ViewerTime";
 import { useEffect, useState, useTransition } from "react";
 import { Boxes } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -154,7 +155,7 @@ export function CounterSaleForm({ action, loadItems, quote: requestQuote, locati
       {reviewError ? <Notice tone="danger">{reviewError}</Notice> : null}
       {reviewed ? (
         <Notice tone="info" title={`Reviewed total ${money(reviewed.totalAmount)}`}>
-          {reviewed.lines.map((line: any) => `${line.quantity} × ${line.name} at ${money(line.unitAmount)}`).join(" · ")}. Valid until {new Intl.DateTimeFormat("en-US", { timeStyle: "short" }).format(new Date(reviewed.expiresAt))}.
+          {reviewed.lines.map((line: any) => `${line.quantity} × ${line.name} at ${money(line.unitAmount)}`).join(" · ")}. Valid until <ViewerTime value={reviewed.expiresAt} style="datetime" />.
         </Notice>
       ) : null}
       {reviewed ? (

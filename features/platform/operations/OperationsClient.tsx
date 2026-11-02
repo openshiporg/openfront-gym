@@ -1,4 +1,5 @@
 'use client';
+import { ViewerTime } from '@/features/dashboard/components/ViewerTime';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -63,9 +64,7 @@ function eventStatusTone(status?: string): Tone {
 
 function stamp(value?: string | null) {
   if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date);
+  return <ViewerTime value={value} style="datetime" fallback={value} />;
 }
 
 function FormRow({ children, className }: { children: ReactNode; className?: string }) {
@@ -473,7 +472,7 @@ export function OperationsClient({ data }: { data: any }) {
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-sm font-medium">{c.label}</p>
                 <span className="text-xs text-muted-foreground">{c.partner}</span>
-                <StatusPill tone={c.state === 'active' ? 'positive' : c.state === 'expired' ? 'warning' : 'neutral'}>{c.state === 'revoked' ? 'Revoked' : c.state === 'expired' ? `Expired ${stamp(c.expiresAt)}` : `Expires ${stamp(c.expiresAt)}`}</StatusPill>
+                <StatusPill tone={c.state === 'active' ? 'positive' : c.state === 'expired' ? 'warning' : 'neutral'}>{c.state === 'revoked' ? 'Revoked' : c.state === 'expired' ? <>Expired {stamp(c.expiresAt)}</> : <>Expires {stamp(c.expiresAt)}</>}</StatusPill>
               </div>
               <div className="mt-1 flex flex-wrap gap-1">
                 {(c.scopes || []).map((scope: string) => <code key={scope} className="rounded border bg-muted/50 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">{scope}</code>)}
