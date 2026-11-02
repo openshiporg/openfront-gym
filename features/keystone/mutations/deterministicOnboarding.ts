@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import seed from "../onboarding/seed.json";
 import { parseGymOnboardingSeed, type GymOnboardingSeed } from "../onboarding/onboardingSchema";
 import { normalizeGymSettingsInput } from "./gymSettingsLifecycle";
-import { DEFAULT_GYM_LOGO_ICON, DEFAULT_LIBRARY_LOGO_COLOR } from "../lib/storefront-branding";
+import { adoptedSettingsLogoPatch, starterSettingsValues } from "../../platform/onboarding/lib/starterBrand";
 import { editorWeeklyHours } from "../lib/gym-hours";
 import { lockTransactionKey } from "./classCapacity";
 import { saveControlledOccurrence } from "../lib/class-scheduling";
@@ -239,14 +239,14 @@ export async function runDeterministicOnboarding(
     const existingSettings = await tx.gymSettings.findFirst({ where: { organizationId }, select: { id: true, logoIcon: true } });
     if (existingSettings) {
       manifest.records.settings = adopted("settings", existingSettings.id);
-      if (!existingSettings.logoIcon) await tx.gymSettings.update({ where: { id: existingSettings.id }, data: { logoIcon: DEFAULT_GYM_LOGO_ICON } });
+      const logoPatch = adoptedSettingsLogoPatch(existingSettings);
+      if (logoPatch) await tx.gymSettings.update({ where: { id: existingSettings.id }, data: logoPatch });
     } else {
       const { participationTerms: _terms, ...seedSettings } = onboardingSeed.gymSettings as any;
-      const values = normalizeGymSettingsInput({
-        logoIcon: DEFAULT_GYM_LOGO_ICON, logoColor: DEFAULT_LIBRARY_LOGO_COLOR,
+      const values = normalizeGymSettingsInput(starterSettingsValues({
         ...seedSettings,
         ...(seedSettings.hours ? { hours: editorWeeklyHours(seedSettings.hours) } : {}),
-      });
+      }));
       const row = await sudo.db.GymSettings.createOne({ data: { ...values, organization: { connect: { id: organizationId } } } });
       manifest.records.settings = created("settings", String(row.id));
     }
