@@ -1269,6 +1269,11 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
 @layer components {
   .sf-coach-photo:has(> .sf-monogram) { background: linear-gradient(145deg, #2a2c34, #15161b); box-shadow: var(--sf-card-shadow); }
   .sf-coach-photo > .sf-monogram { color: #fff; }
+  /* Coach detail: the same dark tile, sized as a portrait card rather than a full-width block on phones. */
+  .sf-portrait:has(> .sf-monogram) { background: linear-gradient(145deg, #2a2c34, #15161b); box-shadow: var(--sf-card-shadow); }
+  .sf-portrait > .sf-monogram { color: #fff; }
+  @media (max-width: 899px) { .sf-portrait:has(> .sf-monogram) { order: -1; width: 112px; aspect-ratio: 1; border-radius: 24px; } .sf-portrait > .sf-monogram { font-size: 2.25rem; } }
+  @media (min-width: 900px) { .sf-portrait:has(> .sf-monogram) { max-width: 320px; } }
 
   /* Rigel fidelity: each day is one compact row (session text, coach photo, date) as in the design. */
   @media (min-width: 900px) {
