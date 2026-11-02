@@ -3389,6 +3389,7 @@ type MembershipTier {
   monthlyPrice: Float
   annualPrice: Float
   classCreditsPerMonth: Int
+  classCreditsLabel: String
   accessHours: String
   guestPasses: Int
   personalTrainingSessions: Int
@@ -3559,6 +3560,7 @@ type Membership {
   nextBillingDate: DateTime
   autoRenew: Boolean
   classCreditsRemaining: Int
+  classCreditsLeft: String
   freezeStartDate: DateTime
   freezeEndDate: DateTime
   payments(where: MembershipPaymentWhereInput! = {}, orderBy: [MembershipPaymentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipPaymentWhereUniqueInput): [MembershipPayment!]
@@ -5680,6 +5682,7 @@ type Instructor {
   availabilityCount(where: TrainerAvailabilityWhereInput! = {}): Int
   appointments(where: TrainerAppointmentWhereInput! = {}, orderBy: [TrainerAppointmentOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: TrainerAppointmentWhereUniqueInput): [TrainerAppointment!]
   appointmentsCount(where: TrainerAppointmentWhereInput! = {}): Int
+  specialtiesLabel: String
   displayName: String
   totalClassesTaught: Int
   averageRating: Float

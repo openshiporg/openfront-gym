@@ -1,4 +1,4 @@
-import { list } from "@keystone-6/core";
+import { graphql, list } from "@keystone-6/core";
 import { allOperations, denyAll } from "@keystone-6/core/access";
 import {
   relationship,
@@ -8,10 +8,12 @@ import {
   integer,
   text,
   json,
+  virtual,
 } from "@keystone-6/core/fields";
 
 import { isSignedIn, permissions, rules } from "../access";
 import { trackingFields } from "./trackingFields";
+import { creditsLabel } from "../../../lib/list-labels";
 import { membershipLifecycleHooks } from "../mutations/gymLifecyclePolicy";
 import { requiredRelationshipDb, validateTenantOwnership, restrictDeleteDb } from "./tenantRelationships";
 
@@ -116,8 +118,20 @@ export const Membership = list({
       access: { update: denyAll },
       defaultValue: 0,
       ui: {
-        description: "Remaining class credits for current billing period",
+        description: "Remaining class credits for current billing period (-1 for unlimited)",
+        // The readable "Class credits left" field is shown instead of the raw sentinel.
+        itemView: { fieldMode: "hidden" },
       },
+    }),
+
+    // Readable balance for lists and the item page: the -1 sentinel reads as "Unlimited".
+    classCreditsLeft: virtual({
+      field: graphql.field({
+        type: graphql.String,
+        resolve: (item: any) => creditsLabel(item.classCreditsRemaining),
+      }),
+      label: "Class credits left",
+      ui: { createView: { fieldMode: "hidden" } },
     }),
 
     freezeStartDate: timestamp({

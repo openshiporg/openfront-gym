@@ -55,7 +55,7 @@ export const Logo = ({
             "font-bold uppercase text-muted-foreground",
             isSidebar
               ? "mt-0.5 text-[8px] leading-none tracking-[0.14em]"
-              : "text-xs tracking-wider",
+              : "text-[10px] tracking-wider",
           )}
         >
           Gym

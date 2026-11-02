@@ -15,6 +15,7 @@ import { trackingFields } from "./trackingFields";
 import { normalizeOnboardingMediaPath } from "../mutations/gymSettingsLifecycle";
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 import { retireUnderSchedulingLock } from "../lib/lifecycle-guards";
+import { specialtiesLabel } from "../../../lib/list-labels";
 
 /**
  * Certifications are display strings or structured qualification entries
@@ -96,7 +97,7 @@ export const Instructor = list({
     // instructor-role accounts; the generic create form's account picker is not offered.
     hideCreate: true,
     listView: {
-      initialColumns: ["user", "specialties", "isActive"],
+      initialColumns: ["user", "specialtiesLabel", "isActive"],
     },
     // A scalar label: the shared dashboard core selects labels as scalars (`label: <field>`).
     labelField: "displayName",
@@ -184,6 +185,16 @@ export const Instructor = list({
       ref: "TrainerAppointment.instructor",
       many: true,
       access: { create: denyAll, update: denyAll },
+    }),
+
+    // List column: specialties read as "Spin, Zumba", not as a JSON array.
+    specialtiesLabel: virtual({
+      field: graphql.field({
+        type: graphql.String,
+        resolve: (item: any) => specialtiesLabel(item.specialties),
+      }),
+      label: "Specialties",
+      ui: { itemView: { fieldMode: "hidden" }, createView: { fieldMode: "hidden" } },
     }),
 
     displayName: virtual({

@@ -30,7 +30,7 @@ export async function getList(listKey: string) {
     // Transform fields into a record for easier access
     const fields: Record<string, any> = {}
     rawList.fields.forEach((field: any) => {
-      fields[field.path] = { ...field, listKey: rawList.key }
+      fields[field.path] = field
     })
 
     // List is already enhanced with gqlNames from getAdminMetaAction

@@ -12,7 +12,6 @@ import { FieldLabel } from '@/components/ui/field-label'
 import { FieldDescription } from '@/components/ui/field-description'
 import { Info } from 'lucide-react'
 import { entriesTyped } from '../../lib/entriesTyped'
-import { formatCreditValue, isClassCreditField } from '@/lib/class-credits'
 import type {
   FieldController,
   FieldControllerConfig,
@@ -145,29 +144,22 @@ export function Field({
   )
 }
 
-/** Text shown for an integer value; class-credit fields render the -1 sentinel as "Unlimited". */
-export function formatIntegerValue(field: { listKey?: string; path: string }, value: unknown): string | null {
-  if (value === null || value === undefined) return null
-  if (isClassCreditField(field.listKey, field.path)) return formatCreditValue(value as number)
-  return String(value)
-}
-
 export function Cell({ item, field }: CellProps) {
-  const text = formatIntegerValue(field, item[field.path])
+  const value = item[field.path]
   return (
     <span className="text-sm font-mono">
-      {text !== null ? text : <span className="text-muted-foreground">—</span>}
+      {value !== null && value !== undefined ? value.toString() : <span className="text-muted-foreground">—</span>}
     </span>
   )
 }
 
 export function CardValue({ item, field }: CellProps) {
-  const text = formatIntegerValue(field, item[field.path])
+  const value = item[field.path]
   return (
     <div>
       <div className="text-sm font-medium">{field.label}</div>
       <div className="text-sm text-muted-foreground font-mono">
-        {text !== null ? text : '—'}
+        {value !== null && value !== undefined ? value.toString() : '—'}
       </div>
     </div>
   )

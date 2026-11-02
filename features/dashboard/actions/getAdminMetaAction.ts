@@ -139,7 +139,7 @@ export async function getAdminMetaAction(listKey?: string): Promise<KeystoneResp
       // Transform fields into a record for easier access
       const fields: Record<string, any> = {}
       list.fields.forEach((field: any) => {
-        fields[field.path] = { ...field, listKey: list.key }
+        fields[field.path] = field
       })
 
       return {

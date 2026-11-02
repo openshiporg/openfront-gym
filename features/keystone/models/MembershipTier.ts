@@ -1,4 +1,4 @@
-import { list } from "@keystone-6/core";
+import { graphql, list } from "@keystone-6/core";
 import { allOperations, denyAll } from "@keystone-6/core/access";
 import {
   text,
@@ -8,6 +8,7 @@ import {
   select,
   json,
   relationship,
+  virtual,
 } from "@keystone-6/core/fields";
 import { document } from "@keystone-6/fields-document";
 
@@ -18,6 +19,7 @@ import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } fro
 
 import { decimalToMinor } from "../../integrations/payment/commercial-agreement";
 import { membershipAccessWindow } from "../lib/membership-access-hours";
+import { creditsLabel } from "../../../lib/list-labels";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 
 const validateMembershipTierTenant = validateTenantOwnership([]);
@@ -110,7 +112,7 @@ export const MembershipTier = list({
   },
   ui: {
     listView: {
-      initialColumns: ["name", "monthlyPrice", "annualPrice", "classCreditsPerMonth"],
+      initialColumns: ["name", "monthlyPrice", "annualPrice", "classCreditsLabel"],
     },
   },
   fields: {
@@ -156,6 +158,16 @@ export const MembershipTier = list({
       ui: {
         description: "Number of class credits per month (-1 for unlimited)",
       },
+    }),
+
+    // List column: the stored -1 sentinel reads as "Unlimited", never "-1".
+    classCreditsLabel: virtual({
+      field: graphql.field({
+        type: graphql.String,
+        resolve: (item: any) => creditsLabel(item.classCreditsPerMonth),
+      }),
+      label: "Classes per month",
+      ui: { itemView: { fieldMode: "hidden" }, createView: { fieldMode: "hidden" } },
     }),
 
     accessHours: text({
