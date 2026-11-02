@@ -414,7 +414,7 @@ export function SectionNav({
 }) {
   return (
     <nav aria-label="Sections on this page" className={className}>
-      <ul data-seg-track className={cn(segmentedTrackClass, "gap-1 rounded-lg border bg-muted/40 p-1")}>
+      <ul className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border bg-muted/40 p-1">
         {items.map((item) => (
           <li key={item.id}>
             <a
@@ -443,7 +443,7 @@ export function SegmentedLinks({
 }) {
   return (
     <nav aria-label={label} className={cn("max-w-full", className)}>
-      <ul data-seg-track className={cn(segmentedTrackClass, "gap-0.5 rounded-lg border bg-muted/50 p-0.5")}>
+      <ul className="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-lg border bg-muted/50 p-0.5">
         {items.map((item) => (
           <li key={item.href}>
             <Link
