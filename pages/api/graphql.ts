@@ -3,7 +3,6 @@ import { createYoga } from "graphql-yoga";
 import { gymGraphqlAdmissionPlugin } from "../../features/keystone/security/graphql-limits";
 import { graphqlListPathMultiplierPlugin } from "../../features/keystone/security/graphql-query-cost";
 import { suspendedTenantPlugin } from "../../features/keystone/security/tenant-status";
-import { useDemoGuardErrors } from "../../features/keystone/lib/demo-guard";
 import { gymMaskedErrors } from "../../features/keystone/security/graphql-errors";
 // @ts-ignore
 import processRequest from "graphql-upload/processRequest.js";
@@ -63,7 +62,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   return createYoga({
-    plugins: [gymGraphqlAdmissionPlugin, graphqlListPathMultiplierPlugin, suspendedTenantPlugin, useDemoGuardErrors()],
+    plugins: [gymGraphqlAdmissionPlugin, graphqlListPathMultiplierPlugin, suspendedTenantPlugin],
     maskedErrors: gymMaskedErrors,
     renderGraphiQL: () => {
       return `

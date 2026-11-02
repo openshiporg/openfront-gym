@@ -1,4 +1,3 @@
-import { assertNotDemo } from "./demo-guard";
 import { budgetKey, consumeAuthAttempt } from "../../../lib/authRateLimit";
 
 /**
@@ -34,7 +33,6 @@ export async function changeMemberPassword(
 ) {
   const userId = context.session?.itemId;
   if (!userId) throw new Error("Authentication required");
-  await assertNotDemo(context);
   if (typeof newPassword !== "string" || newPassword.length < 12 || newPassword.length > 128) throw new Error("Use a new password of 12 to 128 characters");
   if (newPassword !== confirmPassword) throw new Error("The new passwords don't match");
   await verifyCurrentPassword(context, userId, currentPassword);

@@ -8,7 +8,6 @@ import { extendGraphqlSchema } from "./mutations";
 import { mailDeliveryEnabled, sendPasswordResetEmail } from "./lib/mail";
 import { permissions } from "./access";
 import { withGraphqlListMaxTake } from "./security/graphql-limits";
-import { withDemoGuard } from "./lib/demo-guard";
 
 const isNextBuild = process.env.NEXT_PHASE === "phase-production-build";
 const strictConfig = (!isNextBuild && process.env.NODE_ENV === "production") || process.env.GYM_STRICT_CONFIG === "true";
@@ -171,7 +170,7 @@ export default withAuth(
       provider: "postgresql",
       url: databaseURL,
     },
-    lists: withDemoGuard(withGraphqlListMaxTake(models)),
+    lists: withGraphqlListMaxTake(models),
     storage: {
       my_images: {
         kind: "s3",

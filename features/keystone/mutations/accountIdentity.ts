@@ -5,7 +5,6 @@ import { mailDeliveryEnabled, sendEmailChangeConfirmation, sendEmailChangedNotic
 import { resolvePublicBaseUrl } from "../lib/internal-origin";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { lockTransactionKey } from "./classCapacity";
-import { assertNotDemo } from "../lib/demo-guard";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CONFIRMATION_MINUTES = 60;
@@ -29,7 +28,6 @@ export async function requestEmailChange(
   context: any,
 ): Promise<{ pendingEmail: string; mail: MailOutcome | "failed" }> {
   const userId = signedInUser(context);
-  await assertNotDemo(context);
   const email = normalizeAuthIdentity(newEmail);
   if (!emailPattern.test(email) || email.length > 254 || email.endsWith(".invalid")) throw new Error("Enter a valid email address");
   if (!mailDeliveryEnabled()) throw new Error("Changing your sign-in email needs email, which is turned off right now");
@@ -59,7 +57,6 @@ export async function requestEmailChange(
  */
 export async function confirmEmailChange(_root: unknown, { token }: { token: string }, context: any) {
   const userId = signedInUser(context);
-  await assertNotDemo(context);
   if (typeof token !== "string" || !token || token.length > 200) throw new Error("This confirmation link is not valid");
   const prisma = guardKeystonePrismaResults(context.prisma as any);
   const changed = await prisma.$transaction(async (tx: any) => {
