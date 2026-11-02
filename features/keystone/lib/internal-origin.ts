@@ -41,11 +41,19 @@ export function resolveInternalBaseUrl(options: InternalOriginOptions = {}): str
     throw new Error("A deployment-owned internal application URL is required for server-side Keystone requests in production");
   }
 
-  const configuredPort = options.port ?? process.env.PORT ?? "3000";
-  const port = /^\d+$/.test(configuredPort) && Number(configuredPort) > 0 && Number(configuredPort) <= 65535
-    ? configuredPort
-    : "3000";
-  return `http://127.0.0.1:${port}`;
+  return loopbackOrigin(options.port ?? process.env.PORT);
+}
+
+/**
+ * Same-process loopback. Next sets PORT for the server it starts, so the port always comes
+ * from the running process; a missing or invalid port is an error, never a guessed default.
+ */
+export function loopbackOrigin(port: string | undefined = process.env.PORT || process.env.PORTLESS_TARGET_PORT): string {
+  const value = String(port ?? "").trim();
+  if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535) {
+    throw new Error("Set INTERNAL_APP_URL, or run under a server that sets PORT, for server-side Keystone requests");
+  }
+  return `http://127.0.0.1:${value}`;
 }
 
 /**

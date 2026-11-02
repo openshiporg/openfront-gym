@@ -1,5 +1,5 @@
 import { GraphQLClient, type RequestDocument, type Variables } from "graphql-request";
-import { resolveInternalBaseUrl } from "@/features/keystone/lib/internal-origin";
+import { loopbackOrigin, resolveInternalBaseUrl } from "@/features/keystone/lib/internal-origin";
 import { CLIENT_SOURCE_HEADER, clientSourceFromHeaders, signedClientSource } from "@/lib/clientSource";
 
 /** The customer's network source, signed, so GraphQL abuse budgets are per customer, not per server. */
@@ -17,7 +17,7 @@ async function customerSourceHeader(): Promise<string> {
 // proxy or request headers.
 async function getGraphQLEndpoint(): Promise<string> {
   if (process.env.INTERNAL_APP_URL || process.env.INTERNAL_GRAPHQL_URL) return `${resolveInternalBaseUrl()}/api/graphql`;
-  return `http://127.0.0.1:${process.env.PORT || process.env.PORTLESS_TARGET_PORT || "3000"}/api/graphql`;
+  return `${loopbackOrigin()}/api/graphql`;
 }
 
 class GymStorefrontClient {

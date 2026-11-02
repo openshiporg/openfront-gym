@@ -32,11 +32,9 @@ function requiredSecret(name: string) {
   return value;
 }
 
-const DEVELOPMENT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/openfront_gym_dev";
-if (strictConfig && !process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL must be configured in strict mode.");
-}
-const databaseURL = process.env.DATABASE_URL || DEVELOPMENT_DATABASE_URL;
+// Every environment names its own database, as in E-commerce; there is no built-in local default.
+const databaseURL = process.env.DATABASE_URL || "";
+if (!databaseURL) throw new Error("DATABASE_URL is required (a postgresql:// connection URL).");
 if (!/^postgres(ql)?:\/\//.test(databaseURL)) {
   throw new Error("DATABASE_URL must be a PostgreSQL connection URL (postgresql://…).");
 }
