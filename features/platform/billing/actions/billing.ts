@@ -6,6 +6,7 @@
  import { parseMajorUnitsToMinor } from '@/features/platform/lib/currency';
  import { staffActionError } from '@/features/platform/lib/action-error';
  import { openStaffIntent, settleStaffIntent } from '@/features/platform/lib/staff-intent';
+ import { parseCancelRenewalForm } from '../lib/cancel-renewal';
 
  const BILLING_PATH = '/dashboard/platform/billing';
  const RETURN_PARAMS = ['q', 'recoverySkip', 'failedSkip', 'planSkip', 'refundSkip', 'tierQuery', 'tierSkip'];
@@ -37,6 +38,9 @@
    idempotencyKey?: string;
    retainedTierId?: string;
    retained?: boolean;
+   cancelKey?: string;
+   autoRenew?: boolean | null;
+   nextBillingDate?: string | null;
    status: string;
    billingCycle: string;
    stripeSubscriptionId?: string | null;
@@ -307,6 +311,33 @@
    revalidatePath(BILLING_PATH);
    revalidatePath('/account/membership');
    redirect(`${BILLING_PATH}?${returnQuery(formData, { success: 'tier-updated' })}#plan-changes`);
+ }
+
+ /** Staff cancel: renewal stops at the end of the paid period, through the same provider-backed path members use. */
+ export async function cancelMembershipRenewalOperatorAction(submitted: FormData): Promise<void> {
+   let intentId = '';
+   let formData = submitted;
+   try {
+     const intent = await openStaffIntent('billing', submitted, 'idempotencyKey');
+     intentId = intent.id;
+     formData = intent.form;
+     const { membershipId, reason } = parseCancelRenewalForm({ get: (name: string) => name === 'idempotencyKey' ? intent.requestKey : formData.get(name) });
+     const response = await keystoneClient(`
+       mutation OperatorCancelMembership($membershipId: ID!, $reason: String, $idempotencyKey: String!) {
+         cancelMembership(membershipId: $membershipId, reason: $reason, idempotencyKey: $idempotencyKey) { message }
+       }
+     `, { membershipId, reason, idempotencyKey: intent.requestKey });
+     if (!response.success) throw new Error(staffActionError(response, 'Renewal cancellation did not complete. Retry it: the same request is never applied twice.'));
+     await settleStaffIntent(intentId, 'succeeded');
+   } catch (error) {
+     const message = error instanceof Error ? error.message : 'Renewal cancellation failed';
+     if (intentId) await settleStaffIntent(intentId, 'failed', message);
+     redirect(`${BILLING_PATH}?${returnQuery(formData, { error: message, ...(intentId ? { intent: intentId } : {}) })}#plan-changes`);
+   }
+
+   revalidatePath(BILLING_PATH);
+   revalidatePath('/account/membership');
+   redirect(`${BILLING_PATH}?${returnQuery(formData, { success: 'renewal-cancelled' })}#plan-changes`);
  }
 
  export async function refundPaymentAction(submitted: FormData): Promise<void> {

@@ -131,7 +131,7 @@ export async function getBillingWorkspace(root: unknown, args: BillingWorkspaceA
     getBillingStats(root, args, context),
     sudo.query.MembershipPayment.findMany({ where: tenant, take: 10, orderBy: [{ paymentDate: "desc" }], query: "id amount currencyCode refundAmount status paymentDate paymentType member { id name }" }),
     sudo.query.Subscription.findMany({ where: tenant, take: 10, orderBy: [{ startDate: "desc" }], query: "id status startDate member { id name } membershipTier { name }" }),
-    sudo.query.Membership.findMany({ where: where.plans, skip: skip.plans, take: BILLING_QUEUE_PAGE, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], query: "id status billingCycle stripeSubscriptionId tier { id name } member { id name email }" }),
+    sudo.query.Membership.findMany({ where: where.plans, skip: skip.plans, take: BILLING_QUEUE_PAGE, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], query: "id status billingCycle autoRenew nextBillingDate stripeSubscriptionId tier { id name } member { id name email }" }),
     sudo.query.MembershipTier.findMany({ where: tierWhere, skip: tierSkip, take: BILLING_TIER_PAGE + 1, orderBy: [{ name: "asc" }, { id: "asc" }], query: "id name" }),
     pinnedTierId ? sudo.query.MembershipTier.findMany({ where: { AND: [tenant, { id: { equals: pinnedTierId } }] }, take: 1, query: "id name" }) : Promise.resolve([]),
     sudo.query.Membership.findMany({ where: where.recovery, skip: skip.recovery, take: BILLING_QUEUE_PAGE, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], query: "id status nextBillingDate stripeSubscriptionId tier { id name } member { id name email }" }),
