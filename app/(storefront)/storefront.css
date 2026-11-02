@@ -549,7 +549,7 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   }
   .sf-session-time { display: grid; gap: 2px; padding-top: 1px; }
   .sf-session-time time { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.25; }
-  .sf-session-time time small { margin-left: 2px; font-size: 0.6875rem; font-weight: 600; color: var(--sf-ink-3); letter-spacing: 0.02em; }
+  .sf-session-time time small { margin-left: 2px; font-size: 0.75rem; font-weight: 600; color: var(--sf-ink-3); letter-spacing: 0.02em; }
   .sf-session-time span { color: var(--sf-ink-3); font-size: 0.8125rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .sf-session-body { display: grid; min-width: 0; gap: 4px; }
   .sf-session-body h3 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.015em; line-height: 1.25; }
@@ -1131,7 +1131,7 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-rg-slot { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 6px 8px; }
   .sf-rg-slot > div { display: grid; min-width: 0; line-height: 1.2; }
   .sf-rg-slot time { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
-  .sf-rg-slot time small { margin-left: 2px; font-size: 0.625rem; font-weight: 600; }
+  .sf-rg-slot time small { margin-left: 2px; font-size: 0.75rem; font-weight: 600; }
   .sf-rg-slot > div > span { color: var(--sf-ink-3); font-size: 0.75rem; }
   .sf-rg-slot > div > :is(a, b) { overflow: hidden; color: var(--sf-accent); font-size: 0.8125rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
   .sf-rg-pill { grid-column: 1 / -1; justify-self: start; display: inline-flex; min-height: 30px; align-items: center; border: 1px solid var(--sf-line-strong); border-radius: 999px; padding: 0 14px; background: var(--sf-raised); font-size: 0.8125rem; font-weight: 500; }
