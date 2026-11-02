@@ -38,6 +38,13 @@ test("a booking confirmation is sent once, with the account link and a local tim
   assert.equal([...notices.values()][0].status, "resolved");
 });
 
+test("the provider message id is recorded with a sent status", async () => {
+  configure(true);
+  const { notices, prisma } = fake();
+  await deliverBookingConfirmation(prisma, "bk1", async () => ({ sent: true, messageId: "<abc@resend>" }));
+  assert.equal([...notices.values()][0].history[0].messageId, "<abc@resend>");
+});
+
 test("a replay does not resend", async () => {
   configure(true);
   const { prisma } = fake();

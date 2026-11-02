@@ -8,7 +8,7 @@ import * as internalOrigin from "./internal-origin";
 // A mail failure is recorded and never surfaces: the booking or membership is already committed.
 
 export type ConfirmationMail = { to: string; subject: string; heading: string; lines: string[]; link: { url: string; label: string } };
-type Send = (mail: ConfirmationMail) => Promise<{ sent: boolean; error?: string }>;
+type Send = (mail: ConfirmationMail) => Promise<{ sent: boolean; error?: string; messageId?: string }>;
 
 async function claim(prisma: any, input: { organizationId: string; memberId?: string | null; key: string; kind: string }) {
   try {
@@ -22,8 +22,8 @@ async function claim(prisma: any, input: { organizationId: string; memberId?: st
   }
 }
 
-async function record(prisma: any, id: string, status: string, error?: string) {
-  await prisma.operationalNotice.update({ where: { id }, data: { message: status, history: [{ action: "confirmation-email", status, at: new Date().toISOString(), ...(error ? { error: error.slice(0, 200) } : {}) }] } });
+async function record(prisma: any, id: string, status: string, error?: string, messageId?: string) {
+  await prisma.operationalNotice.update({ where: { id }, data: { message: status, history: [{ action: "confirmation-email", status, at: new Date().toISOString(), ...(messageId ? { messageId: messageId.slice(0, 200) } : {}), ...(error ? { error: error.slice(0, 200) } : {}) }] } });
 }
 
 async function deliver(prisma: any, input: { organizationId: string; memberId?: string | null; key: string; kind: string; to: string; build: () => ConfirmationMail }, send?: Send) {
@@ -36,7 +36,7 @@ async function deliver(prisma: any, input: { organizationId: string; memberId?: 
       if (!mail.mailDeliveryEnabled()) { await record(prisma, notice.id, "skipped_not_configured"); return; }
       const sender: Send = send || (await import("./confirmation-mail")).sendConfirmationMail;
       const result = await sender(input.build());
-      await (result.sent ? record(prisma, notice.id, "sent") : record(prisma, notice.id, "failed", result.error || "send_failed"));
+      await (result.sent ? record(prisma, notice.id, "sent", undefined, result.messageId) : record(prisma, notice.id, "failed", result.error || "send_failed"));
     } catch (error) {
       try { await record(prisma, notice.id, "failed", error instanceof Error ? error.message : "send_failed"); } catch { /* the booking is committed; bookkeeping must never surface */ }
     }
