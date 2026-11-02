@@ -329,7 +329,8 @@ export async function recordInvoicePayment(
   if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("Invoice amount must use non-negative minor units");
   if (String(invoice.currency || "").toUpperCase() !== "USD") throw new Error("Membership invoice currency is outside the supported USD contract");
   if (status === "succeeded" && amount <= 0) throw new Error("A positive paid invoice is required to grant membership service");
-  return withKeystonePrismaTransaction(context.prisma, async (tx: any) => {
+  let firstPaidInvoice = false;
+  const outcome = await withKeystonePrismaTransaction(context.prisma, async (tx: any) => {
     await lockTransactionKey(tx, `stripe-subscription:${organizationId}:${subscriptionId}`);
     await lockTransactionKey(tx, `invoice:${organizationId}:${invoice.id}`);
     let membership = await tx.membership.findFirst({ where: { organizationId, stripeSubscriptionId: subscriptionId } });
@@ -418,12 +419,21 @@ export async function recordInvoicePayment(
       await tx.membership.update({ where: { id: updated.id }, data: { classCreditsRemaining: grant.remaining } });
     }
     await reviewFutureMembershipBookings(tx, updated);
+    firstPaidInvoice = status === "succeeded" && invoice.billing_reason === "subscription_create";
     if (status === "failed") {
       await createFinanceException(tx, { organizationId, key: `invoice:${invoice.id}`, kind: "failed-payment", reference: invoice.id, summary: "Membership invoice collection failed; reconcile payment and contact member." });
       await enqueueOperationalNotice(tx, { organizationId, memberId: member.id, key: `invoice:${invoice.id}:${eventCreated}`, kind: "billing", message: "Membership payment needs attention. Open your billing portal or contact the front desk." });
     }
     return { applied: true };
   });
+  // After the commit, never inside it. The notice row dedupes replays; the lazy import keeps mail out of the import graph.
+  if (firstPaidInvoice && (outcome as any)?.applied) {
+    try {
+      const { deliverMembershipConfirmation } = await import("../lib/order-confirmation");
+      await deliverMembershipConfirmation(context.prisma, { organizationId, stripeSubscriptionId: subscriptionId, invoiceId: invoice.id, amountCents: amount, currencyCode: invoice.currency });
+    } catch { /* the membership is committed; the confirmation email must never fail it */ }
+  }
+  return outcome;
 }
 
 export function monotonicRefundAmount(paymentAmount: number, currentRefundAmount: number | null, incomingRefundAmount: number) {

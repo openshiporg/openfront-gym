@@ -172,7 +172,7 @@ export async function createCapacityControlledBooking(
   input: CapacityBookingInput
 ): Promise<CapacityBookingResult> {
   prisma = guardKeystonePrismaResults(prisma);
-  return prisma.$transaction(async (transaction: any) => {
+  const result: CapacityBookingResult = await prisma.$transaction(async (transaction: any) => {
     await lockParticipationPolicy(transaction, input.actorOrganizationId);
     await lockTransactionKey(transaction, `class-instance:${input.classInstanceId}`);
     await lockTransactionKey(transaction, `member:${input.memberId}`);
@@ -309,6 +309,12 @@ export async function createCapacityControlledBooking(
         : currentCredits - (status === "confirmed" ? 1 : 0),
     };
   });
+  // After the commit, never inside it. Lazy import keeps the mail path out of the keystone import graph.
+  try {
+    const { deliverBookingConfirmation } = await import("../lib/order-confirmation");
+    await deliverBookingConfirmation(prisma, result.bookingId);
+  } catch { /* the booking is committed; the confirmation email must never fail it */ }
+  return result;
 }
 
 /** The class exactly as it is being booked; history renders this, never the mutable catalog. */
