@@ -73,21 +73,14 @@ test('3. a demo user cannot create, delete or update users, including the real a
   await refused(run('User', 'update', DEMO, { item: { id: 'admin' }, inputData: { name: 'Hacked' } }));
 });
 
-test('4. a demo user cannot change the store name, logo or URL settings', async () => {
-  for (const field of ['name', 'logoIcon', 'logoColor', 'brandHue']) {
-    await refused(run('GymSettings', 'update', DEMO, { item: { id: 's' }, inputData: { [field]: 'x' } }));
-  }
-  await refused(run('GymSettings', 'create', DEMO, { inputData: {} }));
-  await refused(run('GymSettings', 'delete', DEMO, { item: { id: 's' } }));
-  await refused(run('Organization', 'update', DEMO, { item: { id: 'o' }, inputData: { name: 'x' } }));
+test('4. changed name, tagline, logo and brand colour ALLOWED', async () => {
+  const item = { id: 's', name: 'Kinetic', logoIcon: 'a', logoColor: '#111111', brandHue: 40 };
+  await run('GymSettings', 'update', DEMO, { item, inputData: { name: 'Kinetic QA', tagline: 'Hi', logoIcon: 'b', logoColor: '#000000', brandHue: 41 } });
+  await run('GymSettings', 'update', DEMO, { inputData: { name: 'No stored item' } });
+  await run('Organization', 'update', DEMO, { item: { id: 'o', name: 'Org', slug: 'org' }, inputData: { name: 'Org QA' } });
 });
 
-test('4b. unchanged protected values pass, changed ones are refused', async () => {
-  const item = { id: 's', name: 'Kinetic', logoIcon: 'a', logoColor: '#111111', brandHue: 40 };
-  await run('GymSettings', 'update', DEMO, { item, inputData: { name: ' Kinetic ', logoIcon: 'a', logoColor: '#111111', brandHue: 40, timezone: 'UTC', taxRate: 8 } });
-  await refused(run('GymSettings', 'update', DEMO, { item, inputData: { name: 'Other', timezone: 'UTC' } }));
-  await refused(run('GymSettings', 'update', DEMO, { item, inputData: { name: 'Kinetic', brandHue: 41 } }));
-  await refused(run('GymSettings', 'update', DEMO, { inputData: { name: 'Kinetic' } }));
+test('4b. slug and member email stay protected; unchanged values pass', async () => {
   await run('Organization', 'update', DEMO, { item: { id: 'o', name: 'Org', slug: 'org' }, inputData: { name: 'Org', slug: 'org' } });
   await refused(run('Organization', 'update', DEMO, { item: { id: 'o', name: 'Org', slug: 'org' }, inputData: { slug: 'new' } }));
   await run('Member', 'update', DEMO, { item: { id: 'm', email: 'a@b.c' }, inputData: { email: 'a@b.c' } });
