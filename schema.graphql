@@ -6948,6 +6948,7 @@ type Mutation {
   reconcileGymEntitlements(afterId: ID, limit: Int): JSON!
   refreshMyEntitlement: JSON!
   saveGymClassSchedule(id: ID, data: JSON!): ClassSchedule
+  deleteGymClassSchedule(id: ID!, dryRun: Boolean): JSON!
   saveGymClassInstance(id: ID, data: JSON!): ClassInstance
   replayPaymentEvent(eventId: ID!): JSON!
   runOperationsCommand(command: String!, data: JSON!): JSON!

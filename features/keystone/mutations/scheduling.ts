@@ -5,6 +5,7 @@ import { lockParticipationPolicy } from "../lib/operational-policy";
 import { fillReleasedSeats, lockTransactionKey } from "./classCapacity";
 import { lockCurrentActor } from "../lib/current-actor";
 import { saveControlledOccurrence, scheduleDuration } from "../lib/class-scheduling";
+import { deleteClassScheduleInTransaction } from "../lib/class-schedule-delete";
 import { futureLocalOccurrence, localWeekdayAtOffset } from "../../../lib/timezone";
 import { businessTimeZone } from "../lib/business-time-zone";
 import {
@@ -188,6 +189,22 @@ export async function saveGymClassSchedule(_root: unknown, { id, data }: { id?: 
     }
     return saved;
   });
+}
+
+/**
+ * Staff action for retiring a template for good. Removes the template and its sessions in
+ * one transaction, and only when no booking, attendance or live waitlist entry is attached.
+ * dryRun reports the session count and any blocker without changing anything.
+ */
+export async function deleteGymClassSchedule(_root: unknown, { id, dryRun }: { id: string; dryRun?: boolean | null }, context: any) {
+  const { organizationId } = await schedulingManager(context);
+  const prisma = guardKeystonePrismaResults(context.prisma as any);
+  return prisma.$transaction(async (tx: any) => {
+    await lockParticipationPolicy(tx, organizationId);
+    await lockTransactionKey(tx, `gym-scheduling:${organizationId}`);
+    await lockTransactionKey(tx, `class-schedule:${id}`);
+    return deleteClassScheduleInTransaction(tx, organizationId, id, { dryRun: Boolean(dryRun) });
+  }, { timeout: 30000 });
 }
 
 export async function saveGymClassInstance(_root: unknown, { id, data }: { id?: string | null; data: any }, context: any) {

@@ -60,6 +60,7 @@ import {
   updateClassInstanceCapacity,
   updateClassScheduleCapacity,
   saveGymClassSchedule,
+  deleteGymClassSchedule,
   saveGymClassInstance,
   reconcileGymEntitlements,
   updateGymResource,
@@ -257,6 +258,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         reconcileGymEntitlements(afterId: ID, limit: Int): JSON!
         refreshMyEntitlement: JSON!
         saveGymClassSchedule(id: ID, data: JSON!): ClassSchedule
+        deleteGymClassSchedule(id: ID!, dryRun: Boolean): JSON!
         saveGymClassInstance(id: ID, data: JSON!): ClassInstance
         replayPaymentEvent(eventId: ID!): JSON!
         runOperationsCommand(command: String!, data: JSON!): JSON!
@@ -586,6 +588,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         recordTrainingPackage, refundTrainingPackage, saveTrainerAvailability, assignCoaching, transitionCoaching, saveTrainingLead,
         reconcileGymEntitlements, refreshMyEntitlement,
         saveGymClassSchedule,
+        deleteGymClassSchedule,
         saveGymClassInstance,
         replayPaymentEvent,
         runOperationsCommand,
