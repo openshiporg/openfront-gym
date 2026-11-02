@@ -196,7 +196,7 @@ Use a development database for `migrate:gen`; it generates and applies schema ch
 Membership checkout and Stripe adapters live in [`features/integrations/payment/`](features/integrations/payment). Configure Stripe using [`env.example`](env.example) and payment-provider settings. Stripe webhooks enter at `/api/stripe/webhook`. Personal-training package sales are staff-managed, not a public package-shopping checkout.
 
 ### Check-In Integration
-The [kiosk API](app/api/kiosk) uses a configured organization and kiosk credential. Member QR codes and [check-in commands](features/keystone/queries/checkIn.ts) are separate from payment processing.
+The kiosk ([server actions](features/platform/kiosk/actions.ts) over Keystone kiosk mutations) uses a configured organization and kiosk credential. Member QR codes and [check-in commands](features/keystone/queries/checkIn.ts) are separate from payment processing.
 
 ## Documentation
 

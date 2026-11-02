@@ -4,6 +4,13 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { Check, X } from "lucide-react"
 import { Banner, EmptyState } from "@/features/storefront/modules/common/ui"
 import { formatClassCreditsLeft } from "@/lib/class-credits"
+import {
+  checkInAtKiosk,
+  checkInGuestAtKiosk,
+  searchKioskMembers,
+  unlockKiosk,
+  type KioskAuthorization,
+} from "@/features/platform/kiosk/actions"
 
 type CheckInResult = {
   success: boolean
@@ -37,8 +44,8 @@ function formatCredits(value?: number | null) {
   return formatClassCreditsLeft(value) ?? "Credits unavailable"
 }
 
-export default function KioskCheckInPage({ brandName = "Front desk" }: { brandName?: string } = {}) {
-  const [authorization, setAuthorization] = useState<"checking" | "authorized" | "required" | "unconfigured">("checking")
+export default function KioskCheckInPage({ brandName = "Front desk", initialAuthorization }: { brandName?: string; initialAuthorization: KioskAuthorization }) {
+  const [authorization, setAuthorization] = useState<KioskAuthorization>(initialAuthorization)
   const [unlockToken, setUnlockToken] = useState("")
   const [unlockError, setUnlockError] = useState<string | null>(null)
   const [isUnlocking, setIsUnlocking] = useState(false)
@@ -54,21 +61,6 @@ export default function KioskCheckInPage({ brandName = "Front desk" }: { brandNa
   const [guestForm, setGuestForm] = useState({ name: "", phone: "", hostMember: "" })
   const guestIdempotencyKey = useRef(crypto.randomUUID())
   const [notice, setNotice] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch("/api/kiosk/session", { cache: "no-store" })
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({}))
-        if (cancelled) return
-        if (response.ok && data.authorized) setAuthorization("authorized")
-        else setAuthorization(data.configured === false ? "unconfigured" : "required")
-      })
-      .catch(() => {
-        if (!cancelled) setAuthorization("required")
-      })
-    return () => { cancelled = true }
-  }, [])
 
   useEffect(() => {
     let inactivityTimer: NodeJS.Timeout
@@ -117,13 +109,8 @@ export default function KioskCheckInPage({ brandName = "Front desk" }: { brandNa
     setIsUnlocking(true)
     setUnlockError(null)
     try {
-      const response = await fetch("/api/kiosk/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: unlockToken }),
-      })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.authorized) {
+      const data = await unlockKiosk(unlockToken)
+      if (!data.authorized) {
         throw new Error(data.error || "Kiosk unlock failed")
       }
       setUnlockToken("")
@@ -135,8 +122,8 @@ export default function KioskCheckInPage({ brandName = "Front desk" }: { brandNa
     }
   }
 
-  const requireUnlock = useCallback((response: Response) => {
-    if (response.status !== 401) return false
+  const requireUnlock = useCallback((result: object) => {
+    if (!("unauthorized" in result)) return false
     setAuthorization("required")
     setUnlockError("The kiosk session expired. Ask a staff member to unlock it again.")
     return true
@@ -147,15 +134,9 @@ export default function KioskCheckInPage({ brandName = "Front desk" }: { brandNa
 
     setIsSearching(true)
     try {
-      const response = await fetch("/api/kiosk/search-member", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery.trim() }),
-      })
-
-      const data = await response.json()
-      if (requireUnlock(response)) return
-      if (!response.ok) throw new Error(data.error || "Search failed")
+      const data = await searchKioskMembers(searchQuery.trim())
+      if (requireUnlock(data) || "unauthorized" in data) return
+      if (data.error) throw new Error(data.error)
       setSearchResults(data.members || [])
     } catch {
       setNotice("Search failed. Please try again.")
@@ -166,26 +147,20 @@ export default function KioskCheckInPage({ brandName = "Front desk" }: { brandNa
 
   const handleCheckInByMemberId = useCallback(async (memberId: string) => {
     try {
-      const response = await fetch("/api/kiosk/check-in", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memberId }),
-      })
-
-      const data = await response.json()
-      if (requireUnlock(response)) return
+      const data = await checkInAtKiosk({ memberId })
+      if (requireUnlock(data) || "unauthorized" in data) return
 
       if (data.success) {
         const result: CheckInResult = {
           success: true,
-          memberName: data.memberName,
+          memberName: data.memberName ?? undefined,
           membershipTier: data.membershipTier,
           classCreditsRemaining: data.classCreditsRemaining,
         }
         setCheckInResult(result)
         pushRecentCheckIn({
-          id: data.checkInId,
-          memberName: data.memberName,
+          id: data.checkInId ?? crypto.randomUUID(),
+          memberName: data.memberName ?? "Member",
           membershipTier: data.membershipTier,
           time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
         })
@@ -207,24 +182,18 @@ export default function KioskCheckInPage({ brandName = "Front desk" }: { brandNa
 
     setIsSubmittingScan(true)
     try {
-      const response = await fetch("/api/kiosk/check-in", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qrCode: scanValue.trim() }),
-      })
-
-      const data = await response.json()
-      if (requireUnlock(response)) return
+      const data = await checkInAtKiosk({ qrCode: scanValue.trim() })
+      if (requireUnlock(data) || "unauthorized" in data) return
       if (data.success) {
         setCheckInResult({
           success: true,
-          memberName: data.memberName,
+          memberName: data.memberName ?? undefined,
           membershipTier: data.membershipTier,
           classCreditsRemaining: data.classCreditsRemaining,
         })
         pushRecentCheckIn({
-          id: data.checkInId,
-          memberName: data.memberName,
+          id: data.checkInId ?? crypto.randomUUID(),
+          memberName: data.memberName ?? "Member",
           membershipTier: data.membershipTier,
           time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
         })
@@ -247,20 +216,14 @@ export default function KioskCheckInPage({ brandName = "Front desk" }: { brandNa
 
     setIsSubmittingGuest(true)
     try {
-      const response = await fetch("/api/kiosk/guest-check-in", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...guestForm, idempotencyKey: guestIdempotencyKey.current }),
-      })
-
-      const data = await response.json()
-      if (requireUnlock(response)) return
+      const data = await checkInGuestAtKiosk({ ...guestForm, idempotencyKey: guestIdempotencyKey.current })
+      if (requireUnlock(data) || "unauthorized" in data) return
 
       if (data.success) {
         const guestName = `Guest: ${guestForm.name.trim()}`
         setCheckInResult({ success: true, memberName: guestName })
         pushRecentCheckIn({
-          id: data.checkInId,
+          id: data.checkInId ?? crypto.randomUUID(),
           memberName: guestName,
           time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
         })
@@ -287,9 +250,7 @@ export default function KioskCheckInPage({ brandName = "Front desk" }: { brandNa
       <main className="sf-wrap sf-closed" style={{ maxWidth: "calc(480px + 2 * var(--sf-gutter))" }}>
         <p className="sf-label">{brandName}</p>
         <h1 className="sf-h1">Unlock kiosk</h1>
-        {authorization === "checking" ? (
-          <p role="status" className="sf-text-2">Checking this kiosk…</p>
-        ) : authorization === "unconfigured" ? (
+        {authorization === "unconfigured" ? (
           <Banner tone="bad" title="Kiosk not set up">
             Check-in at this screen isn’t set up yet. Ask a member of staff to check you in.
           </Banner>

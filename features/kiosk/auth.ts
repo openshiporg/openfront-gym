@@ -65,7 +65,8 @@ export function kioskSessionCookieOptions() {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict" as const,
-    path: "/api/kiosk",
+    // Kiosk server actions post to the kiosk page itself.
+    path: "/kiosk",
     maxAge: KIOSK_SESSION_MAX_AGE_SECONDS,
   };
 }

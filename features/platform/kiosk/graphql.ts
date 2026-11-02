@@ -1,5 +1,5 @@
 import { internalGraphqlEndpoint, internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
-import { getKioskOrganizationId } from "./auth";
+import { getKioskOrganizationId } from "../../kiosk/auth";
 
 async function execute<T>(query: string, variables: Record<string, unknown>): Promise<T> {
   const response = await internalGraphqlFetch(internalGraphqlEndpoint(), {
