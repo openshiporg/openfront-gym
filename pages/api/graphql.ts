@@ -4,6 +4,9 @@ import { gymGraphqlAdmissionPlugin } from "../../features/keystone/security/grap
 import { graphqlListPathMultiplierPlugin } from "../../features/keystone/security/graphql-query-cost";
 import { suspendedTenantPlugin } from "../../features/keystone/security/tenant-status";
 import { gymMaskedErrors } from "../../features/keystone/security/graphql-errors";
+import { createSignInRateLimitPlugin } from "../../features/keystone/security/signin-rate-limit";
+
+const signInRateLimitPlugin = createSignInRateLimitPlugin(() => keystoneContext.prisma);
 // @ts-ignore
 import processRequest from "graphql-upload/processRequest.js";
 import { type NextApiRequest, type NextApiResponse } from 'next'
@@ -62,7 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   return createYoga({
-    plugins: [gymGraphqlAdmissionPlugin, graphqlListPathMultiplierPlugin, suspendedTenantPlugin],
+    plugins: [gymGraphqlAdmissionPlugin, graphqlListPathMultiplierPlugin, suspendedTenantPlugin, signInRateLimitPlugin],
     maskedErrors: gymMaskedErrors,
     renderGraphiQL: () => {
       return `

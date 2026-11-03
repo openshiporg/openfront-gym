@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 import { signInternalClientIdentity } from "../features/keystone/security/internalIdentity";
 
 /**
@@ -33,6 +34,8 @@ function proxyTrusted() {
 }
 
 export function clientSourceFromHeaders(headers: HeaderBag, remoteAddress = "") {
+  const edge = railwayEdgeSource(headers, remoteAddress);
+  if (edge) return edge;
   if (proxyTrusted()) {
     const forwarded = header(headers, "x-forwarded-for").split(",").map((entry) => entry.trim()).filter(Boolean);
     const source = normalizeSource(forwarded.at(-1) || "") || normalizeSource(header(headers, "x-real-ip"));
@@ -76,8 +79,26 @@ export function verifiedInternalIdentity(
 }
 
 /**
+ * Railway's HTTP edge overwrites X-Real-IP with the connecting client before forwarding (a caller-sent
+ * value is replaced; proven live on grocery), while the socket peer is one of several changing edge
+ * addresses. So on Railway (RAILWAY_ENVIRONMENT, set by the platform) one valid X-Real-IP from a
+ * non-loopback peer is the client. Loopback callers are Gym's own server: they use the signed identity.
+ * Railway exposes the container only through that edge (or the private network, which sets no X-Real-IP).
+ */
+export function railwayEdgeSource(headers: HeaderBag, socketAddress: string | null | undefined) {
+  if (!process.env.RAILWAY_ENVIRONMENT) return "";
+  const peer = String(socketAddress || "").trim();
+  // No peer = a Next server action/route reading the incoming request headers (as endUserSource does).
+  if (/^(?:127\.|::1$|::ffff:127\.)/.test(peer)) return "";
+  const value = header(headers, "x-real-ip").trim();
+  if (!value || value.includes(",") || isIP(value.replace(/^::ffff:/, "")) === 0) return "";
+  return normalizeSource(value.replace(/^::ffff:/, "").toLowerCase());
+}
+
+/**
  * The trusted client source of a GraphQL request (Keystone context.req): the verified internal
- * identity first, else the existing trusted-proxy logic, else the socket.
+ * identity first, then Railway's edge X-Real-IP, else the existing trusted-proxy logic, else the socket
+ * (the last three in clientSourceFromHeaders).
  */
 export function requestClientSource(req: any, secret?: string, now?: number) {
   const headers = req?.headers;
