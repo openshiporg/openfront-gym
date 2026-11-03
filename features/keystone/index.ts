@@ -102,6 +102,7 @@ const { withAuth } = createAuth({
           canManageOnboarding: true,
           canManageSettings: true,
           canManageAppointments: true,
+          canManageCheckIns: true,
           canManageFacilities: true,
           canManagePrograms: true,
           canManageCommunications: true,
