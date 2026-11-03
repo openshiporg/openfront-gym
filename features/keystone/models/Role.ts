@@ -5,7 +5,12 @@ import { checkbox, relationship, text } from '@keystone-6/core/fields'
 import { isSignedIn, permissions, rules } from '../access'
 import { trackingFields } from './trackingFields'
 import { compoundUniqueDb, validateTenantOwnership } from './tenantRelationships'
-import { elevatedRoleCapabilities } from './roleCapabilities'
+import { elevatedRoleCapabilities, roleCapabilityFields } from './roleCapabilities'
+
+/** Full-capability holder: can manage every record and every role. Only such a holder may complete its own role. */
+function holdsFullCapability(role: any) {
+  return role?.canManageAllRecords === true && role?.canManageRoles === true;
+}
 
 function manageableRoleFilter({ session }: any) {
   const organizationId = session?.data?.organization?.id;
@@ -19,12 +24,40 @@ function manageableRoleFilter({ session }: any) {
   };
 }
 
+/** Update filter: as above, plus a full-capability holder's own role (validateRoleInput limits that edit to adding flags). */
+function updatableRoleFilter({ session }: any) {
+  const organizationId = session?.data?.organization?.id;
+  const currentRoleId = session?.data?.role?.id;
+  if (!organizationId || !currentRoleId) return false;
+  if (!holdsFullCapability(session?.data?.role)) return manageableRoleFilter({ session });
+  return { organization: { id: { equals: organizationId } } };
+}
+
+/**
+ * Own-role edit allowed only to complete a full-capability role: the stored role (not the
+ * session snapshot) must hold canManageAllRecords and canManageRoles, and the change may only
+ * turn capability flags on. No rename, no removal, no relationship changes, never a non-full role.
+ */
+export function ownRoleCompletionError(item: any, resolvedData: Record<string, unknown>) {
+  if (!holdsFullCapability(item)) return 'You cannot modify the role assigned to your own account';
+  // isInstructor is a persona (narrows to own rosters), not a capability; it stays out of self-completion.
+  const allowed = new Set<string>(roleCapabilityFields.filter(field => field !== 'isInstructor'));
+  for (const [key, value] of Object.entries(resolvedData ?? {})) {
+    if (key === 'updatedAt') continue;
+    if (!allowed.has(key) || value !== true) {
+      return 'Your own role can only gain capabilities; ask another role manager for any other change';
+    }
+  }
+  return null;
+}
+
 export async function validateRoleInput(args: any) {
   const session = args.session ?? args.context?.session;
   await validateTenantOwnership([])(args);
 
   if (session?.data?.role?.id && args.item?.id === session.data.role.id) {
-    args.addValidationError('You cannot modify the role assigned to your own account');
+    const error = args.operation === 'update' ? ownRoleCompletionError(args.item, args.resolvedData) : 'You cannot modify the role assigned to your own account';
+    if (error) args.addValidationError(error);
     return;
   }
   if (session) {
@@ -45,7 +78,7 @@ export const Role = list({
     },
     filter: {
       query: rules.canReadOwnRole,
-      update: manageableRoleFilter,
+      update: updatableRoleFilter,
       delete: manageableRoleFilter,
     },
   },
