@@ -1394,3 +1394,13 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
     .sf-rg-plan-photo, .sf-rg-plan[data-photo]::before { display: none; }
   }
 }
+
+/* Rigel match: three plan cards fit 402 (the price and its period wrap inside the card). */
+@layer components {
+  @media (max-width: 899px) {
+    .sf-rg-plan { container-type: inline-size; overflow: hidden; }
+    .sf-rg-price p { flex-wrap: wrap; column-gap: 2px; }
+    .sf-rg-price strong { font-size: clamp(1.125rem, 17cqi, 1.625rem); }
+    .sf-rg-price span { font-size: 0.75rem; }
+  }
+}
