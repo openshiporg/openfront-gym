@@ -2,6 +2,7 @@ import { convertToModelMessages, streamText, stepCountIs } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { getBaseUrl } from '@/features/dashboard/lib/getBaseUrl';
+import { tryLoopbackOrigin } from '@/features/keystone/lib/internal-origin';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { IncomingMessage } from 'node:http';
 import { keystoneContext } from '@/features/keystone/context';
@@ -78,7 +79,8 @@ export async function POST(req: Request) {
       return Response.json({ error: 'Unable to validate AI credentials.' }, { status: 401 });
     }
 
-    const baseUrl = await getBaseUrl();
+    // Self-call over loopback (not the public host), falling back to the public origin when the port is unknown.
+    const baseUrl = tryLoopbackOrigin() ?? await getBaseUrl();
     const mcpEndpoint = `${baseUrl}/api/mcp-transport/http`;
     const cookie = req.headers.get('cookie') || '';
 

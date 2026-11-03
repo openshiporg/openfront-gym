@@ -1,7 +1,6 @@
 import { cookies, headers } from "next/headers";
-import { internalGraphqlEndpoint, internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
+import { endUserSource, internalGraphqlEndpoint, internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
 import type { KeystoneResponse } from "@/features/dashboard/lib/keystoneClient";
-import { CLIENT_SOURCE_HEADER, clientSourceFromHeaders, signedClientSource } from "@/lib/clientSource";
 
 /**
  * Gym's credential-bearing GraphQL transport for its own server actions and loaders. The
@@ -12,17 +11,16 @@ import { CLIENT_SOURCE_HEADER, clientSourceFromHeaders, signedClientSource } fro
 export async function gymGraphql<T = any>(query: string, variables: Record<string, unknown> = {}): Promise<KeystoneResponse<T>> {
   try {
     const token = (await cookies()).get("keystonejs-session")?.value;
-    const source = signedClientSource(clientSourceFromHeaders(await headers()));
+    const source = endUserSource(await headers());
     const response = await internalGraphqlFetch(internalGraphqlEndpoint(), {
       method: "POST",
       headers: {
         "content-type": "application/json",
         ...(token ? { authorization: `Bearer ${token}` } : {}),
-        ...(source ? { [CLIENT_SOURCE_HEADER]: source } : {}),
       },
       body: JSON.stringify({ query, variables }),
       cache: "no-store",
-    });
+    }, source);
     const body = await response.json().catch(() => null) as { data?: T; errors?: Array<{ message?: string }> } | null;
     if (body?.errors?.length) {
       return { success: false, error: body.errors.map((entry) => entry?.message || "Request failed").join("\n"), errors: body.errors };

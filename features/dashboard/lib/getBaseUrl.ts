@@ -41,3 +41,26 @@ export async function getGraphQLEndpoint(): Promise<string> {
   const baseUrl = await getBaseUrl();
   return `${baseUrl}/api/graphql`;
 }
+
+/**
+ * Server-side GraphQL target. On the server this is Gym's internal origin (same-process loopback)
+ * with a signed per-end-user identity, so server renders don't share the public egress IP bucket.
+ * In the browser, or when the internal origin is unknown, it is the public endpoint exactly as before.
+ */
+export async function getServerGraphQLTarget(
+  sourceHeaders?: { get(name: string): string | null } | null,
+): Promise<{ endpoint: string; fetch?: typeof fetch }> {
+  if (typeof window === 'undefined') {
+    const { internalGraphqlEndpoint, createInternalGraphqlFetch, endUserSource } = await import('@/features/keystone/lib/internal-origin');
+    let endpoint: string | null = null;
+    try { endpoint = internalGraphqlEndpoint(); } catch { endpoint = null; }
+    if (endpoint) {
+      let headersList = sourceHeaders ?? null;
+      if (!headersList) {
+        try { headersList = await headers(); } catch { headersList = null; }
+      }
+      return { endpoint, fetch: createInternalGraphqlFetch(endUserSource(headersList)) };
+    }
+  }
+  return { endpoint: await getGraphQLEndpoint() };
+}

@@ -1,52 +1,34 @@
 import { GraphQLClient, type RequestDocument, type Variables } from "graphql-request";
-import { loopbackOrigin, resolveInternalBaseUrl } from "@/features/keystone/lib/internal-origin";
-import { CLIENT_SOURCE_HEADER, clientSourceFromHeaders, signedClientSource } from "@/lib/clientSource";
+import { createInternalGraphqlFetch, endUserSource, internalGraphqlEndpoint } from "@/features/keystone/lib/internal-origin";
 
-/** The customer's network source, signed, so GraphQL abuse budgets are per customer, not per server. */
-async function customerSourceHeader(): Promise<string> {
+/** The customer's own network source, read from THIS request, so abuse budgets are per customer. */
+async function customerSource(): Promise<string | null> {
   try {
     const { headers } = await import("next/headers");
-    return signedClientSource(clientSourceFromHeaders(await headers()));
+    return endUserSource(await headers());
   } catch {
-    return "";
+    return null;
   }
 }
 
-// Storefront data/actions are server-only: they use the deployment-owned internal origin
-// (INTERNAL_APP_URL / INTERNAL_GRAPHQL_URL) or same-process loopback, never the public
-// proxy or request headers.
-async function getGraphQLEndpoint(): Promise<string> {
-  if (process.env.INTERNAL_APP_URL || process.env.INTERNAL_GRAPHQL_URL) return `${resolveInternalBaseUrl()}/api/graphql`;
-  return `${loopbackOrigin()}/api/graphql`;
-}
-
+/**
+ * Storefront data/actions are server-only: they call Gym's own GraphQL over the deployment-owned
+ * internal origin or same-process loopback, never the public proxy or a request-chosen host.
+ * Nothing per-visitor is cached: each request builds its client with that visitor's signed source.
+ */
 class GymStorefrontClient {
-  private clientPromise: Promise<GraphQLClient> | null = null;
-
-  private async getClient(): Promise<GraphQLClient> {
-    if (!this.clientPromise) {
-      this.clientPromise = getGraphQLEndpoint().then(
-        (endpoint) =>
-          new GraphQLClient(endpoint, {
-            credentials: "include",
-            headers: { Connection: "keep-alive" },
-            timeout: 10000,
-          })
-      );
-    }
-    return this.clientPromise;
-  }
-
   async request<T = any, V extends Variables = Variables>(
     document: RequestDocument,
     variables?: V,
     requestHeaders?: HeadersInit
   ): Promise<T> {
-    const client = await this.getClient();
-    const headers = new Headers(requestHeaders);
-    const source = await customerSourceHeader();
-    if (source) headers.set(CLIENT_SOURCE_HEADER, source);
-    return client.request(document, variables, headers);
+    const client = new GraphQLClient(internalGraphqlEndpoint(), {
+      credentials: "include",
+      headers: { Connection: "keep-alive" },
+      timeout: 10000,
+      fetch: createInternalGraphqlFetch(await customerSource()),
+    });
+    return client.request(document, variables, new Headers(requestHeaders));
   }
 }
 

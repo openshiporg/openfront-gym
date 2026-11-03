@@ -1,12 +1,14 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { signInternalClientIdentity } from "../features/keystone/security/internalIdentity";
 
 /**
  * The network source a request came from, for abuse budgets only (never for authorization).
  * The deployment proxy appends the connecting address last in X-Forwarded-For, so the last
- * entry is the one a client cannot choose. The storefront server, which calls GraphQL on the
- * customer's behalf, forwards the customer's source in a header signed with SESSION_SECRET.
+ * entry is the one a client cannot choose. Gym's own server (storefront, dashboard, platform
+ * actions) calls GraphQL over loopback on the customer's behalf and forwards the customer's
+ * source as a short-lived HMAC identity, which is believed only from a loopback socket.
  */
-export const CLIENT_SOURCE_HEADER = "x-gym-client-source";
+export { signInternalClientIdentity };
 
 type HeaderBag = { get(name: string): string | null } | Record<string, string | string[] | undefined> | undefined | null;
 
@@ -46,29 +48,41 @@ export function isKnownSource(source: string) {
   return Boolean(source) && source !== UNKNOWN_SOURCE;
 }
 
-function signature(source: string) {
-  const secret = process.env.SESSION_SECRET || "";
-  if (secret.length < 32) return "";
-  return createHmac("sha256", secret).update(`client-source:${source}`).digest("base64url").slice(0, 32);
+const INTERNAL_IDENTITY_MAX_AGE_MS = 90_000;
+
+function safeEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-/** Header value the storefront server attaches to its GraphQL calls. */
-export function signedClientSource(source: string) {
-  const normalized = normalizeSource(source) || "unknown";
-  const signed = signature(normalized);
-  return signed ? `${normalized}.${signed}` : "";
+/** Hospital 861591a verifier: loopback socket only, well-formed headers, |age| <= 90s, HMAC, secret >= 32. */
+export function verifiedInternalIdentity(
+  headers: HeaderBag,
+  socketAddress: string | null | undefined,
+  secret: string = String(process.env.SESSION_SECRET || ""),
+  now = Date.now(),
+) {
+  const loopback = /^(?:127\.|::1$|::ffff:127\.)/.test(String(socketAddress || ""));
+  if (!loopback || secret.length < 32) return null;
+  const identity = header(headers, "x-openfront-client-identity");
+  const timestamp = header(headers, "x-openfront-client-timestamp");
+  const signature = header(headers, "x-openfront-client-signature");
+  if (!/^[a-f0-9]{64}$/.test(identity) || !/^\d{10}$/.test(timestamp) || !/^[a-f0-9]{64}$/.test(signature)) return null;
+  const age = Math.abs(now - Number(timestamp) * 1_000);
+  if (!Number.isFinite(age) || age > INTERNAL_IDENTITY_MAX_AGE_MS) return null;
+  const expected = createHmac("sha256", secret).update(`${timestamp}:${identity}`).digest("hex");
+  return safeEqual(signature, expected) ? `forwarded:${identity}` : null;
 }
 
-/** The trusted client source of a GraphQL request (Keystone context.req). */
-export function requestClientSource(req: any) {
+/**
+ * The trusted client source of a GraphQL request (Keystone context.req): the verified internal
+ * identity first, else the existing trusted-proxy logic, else the socket.
+ */
+export function requestClientSource(req: any, secret?: string, now?: number) {
   const headers = req?.headers;
-  const claimed = header(headers, CLIENT_SOURCE_HEADER);
-  const separator = claimed.lastIndexOf(".");
-  if (separator > 0) {
-    const source = claimed.slice(0, separator);
-    const expected = signature(source);
-    const supplied = claimed.slice(separator + 1);
-    if (expected && supplied.length === expected.length && timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) return source;
-  }
-  return clientSourceFromHeaders(headers, req?.socket?.remoteAddress || "");
+  const socketAddress = req?.socket?.remoteAddress || "";
+  const internal = verifiedInternalIdentity(headers, socketAddress, secret, now);
+  if (internal) return internal;
+  return clientSourceFromHeaders(headers, socketAddress);
 }

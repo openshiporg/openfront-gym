@@ -16,7 +16,7 @@ import {
   validate,
 } from 'graphql';
 import { internalGraphqlEndpoint } from '@/features/keystone/lib/internal-origin';
-import { internalGraphqlFetch } from '@/features/keystone/lib/internal-origin';
+import { endUserSource, internalGraphqlFetch } from '@/features/keystone/lib/internal-origin';
 import { requireMcpSession } from '@/features/keystone/mcpGate';
 
 // Get simple type name for display
@@ -90,6 +90,7 @@ async function executeGraphQL(
   expectedType: 'query' | 'mutation',
   expectedRootField: string,
   variables: Record<string, unknown> = {},
+  source: string | null = null,
 ): Promise<any> {
   validateMcpOperation(schema, query, expectedType, expectedRootField);
   const response = await internalGraphqlFetch(graphqlEndpoint, {
@@ -99,7 +100,7 @@ async function executeGraphQL(
       'Cookie': cookie,
     },
     body: JSON.stringify({ query, variables }),
-  });
+  }, source);
 
   const result = await response.json();
   if (result.errors) {
@@ -109,7 +110,7 @@ async function executeGraphQL(
 }
 
 // Get GraphQL schema from introspection
-async function getGraphQLSchema(graphqlEndpoint: string, cookie: string): Promise<GraphQLSchema> {
+async function getGraphQLSchema(graphqlEndpoint: string, cookie: string, source: string | null = null): Promise<GraphQLSchema> {
   const response = await internalGraphqlFetch(graphqlEndpoint, {
     method: 'POST',
     headers: { 
@@ -117,7 +118,7 @@ async function getGraphQLSchema(graphqlEndpoint: string, cookie: string): Promis
       'Cookie': cookie,
     },
     body: JSON.stringify({ query: getIntrospectionQuery() }),
-  });
+  }, source);
   
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -143,6 +144,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
     
     // Extract cookie from request
     const cookie = request.headers.get('cookie') || ''
+    // The signed-in user's own network source, signed per call for the loopback GraphQL limiter.
+    const source = endUserSource(request.headers);
 
     // Parse the JSON-RPC request, then refuse anonymous callers before any schema work.
     const body = await request.json();
@@ -150,7 +153,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
     if (refused) return refused;
   
     // Get the GraphQL schema
-    const schema = await getGraphQLSchema(graphqlEndpoint, cookie);
+    const schema = await getGraphQLSchema(graphqlEndpoint, cookie, source);
     
     // Handle the request based on method
     if (body.method === 'initialize') {
@@ -437,6 +440,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
             schema,
             'query',
             operationName,
+            undefined,
+            source,
           );
           
           return new Response(JSON.stringify({
@@ -697,6 +702,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
             'mutation',
             operationName,
             { data: dataObject },
+            source,
           );
           
           // Mark that data has changed
@@ -744,6 +750,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
             'mutation',
             operationName,
             { where: whereObject, data: dataObject },
+            source,
           );
           
           // Mark that data has changed
@@ -789,6 +796,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
             'mutation',
             operationName,
             { where: whereObject },
+            source,
           );
           
           // Mark that data has changed
@@ -960,6 +968,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tra
             'query',
             operationName,
             variables,
+            source,
           );
           
           return new Response(JSON.stringify({

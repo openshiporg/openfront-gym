@@ -1,13 +1,23 @@
-import { internalGraphqlEndpoint, internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
+import { headers } from "next/headers";
+import { endUserSource, internalGraphqlEndpoint, internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
 import { getKioskOrganizationId } from "../../kiosk/auth";
 
+async function deviceSource() {
+  try {
+    return endUserSource(await headers());
+  } catch {
+    return null;
+  }
+}
+
 async function execute<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+  const source = await deviceSource();
   const response = await internalGraphqlFetch(internalGraphqlEndpoint(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, variables }),
     cache: "no-store",
-  });
+  }, source);
   const payload = await response.json();
   if (!response.ok || payload.errors?.length) {
     throw new Error(payload.errors?.[0]?.message || "Kiosk operation failed");
