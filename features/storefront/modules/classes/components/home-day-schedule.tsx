@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { CalendarSearch, ChevronRight } from "lucide-react";
 import { SessionTime } from "@/features/storefront/modules/common/training";
@@ -13,6 +14,8 @@ export type HomeSession = {
   name: string;
   coach: string | null;
   classHref: string | null;
+  /** The class type's photo, when one ships for it; otherwise the card keeps its dark fill. */
+  photo?: string | null;
   bookHref: string;
   spots: number;
 };
@@ -45,7 +48,8 @@ export default function HomeDaySchedule({ days, sessions, initialKey }: { days: 
           {list.map((session) => (
             <li key={session.id}>
               <span className="sf-rg-time"><SessionTime value={session.time} dateTime={session.startsAt} /></span>
-              <div className="sf-rg-class">
+              <div className="sf-rg-class" data-photo={session.photo ? "" : undefined}>
+                {session.photo ? <Image className="sf-rg-class-photo" src={session.photo} alt="" fill sizes="(max-width: 899px) 60vw, 1px" unoptimized /> : null}
                 <strong>{session.classHref ? <Link href={session.classHref}>{session.name}</Link> : session.name}</strong>
                 {session.coach ? <span>with {session.coach}</span> : null}
               </div>

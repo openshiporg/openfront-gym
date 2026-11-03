@@ -1,4 +1,6 @@
+import Image from "next/image";
 import Link from "next/link";
+import { classTypePhoto } from "@/features/storefront/lib/media";
 import { ArrowUpRight, SearchX } from "lucide-react";
 import { getClassTypePage } from "@/features/storefront/lib/data/classes";
 import { difficultyLabel, documentText, humanizeLabel } from "@/features/storefront/lib/presentation";
@@ -37,8 +39,10 @@ export default async function ClassGrid({ difficulty, duration, q, after }: { di
           const description = documentText(classType.description);
           const equipment = (classType.equipmentNeeded || []).filter(Boolean);
           const level = difficultyLabel(classType.difficulty);
+          const photo = classTypePhoto(classType.name);
           return (
-            <article className="sf-class-card" key={classType.id}>
+            <article className="sf-class-card" key={classType.id} data-photo={photo ? "" : undefined}>
+              {photo ? <span className="sf-class-card-photo"><Image src={photo} alt="" fill sizes="(max-width: 899px) 100vw, 380px" unoptimized /></span> : null}
               <ArrowUpRight className="sf-arrow-mark" aria-hidden="true" />
               <h2 className="sf-h3"><Link href={`/classes/${classType.id}`}>{classType.name}</Link></h2>
               <div className="sf-list-plain">

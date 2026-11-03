@@ -1318,3 +1318,79 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
     .sf-header .sf-wordmark-copy span { font-size: 0.5625rem; }
   }
 }
+
+/*
+ * Rigel match (2026-11-02): coral actions, the club photo faded into the page, and per-class /
+ * per-plan photos. The coral is derived from the tenant hue (--brand-hue, from the saved logo
+ * colour) so Store Settings and the logo stay the source; ink text keeps coral buttons >= 4.5:1.
+ * The logo mark keeps --sf-accent-fill. Photos come from features/storefront/lib/media.ts.
+ */
+@layer components {
+  .sf-root, .sf-portal {
+    --sf-cta: hsl(var(--brand-hue) 80% 66%);
+    --sf-cta-hover: hsl(var(--brand-hue) 80% 61%);
+    --sf-cta-on: #1d1e24;
+    /* Large display type only (>= 3:1 on the canvas); small coral text keeps --sf-accent (AA). */
+    --sf-cta-display: hsl(var(--brand-hue) 80% 61%);
+  }
+  .sf-rg-title em { color: var(--sf-cta-display); }
+  /* Coral reads as small text on the dark photo cards (>= 5:1). */
+  @media (max-width: 899px) { .sf-rg-plan li svg { color: var(--sf-cta); } }
+  .sf-btn:is(:not([data-variant]), [data-variant="accent"]) { background: var(--sf-cta); color: var(--sf-cta-on); }
+  .sf-btn:is(:not([data-variant]), [data-variant="accent"]):hover { background: var(--sf-cta-hover); }
+  /* Phone plan cards keep a text-link "Explore" in coral on the dark card; desktop uses the pill. */
+  .sf-rg-plan .sf-btn.sf-rg-choose { background: transparent; color: var(--sf-cta); }
+  .sf-rg-plan .sf-btn.sf-rg-choose:hover { background: transparent; }
+  @media (min-width: 900px) {
+    .sf-rg-plan .sf-btn.sf-rg-choose { background: var(--sf-cta); color: var(--sf-cta-on); }
+    .sf-rg-plan .sf-btn.sf-rg-choose:hover { background: var(--sf-cta-hover); }
+  }
+  .sf-seg > :is([aria-current]:not([aria-current="false"]), [aria-pressed="true"], [aria-selected="true"], [data-active]),
+  .sf-seg > label:has(input:checked),
+  .sf-chip[aria-current="page"], .sf-chip[aria-pressed="true"],
+  .sf-rg-days > button[aria-pressed="true"] { border-color: var(--sf-cta); background: var(--sf-cta); color: var(--sf-cta-on); }
+  .sf-rg-days > button[aria-pressed="true"] strong { color: inherit; }
+  .sf-nav a[aria-current="page"]::after { background: var(--sf-cta); }
+  .sf-rg-strip > li[data-today] { background: color-mix(in oklab, var(--sf-cta) 14%, var(--sf-raised)); }
+  @media (min-width: 900px) {
+    .sf-rg-plan[data-featured] { border-color: var(--sf-cta); box-shadow: 0 18px 40px -18px color-mix(in oklab, var(--sf-cta) 60%, transparent); }
+  }
+  @media (max-width: 899px) { .sf-rg-plan[data-featured] { border-color: var(--sf-cta); } }
+
+  /* Hero: the club photo fades into the canvas (phone) and sits as the design's raised card (desktop). */
+  @media (max-width: 899px) {
+    .sf-rg-hero { min-height: 232px; }
+    .sf-rg-hero-media {
+      inset: -8px calc(-1 * var(--sf-gutter)) 0 34%;
+      -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.55) 22%, #000 52%), linear-gradient(0deg, transparent 0%, #000 30%);
+      mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.55) 22%, #000 52%), linear-gradient(0deg, transparent 0%, #000 30%);
+    }
+    .sf-rg-hero-media img { object-position: 78% 55%; }
+  }
+  @media (min-width: 900px) {
+    .sf-rg-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 456px); }
+    .sf-rg-hero-media { aspect-ratio: 456 / 293; border-radius: 28px; }
+    .sf-rg-hero-media img { object-position: 62% 60%; }
+  }
+
+  /* Phone timeline: a class type's photo behind its name, darkened on the text side. */
+  .sf-rg-class[data-photo] { isolation: isolate; background: #15161b; }
+  .sf-rg-class-photo { z-index: -2; object-fit: cover; object-position: 70% 40%; }
+  .sf-rg-class[data-photo]::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgb(10 11 14 / 0.86) 0%, rgb(10 11 14 / 0.6) 48%, rgb(10 11 14 / 0.18) 100%); }
+
+  /* Class cards: photo banner on top when the class type has one; the plain card otherwise. */
+  .sf-class-card[data-photo] { overflow: hidden; padding-top: 0; }
+  .sf-class-card-photo { position: relative; display: block; aspect-ratio: 16 / 9; margin: 0 -20px 4px; overflow: hidden; background: #15161b; }
+  .sf-class-card-photo img { object-fit: cover; }
+  .sf-class-card[data-photo] .sf-arrow-mark { z-index: 1; color: #fff; filter: drop-shadow(0 1px 3px rgb(0 0 0 / 0.5)); }
+
+  /* Plans (phone): the plan's photo fills the dark card under a scrim. Desktop keeps light cards. */
+  .sf-rg-plan[data-photo] { isolation: isolate; overflow: hidden; background: #15161b; }
+  .sf-rg-plan-photo { z-index: -2; object-fit: cover; object-position: 65% 30%; }
+  .sf-rg-plan[data-photo]::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: linear-gradient(180deg, rgb(10 11 14 / 0.55) 0%, rgb(10 11 14 / 0.72) 55%, rgb(10 11 14 / 0.9) 100%); }
+  @media (min-width: 900px) {
+    .sf-rg-plan[data-photo] { background: color-mix(in oklab, var(--sf-surface) 55%, var(--sf-raised)); }
+    .sf-rg-plan[data-photo][data-featured] { background: var(--sf-raised); }
+    .sf-rg-plan-photo, .sf-rg-plan[data-photo]::before { display: none; }
+  }
+}

@@ -13,6 +13,7 @@ import { bookingReturnPath, joinPath } from "@/features/storefront/lib/return-pa
 import { calendarDays, creditLabel, localDateKey } from "@/features/storefront/lib/discovery";
 import { mapLink, publishedHours } from "@/features/storefront/lib/contact-config";
 import { difficultyLabel, documentText, initials } from "@/features/storefront/lib/presentation";
+import { classTypePhoto, membershipPlanPhoto } from "@/features/storefront/lib/media";
 import { SessionTime } from "@/features/storefront/modules/common/training";
 import { ArrowLink, EmptyState } from "@/features/storefront/modules/common/ui";
 import { HoursList } from "@/features/storefront/modules/layout/templates/footer";
@@ -77,6 +78,8 @@ export async function HomePage() {
   const days = calendarDays(new Date(), zone, 7);
   const coachPhoto = new Map(coaches.map((coach) => [coach.id, coach.photo]));
   const sessionName = (session: (typeof sessions)[number]) => session.name || session.classType?.name || "Class";
+  // Photos are mapped by class type (never random); a type without an asset keeps the dark card.
+  const formatPhoto = new Map(formats.map((format) => [format.id, classTypePhoto(format.name)]));
 
   const byDay: Record<string, HomeSession[]> = {};
   for (const day of days) byDay[day.key] = [];
@@ -89,6 +92,7 @@ export async function HomePage() {
       name: sessionName(session),
       coach: session.instructor?.name?.split(/\s+/)[0] ?? null,
       classHref: session.classType ? `/classes/${session.classType.id}` : null,
+      photo: (session.classType ? formatPhoto.get(session.classType.id) ?? classTypePhoto(session.classType.name) : null) ?? null,
       bookHref: bookingReturnPath(session.id),
       spots: session.availability.spotsRemaining,
     });
@@ -193,8 +197,10 @@ export async function HomePage() {
               const Icon = PLAN_ICONS[index % PLAN_ICONS.length];
               const description = documentText(tier.description);
               const includes = planIncludes(tier);
+              const photo = membershipPlanPhoto(tier.name);
               return (
-                <article key={tier.id} className="sf-rg-plan" data-featured={index === featured || undefined}>
+                <article key={tier.id} className="sf-rg-plan" data-featured={index === featured || undefined} data-photo={photo ? "" : undefined}>
+                  {photo ? <Image className="sf-rg-plan-photo" src={photo} alt="" fill sizes="(max-width: 899px) 33vw, 360px" unoptimized /> : null}
                   {index === featured && tier.classCreditsPerMonth === -1 ? <span className="sf-rg-badge">Unlimited classes</span> : null}
                   <header>
                     <span className="sf-rg-plan-icon" aria-hidden="true"><Icon /></span>
@@ -253,8 +259,10 @@ export async function HomePage() {
             {formats.slice(0, 6).map((format) => {
               const description = documentText(format.description);
               const level = difficultyLabel(format.difficulty);
+              const photo = formatPhoto.get(format.id);
               return (
-                <article key={format.id} className="sf-class-card">
+                <article key={format.id} className="sf-class-card" data-photo={photo ? "" : undefined}>
+                  {photo ? <span className="sf-class-card-photo"><Image src={photo} alt="" fill sizes="(max-width: 899px) 80vw, 380px" unoptimized /></span> : null}
                   <ArrowUpRight className="sf-arrow-mark" aria-hidden="true" />
                   <h3><Link href={`/classes/${format.id}`}>{format.name}</Link></h3>
                   <div className="sf-list-plain">

@@ -1,6 +1,7 @@
 import { gql } from "graphql-request";
 import { gymClient } from "@/features/storefront/lib/config";
 import { PUBLIC_PAGE_SIZE, collectPublicPages, publicCatalogPage } from "./pages";
+import { coachPhoto } from "@/features/storefront/lib/media";
 
 export type InstructorData = {
   id: string;
@@ -28,7 +29,7 @@ function instructorShape(instructor: PublicInstructor): InstructorData {
     bio: instructor.bio ?? null,
     specialties: instructor.specialties,
     certifications: instructor.certifications,
-    photo: instructor.imagePath ?? null,
+    photo: coachPhoto(instructor.imagePath, instructor.name),
     isActive: true,
   };
 }
