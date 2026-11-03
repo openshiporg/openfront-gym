@@ -24,6 +24,14 @@ test("a full-capability holder may add a missing capability to its own role", ()
   assert.equal(ownRoleCompletionError(full, { canManageCheckIns: true, updatedAt: new Date() }), null);
 });
 
+test("Keystone's full-shape resolvedData (untouched fields undefined) is judged by the touched fields only", () => {
+  const shape = { name: undefined, organization: undefined, assignedTo: undefined, canManageRoles: undefined, isInstructor: undefined, createdAt: undefined, updatedAt: undefined };
+  assert.equal(ownRoleCompletionError(full, { ...shape, canManageCheckIns: true }), null);
+  assert.match(String(ownRoleCompletionError(full, { ...shape, canManageRoles: false })), /only gain capabilities/);
+  assert.match(String(ownRoleCompletionError(full, { ...shape, name: "Owner" })), /only gain capabilities/);
+  assert.match(String(ownRoleCompletionError(full, { ...shape, canManageAllRecords: null })), /only gain capabilities/);
+});
+
 test("a full-capability holder may not remove a flag, rename, or change relationships of its own role", () => {
   assert.match(String(ownRoleCompletionError(full, { canManageRoles: false })), /only gain capabilities/);
   assert.match(String(ownRoleCompletionError(full, { name: "Owner" })), /only gain capabilities/);

@@ -43,7 +43,8 @@ export function ownRoleCompletionError(item: any, resolvedData: Record<string, u
   // isInstructor is a persona (narrows to own rosters), not a capability; it stays out of self-completion.
   const allowed = new Set<string>(roleCapabilityFields.filter(field => field !== 'isInstructor'));
   for (const [key, value] of Object.entries(resolvedData ?? {})) {
-    if (key === 'updatedAt') continue;
+    // Keystone's resolvedData carries every field; untouched ones are undefined.
+    if (value === undefined || key === 'updatedAt') continue;
     if (!allowed.has(key) || value !== true) {
       return 'Your own role can only gain capabilities; ask another role manager for any other change';
     }
