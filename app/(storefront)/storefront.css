@@ -1139,8 +1139,9 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   }
   .sf-rg-strip::-webkit-scrollbar { display: none; }
   .sf-rg-strip:focus-visible { outline: 2px solid var(--sf-accent-fill); outline-offset: 4px; border-radius: 18px; }
+  /* position: relative keeps the pills' absolutely positioned sr-only text inside the row's clip (no page overflow). */
   .sf-rg-strip > li {
-    display: flex; min-width: 0; flex-direction: column; gap: 12px; scroll-snap-align: start; border: 1px solid var(--sf-line); border-radius: 18px;
+    position: relative; display: flex; min-width: 0; flex-direction: column; gap: 10px; scroll-snap-align: start; border: 1px solid var(--sf-line); border-radius: 18px;
     padding: 16px; background: var(--sf-raised);
   }
   .sf-rg-strip > li[data-today] { border-color: color-mix(in oklab, var(--sf-accent-fill) 55%, transparent); background: color-mix(in oklab, var(--sf-accent-fill) 7%, var(--sf-raised)); }
@@ -1155,10 +1156,11 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-rg-slot { display: grid; min-width: 0; gap: 2px; line-height: 1.25; }
   .sf-rg-slot time { font-size: 1.625rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
   .sf-rg-slot time small { margin-left: 4px; font-size: 1.625rem; font-weight: 600; }
-  .sf-rg-slot > :is(a, b) { color: var(--sf-accent); font-size: 1.125rem; font-weight: 600; overflow-wrap: normal; word-break: normal; hyphens: manual; }
+  .sf-rg-slot > :is(a, b) { color: var(--sf-accent); font-size: 1.25rem; font-weight: 600; overflow-wrap: normal; word-break: normal; hyphens: manual; }
   .sf-rg-slot > a:hover { text-decoration: underline; text-underline-offset: 3px; }
   .sf-rg-slot > span { color: var(--sf-ink-3); font-size: 0.9375rem; }
-  .sf-rg-pill { align-self: flex-start; display: inline-flex; min-height: 40px; align-items: center; margin-top: auto; border: 1px solid var(--sf-line-strong); border-radius: 999px; padding: 0 22px; background: var(--sf-raised); font-size: 0.9375rem; font-weight: 500; }
+  .sf-rg-thumb + .sf-rg-slot { margin-top: 4px; }
+  .sf-rg-pill { align-self: flex-start; display: inline-flex; min-height: 40px; align-items: center; margin-top: auto; flex: none; border: 1px solid var(--sf-line-strong); border-radius: 999px; padding: 0 22px; background: var(--sf-raised); font-size: 0.9375rem; font-weight: 500; }
   .sf-rg-pill:hover { border-color: var(--sf-accent-fill); color: var(--sf-accent); }
   .sf-rg-rest { color: var(--sf-ink-3); font-size: 0.9375rem; }
   .sf-rg-strip > li > .sf-rg-rest { display: grid; flex: 1; min-height: 12rem; place-items: center; border: 1px dashed var(--sf-line-strong); border-radius: 12px; }
@@ -1359,7 +1361,8 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-rg-days > button[aria-pressed="true"] { border-color: var(--sf-cta); background: var(--sf-cta); color: var(--sf-cta-on); }
   .sf-rg-days > button[aria-pressed="true"] strong { color: inherit; }
   .sf-nav a[aria-current="page"]::after { background: var(--sf-cta); }
-  .sf-rg-strip > li[data-today] { background: color-mix(in oklab, var(--sf-cta) 14%, var(--sf-raised)); }
+  /* Today: a coral-tinted card with a thin coral border, as in the design. */
+  .sf-rg-strip > li[data-today] { border: 1.5px solid var(--sf-cta); background: color-mix(in oklab, var(--sf-cta) 14%, var(--sf-raised)); }
   @media (min-width: 900px) {
     .sf-rg-plan[data-featured] { border-color: var(--sf-cta); box-shadow: 0 18px 40px -18px color-mix(in oklab, var(--sf-cta) 60%, transparent); }
   }

@@ -141,7 +141,7 @@ export async function HomePage() {
         {sessions.length ? (
           <HomeWeekStrip
             title={<h2 id="home-week">Weekly Schedule</h2>}
-            more={<Link href="/schedule?view=week" className="sf-rg-more">View Full Schedule<ArrowRight aria-hidden="true" /></Link>}
+            more={<Link href="/schedule?view=week" className="sf-rg-more" data-tone="ink">View Full Schedule<ArrowRight aria-hidden="true" /></Link>}
           >
             {strip.map(({ day, index, first, count }) => {
               const coachPhotoUrl = first?.instructor ? coachPhoto.get(first.instructor.id) : null;
@@ -178,7 +178,7 @@ export async function HomePage() {
           <div className="sf-rg-week">
             <div className="sf-rg-head">
               <h2 id="home-week">Weekly Schedule</h2>
-              <Link href="/schedule?view=week" className="sf-rg-more">View Full Schedule<ArrowRight aria-hidden="true" /></Link>
+              <Link href="/schedule?view=week" className="sf-rg-more" data-tone="ink">View Full Schedule<ArrowRight aria-hidden="true" /></Link>
             </div>
             <p className="sf-rg-rest">This week’s timetable isn’t published yet. <Link href="/classes">See the class formats</Link>.</p>
           </div>
