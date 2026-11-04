@@ -18,6 +18,7 @@ import { SessionTime } from "@/features/storefront/modules/common/training";
 import { ArrowLink, EmptyState } from "@/features/storefront/modules/common/ui";
 import { HoursList } from "@/features/storefront/modules/layout/templates/footer";
 import HomeDaySchedule, { type HomeSession } from "@/features/storefront/modules/classes/components/home-day-schedule";
+import HomeWeekStrip from "@/features/storefront/modules/classes/components/home-week-strip";
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
@@ -99,11 +100,11 @@ export async function HomePage() {
   }
   const firstOpenDay = days.find((day) => byDay[day.key].length)?.key ?? days[0].key;
   const phoneDays = days.map((day, index) => ({ key: day.key, label: day.label, day: day.key.slice(8).replace(/^0/, ""), full: day.full, today: index === 0 }));
-  // Desktop strip: the first session of each day that has one, in day order.
+  // Desktop strip: every day of the week, carrying its first session (or a calm "No sessions" card).
   const strip = days.map((day, index) => {
     const first = sessions.find((session) => localDateKey(session.startsAt, zone) === day.key);
     return { day, index, first, count: byDay[day.key].length };
-  }).filter((item) => item.first);
+  });
 
   const featured = featuredIndex(tiers);
   const stats = (config?.heroStats?.length ? config.heroStats.slice(0, 3).map((stat: any, index: number) => ({ value: stat.value, label: stat.label, caption: null as string | null, icon: [CalendarDays, Trophy, MapPin][index] }))
@@ -135,49 +136,53 @@ export async function HomePage() {
         ) : null}
       </section>
 
-      {/* Desktop: the week as a strip of each day's first session. */}
+      {/* Desktop: the week as a scroll-snap row of day cards (each day's first session). */}
       <section className="sf-wrap sf-rg-desk" aria-labelledby="home-week">
-        <div className="sf-rg-week">
-          <div className="sf-rg-head">
-            <h2 id="home-week">Weekly Schedule</h2>
-            <Link href="/schedule?view=week" className="sf-rg-more" data-tone="ink">View Full Schedule<ArrowRight aria-hidden="true" /></Link>
-          </div>
-          {sessions.length ? (
-            <ol className="sf-rg-strip">
-              {strip.map(({ day, index, first, count }) => {
-                const photo = first?.instructor ? coachPhoto.get(first.instructor.id) : null;
-                const coachName = first?.instructor?.name ?? null;
-                return (
-                  <li key={day.key} data-today={index === 0 || undefined}>
-                    <Link href={`/schedule?date=${day.key}`} className="sf-rg-date" aria-label={`${day.full}, ${count} ${count === 1 ? "session" : "sessions"}`}>
-                      <span>{index === 0 ? "Today" : day.label}</span>
-                      <strong>{day.short}</strong>
-                    </Link>
-                    {first ? (
+        {sessions.length ? (
+          <HomeWeekStrip
+            title={<h2 id="home-week">Weekly Schedule</h2>}
+            more={<Link href="/schedule?view=week" className="sf-rg-more">View Full Schedule<ArrowRight aria-hidden="true" /></Link>}
+          >
+            {strip.map(({ day, index, first, count }) => {
+              const coachPhotoUrl = first?.instructor ? coachPhoto.get(first.instructor.id) : null;
+              const classPhoto = first?.classType ? formatPhoto.get(first.classType.id) ?? classTypePhoto(first.classType.name) : null;
+              const photo = classPhoto || coachPhotoUrl || null;
+              const coachName = first?.instructor?.name ?? null;
+              return (
+                <li key={day.key} data-today={index === 0 || undefined}>
+                  <Link href={`/schedule?date=${day.key}`} className="sf-rg-date" aria-label={`${day.full}, ${count} ${count === 1 ? "session" : "sessions"}`}>
+                    {index === 0 ? "Today" : day.label} · {day.short}
+                  </Link>
+                  {first ? (
+                    <>
+                      <span className="sf-rg-thumb" aria-hidden="true">
+                        {photo ? <Image src={photo} alt="" fill sizes="280px" unoptimized /> : initials(coachName)}
+                      </span>
                       <div className="sf-rg-slot">
-                        <span className="sf-rg-avatar" aria-hidden="true">
-                          {photo ? <Image src={photo} alt="" width={96} height={96} unoptimized /> : initials(coachName)}
-                        </span>
-                        <div>
-                          <SessionTime value={formatOccurrenceTime(first.startsAt, zone)} dateTime={first.startsAt} />
-                          {coachName ? <span>{coachName.split(/\s+/)[0]}</span> : null}
-                          {first.classType ? <Link href={`/classes/${first.classType.id}`}>{sessionName(first)}</Link> : <b>{sessionName(first)}</b>}
-                        </div>
-                        <Link href={bookingReturnPath(first.id)} className="sf-rg-pill">
-                          {first.availability.spotsRemaining > 0 ? "Book" : "Waitlist"}<span className="sr-only"> {sessionName(first)}, {day.full}</span>
-                        </Link>
+                        <SessionTime value={formatOccurrenceTime(first.startsAt, zone)} dateTime={first.startsAt} />
+                        {first.classType ? <Link href={`/classes/${first.classType.id}`}>{sessionName(first)}</Link> : <b>{sessionName(first)}</b>}
+                        {coachName ? <span>{coachName.split(/\s+/)[0]}</span> : null}
                       </div>
-                    ) : (
-                      <p className="sf-rg-rest">No sessions</p>
-                    )}
-                  </li>
-                );
-              })}
-            </ol>
-          ) : (
+                      <Link href={bookingReturnPath(first.id)} className="sf-rg-pill">
+                        {first.availability.spotsRemaining > 0 ? "Book" : "Waitlist"}<span className="sr-only"> {sessionName(first)}, {day.full}</span>
+                      </Link>
+                    </>
+                  ) : (
+                    <p className="sf-rg-rest">No sessions</p>
+                  )}
+                </li>
+              );
+            })}
+          </HomeWeekStrip>
+        ) : (
+          <div className="sf-rg-week">
+            <div className="sf-rg-head">
+              <h2 id="home-week">Weekly Schedule</h2>
+              <Link href="/schedule?view=week" className="sf-rg-more">View Full Schedule<ArrowRight aria-hidden="true" /></Link>
+            </div>
             <p className="sf-rg-rest">This week’s timetable isn’t published yet. <Link href="/classes">See the class formats</Link>.</p>
-          )}
-        </div>
+          </div>
+        )}
       </section>
 
       {/* Phone: day picker and timeline. */}
