@@ -205,7 +205,7 @@ export async function HomePage() {
               const photo = membershipPlanPhoto(tier.name);
               return (
                 <article key={tier.id} className="sf-rg-plan" data-featured={index === featured || undefined} data-photo={photo ? "" : undefined}>
-                  {photo ? <Image className="sf-rg-plan-photo" src={photo} alt="" fill sizes="(max-width: 899px) 33vw, 360px" unoptimized /> : null}
+                  {photo ? <Image className="sf-rg-plan-photo" src={photo} alt="" fill sizes="(max-width: 639px) 100vw, (max-width: 899px) 33vw, 360px" unoptimized /> : null}
                   {index === featured && tier.classCreditsPerMonth === -1 ? <span className="sf-rg-badge">Unlimited classes</span> : null}
                   <header>
                     <span className="sf-rg-plan-icon" aria-hidden="true"><Icon /></span>

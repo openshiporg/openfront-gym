@@ -1414,4 +1414,17 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
     .sf-rg-price strong { font-size: clamp(1.125rem, 17cqi, 1.625rem); }
     .sf-rg-price span { font-size: 0.75rem; }
   }
+  /* Phones: one plan per row at full width, nothing clamped (owner, 2026-11-04). */
+  @media (max-width: 639px) {
+    .sf-rg-plans, .sf-rg-plans[data-count] { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .sf-rg-plan { gap: 12px; padding: 18px 18px 6px; }
+    .sf-rg-plan h3 { font-size: 1.25rem; }
+    .sf-rg-plan header p { display: block; overflow: visible; -webkit-line-clamp: unset; font-size: 0.875rem; line-height: 1.4; }
+    .sf-rg-price p { flex-wrap: nowrap; }
+    .sf-rg-price strong { font-size: 1.75rem; }
+    .sf-rg-price span { font-size: 0.875rem; }
+    .sf-rg-price small { display: block; margin-top: 4px; font-size: 0.8125rem; }
+    .sf-rg-plan ul { gap: 6px; font-size: 0.9375rem; }
+    .sf-rg-plan li svg { margin-top: 3px; }
+  }
 }
