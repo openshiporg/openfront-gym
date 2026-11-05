@@ -1393,7 +1393,8 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   /* Phone timeline: a class type's photo behind its name, darkened on the text side. */
   .sf-rg-class[data-photo] { isolation: isolate; background: #15161b; }
   .sf-rg-class-photo { z-index: -2; object-fit: cover; object-position: 70% 40%; }
-  .sf-rg-class[data-photo]::before { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgb(10 11 14 / 0.86) 0%, rgb(10 11 14 / 0.6) 48%, rgb(10 11 14 / 0.18) 100%); }
+  /* Plus a top-right scrim so the in-card "Book now" stays legible over the bright side of the photo. */
+  .sf-rg-class[data-photo]::before { content: ""; position: absolute; inset: 0; z-index: -1; background: radial-gradient(48% 70% at 100% 0%, rgb(10 11 14 / 0.78), transparent 100%), linear-gradient(90deg, rgb(10 11 14 / 0.86) 0%, rgb(10 11 14 / 0.6) 48%, rgb(10 11 14 / 0.18) 100%); }
 
   /* Class cards: photo banner on top when the class type has one; the plain card otherwise. */
   .sf-class-card[data-photo] { overflow: hidden; padding-top: 0; }
