@@ -1183,19 +1183,25 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-rg-days > button[aria-pressed="true"] { background: var(--sf-accent-fill); color: var(--sf-accent-on); }
   .sf-rg-days > button[aria-pressed="true"] strong { color: inherit; }
   .sf-rg-timeline { display: grid; margin-top: 10px; }
-  .sf-rg-timeline > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--sf-line); padding-block: 8px; }
+  .sf-rg-timeline > li { display: block; border-bottom: 1px solid var(--sf-line); padding-block: 8px; }
   .sf-rg-class {
     position: relative; display: grid; min-height: 72px; align-content: center; gap: 2px; overflow: hidden; border-radius: 14px; padding: 12px 14px;
     background: radial-gradient(120% 140% at 100% 0%, color-mix(in oklab, var(--sf-accent-fill) 42%, transparent), transparent 55%), linear-gradient(135deg, #2a2c33, #121318);
     color: #fff;
   }
   .sf-rg-class strong { overflow: hidden; font-size: 1.125rem; font-weight: 600; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
-  .sf-rg-class strong a::after { content: ""; position: absolute; inset: 0; }
+  /* The class name keeps its own link to the class page, raised above the card-wide booking target. */
+  .sf-rg-class strong a { position: relative; z-index: 1; }
   .sf-rg-class span { color: rgb(255 255 255 / 0.82); font-size: 0.8125rem; }
   /* The session time sits on its own line above the class name, in the same muted weight as the coach line. */
   .sf-rg-class .sf-rg-class-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .sf-rg-class-time time small { margin-left: 2px; font-size: inherit; }
-  .sf-rg-book { display: inline-flex; min-height: 44px; align-items: center; gap: 2px; color: var(--sf-accent); font-size: 0.875rem; font-weight: 500; white-space: nowrap; }
+  /* Top row: time on the left, "Book now" on the right on the same baseline. The card is always dark,
+     so the link uses the dark-surface accent in both themes. Its 44px target is pulled back with negative
+     margins so the row stays text height, and its ::after stretches over the card so a tap anywhere books. */
+  .sf-rg-class-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+  .sf-rg-book { display: inline-flex; flex: none; min-height: 44px; align-items: center; gap: 2px; margin-block: -12px; margin-right: -6px; padding-inline: 6px; color: var(--sf-accent-text-dark); font-size: 0.875rem; font-weight: 500; white-space: nowrap; }
+  .sf-rg-book::after { content: ""; position: absolute; inset: 0; }
   .sf-rg-book svg { width: 16px; height: 16px; }
   .sf-rg-none { display: grid; justify-items: start; gap: 6px; margin-top: 12px; border: 1px dashed var(--sf-line-strong); border-radius: var(--sf-r); padding: 18px; color: var(--sf-ink-2); }
   .sf-rg-none > svg { width: 22px; height: 22px; color: var(--sf-ink-3); }

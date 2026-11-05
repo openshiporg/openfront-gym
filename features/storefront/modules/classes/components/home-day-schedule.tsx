@@ -48,15 +48,17 @@ export default function HomeDaySchedule({ days, sessions, initialKey }: { days: 
           {list.map((session) => (
             <li key={session.id}>
               <div className="sf-rg-class" data-photo={session.photo ? "" : undefined}>
-                {session.photo ? <Image className="sf-rg-class-photo" src={session.photo} alt="" fill sizes="(max-width: 899px) 75vw, 1px" unoptimized /> : null}
-                <span className="sf-rg-class-time"><SessionTime value={session.time} dateTime={session.startsAt} /></span>
+                {session.photo ? <Image className="sf-rg-class-photo" src={session.photo} alt="" fill sizes="(max-width: 899px) 100vw, 1px" unoptimized /> : null}
+                <div className="sf-rg-class-top">
+                  <span className="sf-rg-class-time"><SessionTime value={session.time} dateTime={session.startsAt} /></span>
+                  <Link href={session.bookHref} className="sf-rg-book">
+                    {session.spots > 0 ? "Book now" : "Waitlist"}<ChevronRight aria-hidden="true" />
+                    <span className="sr-only"> {session.name}, {session.time}</span>
+                  </Link>
+                </div>
                 <strong>{session.classHref ? <Link href={session.classHref}>{session.name}</Link> : session.name}</strong>
                 {session.coach ? <span>with {session.coach}</span> : null}
               </div>
-              <Link href={session.bookHref} className="sf-rg-book">
-                {session.spots > 0 ? "Book now" : "Waitlist"}<ChevronRight aria-hidden="true" />
-                <span className="sr-only"> {session.name}, {session.time}</span>
-              </Link>
             </li>
           ))}
         </ol>
