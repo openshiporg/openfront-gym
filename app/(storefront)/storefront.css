@@ -1183,9 +1183,7 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-rg-days > button[aria-pressed="true"] { background: var(--sf-accent-fill); color: var(--sf-accent-on); }
   .sf-rg-days > button[aria-pressed="true"] strong { color: inherit; }
   .sf-rg-timeline { display: grid; margin-top: 10px; }
-  .sf-rg-timeline > li { display: grid; grid-template-columns: 4.75rem minmax(0, 1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid var(--sf-line); padding-block: 8px; }
-  .sf-rg-time { position: relative; display: flex; align-items: center; gap: 6px; font-size: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .sf-rg-time time small { margin-left: 2px; font-size: 0.75rem; }
+  .sf-rg-timeline > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--sf-line); padding-block: 8px; }
   .sf-rg-class {
     position: relative; display: grid; min-height: 72px; align-content: center; gap: 2px; overflow: hidden; border-radius: 14px; padding: 12px 14px;
     background: radial-gradient(120% 140% at 100% 0%, color-mix(in oklab, var(--sf-accent-fill) 42%, transparent), transparent 55%), linear-gradient(135deg, #2a2c33, #121318);
@@ -1194,6 +1192,9 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-rg-class strong { overflow: hidden; font-size: 1.125rem; font-weight: 600; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
   .sf-rg-class strong a::after { content: ""; position: absolute; inset: 0; }
   .sf-rg-class span { color: rgb(255 255 255 / 0.82); font-size: 0.8125rem; }
+  /* The session time sits on its own line above the class name, in the same muted weight as the coach line. */
+  .sf-rg-class .sf-rg-class-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sf-rg-class-time time small { margin-left: 2px; font-size: inherit; }
   .sf-rg-book { display: inline-flex; min-height: 44px; align-items: center; gap: 2px; color: var(--sf-accent); font-size: 0.875rem; font-weight: 500; white-space: nowrap; }
   .sf-rg-book svg { width: 16px; height: 16px; }
   .sf-rg-none { display: grid; justify-items: start; gap: 6px; margin-top: 12px; border: 1px dashed var(--sf-line-strong); border-radius: var(--sf-r); padding: 18px; color: var(--sf-ink-2); }
@@ -1318,7 +1319,6 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
     .sf-rg-days > button { min-height: 46px; border-radius: 12px; font-size: 0.75rem; }
     .sf-rg-days > button strong { font-size: 0.8125rem; }
     .sf-rg-timeline > li { padding-block: 6px; }
-    .sf-rg-time { font-size: 0.875rem; }
     .sf-rg-class { min-height: 56px; padding: 8px 14px; }
     .sf-rg-class strong { font-size: 1rem; }
     .sf-rg-class span { font-size: 0.75rem; }

@@ -47,9 +47,9 @@ export default function HomeDaySchedule({ days, sessions, initialKey }: { days: 
         <ol className="sf-rg-timeline">
           {list.map((session) => (
             <li key={session.id}>
-              <span className="sf-rg-time"><SessionTime value={session.time} dateTime={session.startsAt} /></span>
               <div className="sf-rg-class" data-photo={session.photo ? "" : undefined}>
-                {session.photo ? <Image className="sf-rg-class-photo" src={session.photo} alt="" fill sizes="(max-width: 899px) 60vw, 1px" unoptimized /> : null}
+                {session.photo ? <Image className="sf-rg-class-photo" src={session.photo} alt="" fill sizes="(max-width: 899px) 75vw, 1px" unoptimized /> : null}
+                <span className="sf-rg-class-time"><SessionTime value={session.time} dateTime={session.startsAt} /></span>
                 <strong>{session.classHref ? <Link href={session.classHref}>{session.name}</Link> : session.name}</strong>
                 {session.coach ? <span>with {session.coach}</span> : null}
               </div>
