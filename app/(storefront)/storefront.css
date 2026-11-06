@@ -1047,7 +1047,7 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-wordmark-mark { width: 34px; height: 34px; }
   .sf-wordmark-copy { gap: 1px; line-height: 1; }
   .sf-wordmark-copy strong { font-size: 1.375rem; font-weight: 800; letter-spacing: 0.01em; text-transform: uppercase; }
-  .sf-wordmark-copy span { max-width: 14rem; color: var(--sf-ink); font-size: 0.625rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+  .sf-wordmark-copy span { max-width: 14rem; color: var(--sf-ink); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
   .sf-wordmark-copy em { max-width: 18rem; overflow: hidden; color: var(--sf-ink-3); font-size: 0.75rem; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
   @media (max-width: 399px) { .sf-header .sf-wordmark-copy span { display: block; } }
 
@@ -1339,7 +1339,7 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
     .sf-rg-book { font-size: 0.8125rem; }
     .sf-header .sf-wordmark-mark { width: 28px; height: 28px; }
     .sf-header .sf-wordmark-copy strong { font-size: 1.125rem; }
-    .sf-header .sf-wordmark-copy span { font-size: 0.5625rem; }
+    .sf-header .sf-wordmark-copy span { font-size: 0.75rem; letter-spacing: 0.06em; }
   }
 }
 

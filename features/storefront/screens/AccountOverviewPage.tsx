@@ -76,7 +76,11 @@ export default async function AccountOverviewPage() {
         ) : membership ? (
           <dl className="sf-facts">
             <div><dt>Classes</dt><dd className="sf-num">{formatCreditsLeft(remaining, allowance)}</dd></div>
-            <div><dt>{membership.autoRenew ? "Next billing" : "Access through"}</dt><dd>{membership.nextBillingDate ? formatOccurrenceDate(membership.nextBillingDate, zone) : "Not set"}</dd></div>
+            {membership.status === "cancelled" ? (
+              <div><dt>Access</dt><dd>Ended</dd></div>
+            ) : (
+              <div><dt>{membership.autoRenew ? "Next billing" : "Access through"}</dt><dd>{membership.nextBillingDate ? formatOccurrenceDate(membership.nextBillingDate, zone) : "Not set"}</dd></div>
+            )}
           </dl>
         ) : null}
         <Link className="sf-btn" data-variant={membership ? "secondary" : "accent"} data-block href={membership ? "/account/membership" : "/memberships"}>{membership ? "Manage membership" : "Compare plans"}</Link>

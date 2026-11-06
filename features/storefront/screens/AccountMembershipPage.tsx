@@ -101,7 +101,9 @@ export default async function AccountMembershipPage({
             <dl className="sf-facts" data-plain>
               <div><dt>Classes</dt><dd className="sf-num">{refreshed.error ? "Unavailable" : formatCreditsLeft(membership.classCreditsRemaining ?? 0, isUnlimitedCredits(allowance) ? allowance : null)}</dd></div>
               <div><dt>Member since</dt><dd>{formatDate(membership.startDate, { month: "short", year: "numeric" })}</dd></div>
-              <div><dt>{membership.autoRenew ? "Next billing" : "Access through"}</dt><dd>{formatDate(membership.nextBillingDate)}</dd></div>
+              {membership.status === "cancelled" ? null : (
+                <div><dt>{membership.autoRenew ? "Next billing" : "Access through"}</dt><dd>{formatDate(membership.nextBillingDate)}</dd></div>
+              )}
               {membership.cancelledAt ? <div><dt>Cancelled</dt><dd>{formatDate(membership.cancelledAt)}</dd></div> : null}
               {membership.creditPeriodStart && membership.creditPeriodEnd && !refreshed.error ? (
                 <div><dt>Credit period</dt><dd>{creditDate(membership.creditPeriodStart)} – {creditDate(membership.creditPeriodEnd)}</dd></div>
