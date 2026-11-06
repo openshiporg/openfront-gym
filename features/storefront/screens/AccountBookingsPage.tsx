@@ -144,7 +144,7 @@ function BookingRow({
       </div>
       {canCancel && booking.status !== "cancelled" ? (
         <div className="sf-booking-side">
-          <CancelBookingForm bookingId={booking.id} sessionName={`${name}${date ? `, ${formatOccurrenceDate(date, timeZone)}, ${formatOccurrenceTime(date, timeZone)}` : ""}`} waitlist={booking.status === "waitlist"} />
+          <CancelBookingForm bookingId={booking.id} sessionName={`${name}${date ? `, ${formatOccurrenceDate(date, timeZone)}, ${formatOccurrenceTime(date, timeZone)}` : ""}`} waitlist={booking.status === "waitlist"} dropIn={booked?.credit?.basis === "drop_in_paid"} />
         </div>
       ) : null}
       {booking.classInstance?.isCancelled ? (
