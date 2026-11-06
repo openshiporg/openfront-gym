@@ -68,7 +68,7 @@ export async function deliverBookingConfirmation(prisma: any, bookingId: string,
           to: booking.memberEmail,
           subject: `${waitlisted ? "You are on the waitlist for" : "Booked:"} ${name} at ${booking.organization?.name || "the club"}`,
           heading: waitlisted ? `You are on the waitlist for ${name}` : `You are booked into ${name}`,
-          lines: [when(booking.classInstance.date, zone), ...(place ? [place] : []), ...(waitlisted ? [`Waitlist position ${booking.waitlistPosition ?? ""}. A released place is confirmed automatically.`.trim()] : [])],
+          lines: [when(booking.classInstance.date, zone), ...(place ? [place] : []), ...(waitlisted ? [`Waitlist position ${booking.waitlistPosition ?? ""}. A released place is confirmed automatically.`.trim()] : ["We'll email you a reminder the day before."])],
           link: { url: publicAppUrl("/account/bookings"), label: "View your bookings" },
         };
       },
@@ -104,4 +104,53 @@ export async function deliverMembershipConfirmation(prisma: any, input: { organi
   } catch (error) {
     console.error("Membership confirmation email failed:", error instanceof Error ? error.message : "unknown");
   }
+}
+
+/** Hours before class that the reminder email goes out (Mindbody/ClassPass default). */
+export const CLASS_REMINDER_HOURS = 24;
+
+/**
+ * Sends one reminder per confirmed booking for classes starting within the next CLASS_REMINDER_HOURS.
+ * Bookings made inside that window are skipped: their confirmation email already carries the time.
+ * The per-booking OperationalNotice claim makes every pass and every replica safe to repeat.
+ */
+export async function sendDueClassReminders(prisma: any, now = new Date(), send?: Send) {
+  const until = new Date(now.getTime() + CLASS_REMINDER_HOURS * 3_600_000);
+  const due = await prisma.classBooking.findMany({
+    where: {
+      status: "confirmed",
+      memberEmail: { not: "" },
+      bookedAt: { lt: new Date(now.getTime() - 3_600_000) },
+      classInstance: { date: { gt: now, lte: until }, isCancelled: false },
+      organization: { status: "active" },
+    },
+    select: { id: true, organizationId: true, memberId: true, memberEmail: true, bookedAt: true,
+      organization: { select: { name: true, timezone: true } },
+      classInstance: { select: { date: true, location: { select: { name: true } }, classSchedule: { select: { name: true, location: { select: { name: true } } } } } } },
+    orderBy: { bookedAt: "asc" },
+    take: 100,
+  });
+  let attempted = 0;
+  for (const booking of due) {
+    const start = new Date(booking.classInstance.date);
+    // Booked less than a day out: the confirmation was the reminder.
+    if (start.getTime() - new Date(booking.bookedAt).getTime() < CLASS_REMINDER_HOURS * 3_600_000) continue;
+    attempted += 1;
+    await deliver(prisma, {
+      organizationId: booking.organizationId, memberId: booking.memberId, key: `class-reminder:booking:${booking.id}`, kind: "confirmation_email", to: booking.memberEmail,
+      build: () => {
+        const zone = booking.organization?.timezone || "UTC";
+        const name = booking.classInstance?.classSchedule?.name || "your class";
+        const place = booking.classInstance?.location?.name || booking.classInstance?.classSchedule?.location?.name;
+        return {
+          to: booking.memberEmail,
+          subject: `Reminder: ${name} at ${booking.organization?.name || "the club"}`,
+          heading: `See you at ${name}`,
+          lines: [when(start, zone), ...(place ? [place] : []), "Can't make it? Cancel from your bookings so someone on the waitlist gets your place."],
+          link: { url: internalOrigin.publicAppUrl("/account/bookings"), label: "View or cancel your booking" },
+        };
+      },
+    }, send);
+  }
+  return { attempted };
 }
