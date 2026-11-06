@@ -53,13 +53,13 @@ const eventRail: Record<string, string> = {
   orange: "before:bg-orange-500",
   rose: "before:bg-rose-500",
   blue: "before:bg-sky-500",
-  violet: "before:bg-violet-500",
+  violet: "before:bg-orange-500",
   zinc: "before:bg-zinc-400",
 }
 
 function eventTone(color?: string, cancelled?: boolean) {
   if (cancelled) return "bg-muted/60 text-muted-foreground line-through before:bg-muted-foreground/40"
-  return cn("bg-background text-foreground hover:bg-muted/60", eventRail[color || "violet"] || eventRail.violet)
+  return cn("bg-background text-foreground hover:bg-muted/60", eventRail[color || "orange"] || eventRail.orange)
 }
 
 function EventRow({ event, compact = false }: { event: WallEvent; compact?: boolean }) {

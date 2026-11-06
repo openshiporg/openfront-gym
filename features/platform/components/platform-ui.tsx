@@ -34,15 +34,13 @@ const toneDot: Record<Tone, string> = {
   info: "bg-sky-500",
 };
 
+// Status reads as a coloured dot and text, never a filled or outlined pill.
 const pillTone: Record<Tone, string> = {
-  neutral: "border-border bg-muted/60 text-muted-foreground",
-  positive:
-    "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-300",
-  warning:
-    "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300",
-  danger:
-    "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300",
-  info: "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-300",
+  neutral: "text-muted-foreground",
+  positive: "text-emerald-700 dark:text-emerald-300",
+  warning: "text-amber-700 dark:text-amber-300",
+  danger: "text-rose-700 dark:text-rose-300",
+  info: "text-sky-700 dark:text-sky-300",
 };
 
 // The shared Alert carries feedback; tone only colors its icon (danger uses the destructive variant).
@@ -296,7 +294,7 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex h-5 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 text-xs font-medium leading-4",
+        "inline-flex h-5 max-w-full shrink-0 items-center gap-1.5 whitespace-nowrap text-xs font-medium leading-4",
         pillTone[tone],
         className,
       )}

@@ -153,7 +153,7 @@ export async function getSchedulingWorkspace(
       instructor: instance.instructor?.user?.name || schedule.instructor?.user?.name || "TBA",
       capacity: `${instance.bookingsCount || 0}/${instance.maxCapacity || schedule.maxCapacity || 0}`,
       type: schedule.name?.toLowerCase().includes("yoga") ? "yoga" : "class",
-      color: instance.isCancelled ? "zinc" : "violet",
+      color: instance.isCancelled ? "zinc" : "orange",
       isCancelled: instance.isCancelled,
       rosterHref: `/dashboard/platform/rosters/${instance.id}`,
       scheduleId: schedule.id,
