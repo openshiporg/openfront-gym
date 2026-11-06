@@ -536,3 +536,43 @@ export async function checkOutControlledMember(
     return { checkIn: updated, reused: false };
   });
 }
+
+/**
+ * A membership that has ended gives up its future classes, the way Mindbody removes a cancelled
+ * client from upcoming visits: every confirmed or waitlisted booking for a class that hasn't started
+ * is cancelled through the normal path, so credits, waitlist promotion and the member notice all apply.
+ */
+export async function releaseFutureBookingsForEndedMembership(
+  prisma: any,
+  input: { organizationId: string; userId: string; actorUserId: string },
+) {
+  prisma = guardKeystonePrismaResults(prisma);
+  const member = await prisma.member.findFirst({
+    where: { organizationId: input.organizationId, userId: input.userId },
+    select: { id: true },
+  });
+  if (!member) return { released: 0, failed: 0 };
+  const bookings = await prisma.classBooking.findMany({
+    where: {
+      organizationId: input.organizationId,
+      memberId: member.id,
+      status: { in: ["confirmed", "waitlist"] },
+      classInstance: { date: { gt: new Date() }, isCancelled: false },
+    },
+    select: { id: true },
+    orderBy: { bookedAt: "asc" },
+  });
+  const actor: LifecycleActor = { userId: input.actorUserId, organizationId: input.organizationId, canManageAllRecords: true };
+  let released = 0;
+  let failed = 0;
+  for (const booking of bookings) {
+    try {
+      const result = await cancelCapacityControlledBooking(prisma, { bookingId: booking.id, actor });
+      if (result.cancelled) released += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("Releasing a booking for an ended membership failed", { bookingId: booking.id, name: error instanceof Error ? error.name : "UnknownError" });
+    }
+  }
+  return { released, failed };
+}

@@ -7,6 +7,7 @@ import { getPaymentProviderAdapterForExecution } from "../../integrations/paymen
 import type { PaymentProviderAdapter } from "../../integrations/payment/types";
 import { createFinanceException, enqueueOperationalNotice } from "../lib/operational-notices";
 import { ensureMonthlyCreditGrant, reviewFutureMembershipBookings } from "../lib/membership-credits";
+import { releaseFutureBookingsForEndedMembership } from "./gymLifecycle";
 import { currentRoleActor } from "../access/currentRoleActor";
 import { lockTransactionKey } from "./classCapacity";
 import { guardKeystonePrismaResults, requirePrismaAffectedCount, withKeystonePrismaTransaction } from "../lib/prisma-result";
@@ -141,7 +142,7 @@ export async function syncSubscription(
     throw new Error("Stripe subscription event ordering evidence is invalid");
   }
 
-  return withKeystonePrismaTransaction(context.prisma, async (transaction: any) => {
+  const result = await withKeystonePrismaTransaction(context.prisma, async (transaction: any) => {
     await lockTransactionKey(
       transaction,
       `stripe-subscription:${organizationId}:${incomingSubscription.id}`,
@@ -313,8 +314,16 @@ export async function syncSubscription(
 
     const reconciled = await transaction.membership.findFirst({ where: { memberId: user.id, organizationId } });
     if (reconciled) await reviewFutureMembershipBookings(transaction, reconciled);
-    return { applied: true };
+    return { applied: true, endedUserId: reconciled?.status === "cancelled" ? user.id as string : null };
   }, { maxWait: 10_000, timeout: 30_000 });
+  // An ended membership (cancel-now at Stripe, or the paid period running out after a renewal
+  // cancel) releases the member's upcoming classes; the booking path restores credits and promotes waitlists.
+  if ((result as any)?.endedUserId) {
+    await releaseFutureBookingsForEndedMembership(context.prisma, {
+      organizationId, userId: (result as any).endedUserId, actorUserId: (result as any).endedUserId,
+    });
+  }
+  return result;
 }
 
 /** One invoice lock + member lock commit receipts, service rights and status atomically. */

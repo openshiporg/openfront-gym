@@ -62,3 +62,28 @@ test("period-end cancel is unchanged", () => {
   assert.match(body, /autoRenew: false,\s*nextBillingDate: providerPeriodEnd/);
   assert.doesNotMatch(body, /cancelSubscriptionNow/);
 });
+
+test("cancel now releases the member's upcoming bookings through the normal booking cancel", () => {
+  const lifecycle = source("features/keystone/mutations/gymLifecycle.ts");
+  const release = lifecycle.slice(lifecycle.indexOf("export async function releaseFutureBookingsForEndedMembership"));
+  // only classes that haven't started, confirmed or waitlisted, never a cancelled class
+  assert.match(release, /status: \{ in: \["confirmed", "waitlist"\] \}/);
+  assert.match(release, /classInstance: \{ date: \{ gt: new Date\(\) \}, isCancelled: false \}/);
+  // the same path as a member cancel: credit restore, waitlist promotion and the member notice
+  assert.match(release, /cancelCapacityControlledBooking\(prisma, \{ bookingId: booking\.id, actor \}\)/);
+  const mutation = source("features/keystone/mutations/stripeSubscription.ts");
+  const body = mutation.slice(mutation.indexOf("export async function cancelMembershipNow"), mutation.indexOf("export async function freezeMembership"));
+  assert.ok(body.lastIndexOf("releaseFutureBookingsForEndedMembership") > body.indexOf("finishMembershipBillingAttempt"));
+  // an already-ended membership still sweeps leftovers (idempotent)
+  assert.ok(body.indexOf("releaseFutureBookingsForEndedMembership") < body.indexOf("adapter.cancelSubscriptionNow"));
+  // renewal cancel keeps bookings inside the paid period
+  const renewal = mutation.slice(mutation.indexOf("export async function cancelMembership("), mutation.indexOf("export async function cancelMembershipNow"));
+  assert.doesNotMatch(renewal, /releaseFutureBookingsForEndedMembership/);
+});
+
+test("a membership ended by Stripe (webhook) also releases upcoming bookings, after its transaction commits", () => {
+  const webhook = source("features/keystone/mutations/paymentWebhook.ts");
+  const body = webhook.slice(webhook.indexOf("export async function syncSubscription"), webhook.indexOf("export async function recordInvoicePayment"));
+  assert.match(body, /endedUserId: reconciled\?\.status === "cancelled"/);
+  assert.ok(body.indexOf("releaseFutureBookingsForEndedMembership") > body.indexOf("}, { maxWait: 10_000, timeout: 30_000 });"));
+});

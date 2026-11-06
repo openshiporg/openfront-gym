@@ -3,6 +3,7 @@ import { currentRoleActor } from "../access/currentRoleActor";
 import { getAdapterForProvider } from "../utils/paymentProviderAdapter";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { lockTransactionKey } from "./classCapacity";
+import { releaseFutureBookingsForEndedMembership } from "./gymLifecycle";
 import type { PaymentProviderPurpose } from "../utils/paymentProviderAdapter";
 import { applyPlanAllowanceToCurrentGrant } from "../lib/membership-credits";
 import {
@@ -154,6 +155,7 @@ export async function cancelMembershipNow(
   }
   // A membership already ended (here or by the Stripe webhook) is a no-op: Stripe is not called again.
   if (["cancelled", "expired"].includes(membership.status)) {
+    await releaseFutureBookingsForEndedMembership(context.prisma, { organizationId, userId: membership.member.id, actorUserId: actor.userId });
     return { membership: await currentMembership(context, membershipId), message: "Membership is already cancelled" };
   }
   if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
@@ -188,7 +190,13 @@ export async function cancelMembershipNow(
         data: { status: "cancelled", cancelledAt: endedAt, pausedAt: null },
       });
     });
-    return { membership: await currentMembership(context, membershipId), message: "Membership cancelled now. No refund was issued; refunds are separate." };
+    const released = await releaseFutureBookingsForEndedMembership(context.prisma, {
+      organizationId, userId: membership.member.id, actorUserId: actor.userId,
+    });
+    const bookingNote = released.released
+      ? ` ${released.released} upcoming class booking${released.released === 1 ? " was" : "s were"} released.`
+      : "";
+    return { membership: await currentMembership(context, membershipId), message: `Membership cancelled now.${bookingNote} No refund was issued; refunds are separate.` };
   } catch (error) {
     await failMembershipBillingAttempt(context, attempt, error, providerExecutionStarted ? "unknown" : "definite");
     throw error;
