@@ -88,7 +88,7 @@ export function WeeklyHoursEditor({
                 <label htmlFor={switchId} className="flex items-center gap-2 text-sm font-medium">
                   {day.label}
                   {isToday ? (
-                    <span className="rounded-full bg-foreground px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wider text-background">Today</span>
+                    <span className="text-xs font-medium text-muted-foreground">Today</span>
                   ) : null}
                 </label>
                 <Switch id={switchId} checked={schedule.enabled} onCheckedChange={(v) => onSetDayEnabled(day.key, v)} className="md:hidden" />

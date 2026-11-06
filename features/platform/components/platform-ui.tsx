@@ -233,7 +233,7 @@ export function CountBadge({ value, tone = "neutral" }: { value: number; tone?: 
   return (
     <span
       className={cn(
-        "inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-1.5 text-xs font-medium tabular-nums leading-none",
+        "inline-flex items-center text-xs font-medium tabular-nums leading-none",
         pillTone[tone],
       )}
     >
