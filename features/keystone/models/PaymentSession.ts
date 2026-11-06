@@ -68,6 +68,7 @@ export const PaymentSession = list({
       options: [
         { label: "Monthly", value: "monthly" },
         { label: "Annual", value: "annual" },
+        { label: "Drop-in class", value: "drop-in" },
       ],
       validation: { isRequired: true },
     }),

@@ -15,6 +15,8 @@ export type GymSettingsData = {
   phone?: string | null;
   email?: string | null;
   currencyCode?: string | null;
+  /** Online drop-in class price in cents; 0 when drop-ins are front-desk only. */
+  dropInPrice?: number | null;
   locale?: string | null;
   timezone?: string | null;
   countryCode?: string | null;
@@ -43,7 +45,7 @@ export async function getGymSettings(): Promise<GymSettingsData | null> {
   const result = await gymClient.request<{ publicGymSettings: (Omit<GymSettingsData, "heroImageUrl"> & { heroImagePath?: string | null }) | null }>(gql`
     query StorefrontGymSettings {
       publicGymSettings {
-        id salesOpen name tagline logoIcon logoColor brandHue description address phone email currencyCode locale timezone countryCode hours
+        id salesOpen name tagline logoIcon logoColor brandHue description address phone email currencyCode dropInPrice locale timezone countryCode hours
         heroEyebrow heroHeadline heroSubheadline heroImagePath
         heroPrimaryCtaLabel heroPrimaryCtaHref heroSecondaryCtaLabel heroSecondaryCtaHref
         promoBanner footerTagline copyrightName facilityHeadline facilityDescription

@@ -5,6 +5,7 @@ import { assertParticipationAllowed, lockParticipationPolicy } from "../lib/oper
 import { enqueueOperationalNotice } from "../lib/operational-notices";
 import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import {
+  isDropInBooking,
   lockTransactionKey,
   promoteCapacityControlledWaitlistBookingInTransaction,
 } from "./classCapacity";
@@ -120,7 +121,7 @@ export async function cancelCapacityControlledBooking(
       },
     });
 
-    if (booking.status === "confirmed") await restoreBookingCredit(transaction, booking.id);
+    if (booking.status === "confirmed" && !isDropInBooking(booking)) await restoreBookingCredit(transaction, booking.id);
     await enqueueOperationalNotice(transaction, { organizationId: input.actor.organizationId!, memberId: booking.memberId,
       key: `booking:${booking.id}:cancelled`, kind: "cancellation", message: "Your class booking has been cancelled. Any restorable credit returns to its original service month.",
       ...(past ? { history: [{ action: "past_booking_cancelled", at: new Date().toISOString(), actorId: input.actor.userId, note: reason }] } : {}) });
@@ -236,7 +237,7 @@ export async function cancelCapacityControlledClassInstance(
 
     let refundedCredits = 0;
     for (const booking of classInstance.bookings) {
-      if (booking.status !== "confirmed") continue;
+      if (booking.status !== "confirmed" || isDropInBooking(booking)) continue;
       if (await restoreBookingCredit(transaction, booking.id)) refundedCredits += 1;
     }
     for (const booking of classInstance.bookings) await enqueueOperationalNotice(transaction, { organizationId: input.actor.organizationId!, memberId: booking.memberId,
@@ -334,7 +335,8 @@ export async function markCapacityControlledAttendance(
       const currentMember = await transaction.member.findFirst({ where: { id: booking.memberId, organizationId: input.actor.organizationId }, include: { user: { include: { membership: true } } } });
       assertInstructorQualifications(booking.classInstance.instructor ?? booking.classInstance.classSchedule?.instructor ?? {}, new Date());
       if (currentMember?.status !== "active") throw new Error("Member account is not active");
-      try {
+      // A paid drop-in is its own entitlement for this one class.
+      if (!isDropInBooking(booking)) try {
         assertMembershipServiceEligibility(currentMember.user?.membership, booking.classInstance.date);
       } catch (error) {
         // An operator may record yesterday's attendance after a monthly renewal.
@@ -576,3 +578,4 @@ export async function releaseFutureBookingsForEndedMembership(
   }
   return { released, failed };
 }
+

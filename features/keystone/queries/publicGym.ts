@@ -184,6 +184,7 @@ export function projectPublicGymSettings(settings: any, organizationTimeZone?: u
     phone: publicText(settings.phone, 50),
     email: publicText(settings.email, 320),
     currencyCode: publicText(settings.currencyCode, 3),
+    dropInPrice: Number.isInteger(settings.dropInPrice) && settings.dropInPrice >= 50 ? settings.dropInPrice : 0,
     locale: publicText(settings.locale, 20),
     timezone: resolveGymTimeZone(
       publicText(settings.timezone, 100),
@@ -377,6 +378,7 @@ export async function getPublicGymSettings(
         phone
         email
         currencyCode
+        dropInPrice
         locale
         timezone
         countryCode

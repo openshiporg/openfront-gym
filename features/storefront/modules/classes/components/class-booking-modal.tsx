@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { bookClass } from "@/features/storefront/lib/actions/classes";
+import { redirectToDropInCheckout } from "@/features/storefront/lib/actions/drop-in";
 import { acceptParticipationTermsAction } from "@/features/storefront/lib/actions/participation";
 import { contactPath } from "@/features/storefront/lib/contact-config";
 import { difficultyLabel } from "@/features/storefront/lib/presentation";
@@ -20,6 +22,10 @@ export type BookingViewer = {
   signedIn: boolean;
   membership: "active" | "attention" | "none";
   signupsAllowed: boolean;
+  /** Club's online drop-in price in cents; 0 when drop-ins are arranged by the front desk. */
+  dropInPrice?: number;
+  /** A drop-in checkout that couldn't start, shown on the membership step. */
+  dropInError?: string | null;
   /** The member's upcoming confirmed or waitlisted bookings, by session id. */
   bookings?: Record<string, { status: "confirmed" | "waitlist"; waitlistPosition?: number | null }>;
   /** Published participation terms, accepted at sign-up. */
@@ -114,9 +120,12 @@ export default function ClassBookingModal({
   const level = difficultyLabel(classData.difficulty);
   const when = [classData.date, classData.time].filter(Boolean).join(" · ");
   const contactLink = <Link href={contactPath("booking", returnTo)} className="sf-link">Contact the club</Link>;
+  const dropInPrice = viewer?.dropInPrice && viewer.dropInPrice >= 50 ? viewer.dropInPrice : 0;
+  const dropInLabel = dropInPrice ? `$${(dropInPrice / 100).toFixed(dropInPrice % 100 ? 2 : 0)}` : "";
+  const canDropIn = Boolean(dropInPrice) && isBookable && classData.spots > 0;
   const existing = viewer?.bookings?.[classData.id];
   const needsTerms = Boolean(viewer?.participation && !viewer.participation.accepted && !termsAccepted);
-  const step = !viewer || result ? "book" : existing ? "booked" : !viewer.signedIn ? "account" : viewer.membership === "none" ? "membership" : viewer.membership === "attention" ? "attention" : needsTerms ? "terms" : "book";
+  const step = !viewer || result ? "book" : existing ? "booked" : !viewer.signedIn ? "account" : viewer.membership === "none" ? (needsTerms && canDropIn ? "terms" : "membership") : viewer.membership === "attention" ? "attention" : needsTerms ? "terms" : "book";
 
   return (
     <Sheet
@@ -152,9 +161,11 @@ export default function ClassBookingModal({
         <>
           <Banner
             title={viewer?.signupsAllowed ? "Create an account or sign in to book" : "Sign in to book"}
-            action={<Link href={contactPath("trial", returnTo)} className="sf-link">Ask about a drop-in or trial visit</Link>}
+            action={dropInPrice ? undefined : <Link href={contactPath("trial", returnTo)} className="sf-link">Ask about a drop-in or trial visit</Link>}
           >
-            You’ll come back to this class to confirm. Visiting once? Drop-ins and trial visits are arranged by the front desk.
+            {dropInPrice
+              ? `You’ll come back to this class to confirm. Visiting once? Sign in or create an account, then drop in for ${dropInLabel}.`
+              : "You’ll come back to this class to confirm. Visiting once? Drop-ins and trial visits are arranged by the front desk."}
           </Banner>
           <LoginPage redirectTo={returnTo} allowSignup={viewer?.signupsAllowed} defaultView="signup" terms={viewer?.terms} />
         </>
@@ -177,13 +188,28 @@ export default function ClassBookingModal({
         </>
       ) : step === "membership" ? (
         <>
-          <Banner tone="warn" title="A membership is needed to book classes" action={contactLink}>
-            Choose a plan, then you’ll come back to this class to confirm.
-          </Banner>
-          <div className="sf-sheet-actions">
-            <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose}>Close</button>
-            <Link href={joinPath(null, returnTo)} className="sf-btn" data-variant="accent">Choose membership</Link>
-          </div>
+          {canDropIn ? (
+            <Banner title={`Drop in for ${dropInLabel}`} action={contactLink}>
+              Pay for this one class now and your place is confirmed. Coming regularly? A membership includes classes.
+            </Banner>
+          ) : (
+            <Banner tone="warn" title="A membership is needed to book classes" action={contactLink}>
+              {dropInPrice && classData.spots <= 0 ? "This class is full, so drop-ins can’t book it. " : ""}Choose a plan, then you’ll come back to this class to confirm.
+            </Banner>
+          )}
+          {viewer?.dropInError ? <Banner tone="bad" action={contactLink}>{viewer.dropInError}</Banner> : null}
+          {canDropIn ? (
+            <form action={redirectToDropInCheckout} className="sf-sheet-actions">
+              <input type="hidden" name="classInstanceId" value={classData.id} />
+              <Link href={joinPath(null, returnTo)} className="sf-btn" data-variant="secondary">Choose membership</Link>
+              <DropInSubmit label={`Pay ${dropInLabel} and book`} />
+            </form>
+          ) : (
+            <div className="sf-sheet-actions">
+              <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose}>Close</button>
+              <Link href={joinPath(null, returnTo)} className="sf-btn" data-variant="accent">Choose membership</Link>
+            </div>
+          )}
         </>
       ) : step === "attention" ? (
         <>
@@ -223,5 +249,15 @@ export default function ClassBookingModal({
         </>
       )}
     </Sheet>
+  );
+}
+
+function DropInSubmit({ label }: { label: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" className="sf-btn" data-variant="accent" disabled={pending}>
+      {pending ? <Loader2 className="sf-spin" aria-hidden="true" /> : null}
+      {pending ? "Opening checkout…" : label}
+    </button>
   );
 }

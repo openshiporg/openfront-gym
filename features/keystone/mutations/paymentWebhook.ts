@@ -14,6 +14,7 @@ import { guardKeystonePrismaResults, requirePrismaAffectedCount, withKeystonePri
 import { assertExactProviderRefund, readRefundReservation, reconcileProviderRefundCumulative } from "../lib/refund-reservation";
 import { ownsCounterPayment, reconcileCounterCheckoutEvent, reconcileCounterRefundEvent } from "./counterPayments";
 import { COUNTER_SOURCE } from "../lib/counter-card-payment";
+import { DROP_IN_SOURCE, fulfillDropInCheckout } from "./dropIn";
 import { acceptedProviderPrice, invoiceServiceProblem, subscriptionItemsProblem } from "../../integrations/payment/commercial-agreement";
 
 const PROVIDER_CODE = "pp_stripe";
@@ -627,7 +628,7 @@ export async function handleStripeWebhook(context: Context, payload: string, sig
   const source = object.metadata?.source || object.subscription_details?.metadata?.source || object.parent?.subscription_details?.metadata?.source;
   // Payouts belong to the verified merchant account itself; counter payments carry their own
   // source. Anything else must correlate with a Gym subscription or payment.
-  if (source !== 'openfront-gym' && source !== COUNTER_SOURCE && object.object !== 'payout') {
+  if (source !== 'openfront-gym' && source !== COUNTER_SOURCE && source !== DROP_IN_SOURCE && object.object !== 'payout') {
     const prisma = guardKeystonePrismaResults(context.prisma as any);
     const subscriptionId = object.object === 'subscription' ? object.id : typeof object.subscription === 'string' ? object.subscription : object.subscription?.id;
     const paymentIntentId = typeof object.payment_intent === 'string' ? object.payment_intent : object.payment_intent?.id;
@@ -745,6 +746,8 @@ async function processVerifiedPaymentEvent(context: Context, provider: any, adap
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.metadata?.source === COUNTER_SOURCE) {
           await reconcileCounterCheckoutEvent(context, organizationId, session);
+        } else if (session.metadata?.source === DROP_IN_SOURCE) {
+          await fulfillDropInCheckout(context, organizationId, session.id);
         } else if (session.mode === "subscription" && event.type === "checkout.session.completed") {
           const provisioned = await provisionMembershipFromCheckoutSession(session.id, organizationId, context);
           await replayDeferredInvoiceEvents(context, organizationId, provisioned.subscriptionId);
@@ -754,6 +757,7 @@ async function processVerifiedPaymentEvent(context: Context, provider: any, adap
       case "checkout.session.expired": {
         const session = event.data.object as Stripe.Checkout.Session;
         if (session.metadata?.source === COUNTER_SOURCE) await reconcileCounterCheckoutEvent(context, organizationId, session);
+        else if (session.metadata?.source === DROP_IN_SOURCE) await fulfillDropInCheckout(context, organizationId, session.id);
         else await expireCheckoutSession(context, session, organizationId);
         break;
       }

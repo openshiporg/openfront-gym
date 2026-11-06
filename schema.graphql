@@ -4715,6 +4715,7 @@ type GymSettings {
   phone: String
   email: String
   currencyCode: String
+  dropInPrice: Int
   locale: String
   timezone: String
   countryCode: String
@@ -4764,6 +4765,7 @@ input GymSettingsWhereInput {
   phone: StringFilter
   email: StringFilter
   currencyCode: StringFilter
+  dropInPrice: IntFilter
   locale: StringFilter
   timezone: StringFilter
   countryCode: StringFilter
@@ -4810,6 +4812,7 @@ input GymSettingsOrderByInput {
   phone: OrderDirection
   email: OrderDirection
   currencyCode: OrderDirection
+  dropInPrice: OrderDirection
   locale: OrderDirection
   timezone: OrderDirection
   countryCode: OrderDirection
@@ -4845,6 +4848,7 @@ input GymSettingsUpdateInput {
   phone: String
   email: String
   currencyCode: String
+  dropInPrice: Int
   locale: String
   timezone: String
   countryCode: String
@@ -4889,6 +4893,7 @@ input GymSettingsCreateInput {
   phone: String
   email: String
   currencyCode: String
+  dropInPrice: Int
   locale: String
   timezone: String
   countryCode: String
@@ -7009,6 +7014,8 @@ type Mutation {
   returnRetail(data: JSON!): JSON!
   closeRetail(data: JSON!): JSON!
   reconcileCounterPayment(attemptId: ID, checkoutSessionId: String, action: String!): JSON!
+  startDropInCheckout(classInstanceId: ID!): DropInCheckoutResult!
+  completeDropInCheckout(providerSessionId: String!): DropInCompletionResult!
   beginStaffIntent(workspace: String!, operation: String!, scope: String, requestKey: String!, form: JSON!): JSON!
   settleStaffIntent(id: ID!, outcome: String!, error: String): JSON!
   createCoachProfile(userId: ID!): JSON!
@@ -7396,6 +7403,7 @@ type PublicGymSettings {
   phone: String
   email: String
   currencyCode: String
+  dropInPrice: Int!
   locale: String
   timezone: String
   countryCode: String
@@ -7685,4 +7693,17 @@ type BillingStats {
   activeSubscriptions: Int!
   activeMemberships: Int!
   pastDueCount: Int!
+}
+
+type DropInCheckoutResult {
+  id: ID!
+  checkoutUrl: String!
+  amount: Int!
+}
+
+type DropInCompletionResult {
+  state: String!
+  classInstanceId: ID
+  bookingId: ID
+  message: String
 }

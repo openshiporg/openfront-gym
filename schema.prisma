@@ -1029,6 +1029,7 @@ model GymSettings {
   phone                 String       @default("")
   email                 String       @default("")
   currencyCode          String       @default("USD")
+  dropInPrice           Int          @default(2500)
   locale                String       @default("en-US")
   timezone              String       @default("America/New_York")
   countryCode           String       @default("US")

@@ -1,6 +1,7 @@
 import type { Context } from ".keystone/types";
 import { currentCheckInActor } from "../access/currentCheckInActor";
 import { currentRoleActor } from "../access/currentRoleActor";
+import { refundCancelledDropIns } from "./dropIn";
 import {
   cancelCapacityControlledBooking,
   cancelCapacityControlledClassInstance,
@@ -20,10 +21,12 @@ export async function cancelClassBooking(
   { bookingId }: { bookingId: string },
   context: Context
 ) {
+  const actor = await actorFromContext(context);
   const result = await cancelCapacityControlledBooking(context.prisma, {
     bookingId,
-    actor: await actorFromContext(context),
+    actor,
   });
+  if (result.cancelled) await refundCancelledDropIns(context, actor.organizationId!, [result.bookingId]);
   const booking = await context.db.ClassBooking.findOne({ where: { id: result.bookingId } });
   return {
     booking,
@@ -37,10 +40,11 @@ export async function cancelClassInstance(
   args: { classInstanceId: string; reason: string },
   context: Context,
 ) {
-  return cancelCapacityControlledClassInstance(context.prisma, {
-    ...args,
-    actor: await actorFromContext(context),
-  });
+  const actor = await actorFromContext(context);
+  const result = await cancelCapacityControlledClassInstance(context.prisma, { ...args, actor });
+  const cancelled = await context.prisma.classBooking.findMany({ where: { organizationId: actor.organizationId!, classInstanceId: args.classInstanceId, status: "cancelled" }, select: { id: true } });
+  await refundCancelledDropIns(context, actor.organizationId!, cancelled.map((row: { id: string }) => row.id));
+  return result;
 }
 
 export async function markClassAttendance(

@@ -101,6 +101,7 @@ function draftFrom(settings: Settings) {
     logoColor: settings?.logoIcon ? normalizeGymLogoColor(settings?.logoColor) : DEFAULT_LIBRARY_LOGO_COLOR,
     hours: hoursState(settings?.hours),
     contactTopics: (Array.isArray(settings?.contactTopics) ? settings!.contactTopics : []).map((item: any) => ({ title: String(item?.title ?? ''), details: Array.isArray(item?.details) ? item.details.map(String) : [] })) as DetailBlock[],
+    dropInPrice: settings?.dropInPrice == null ? '25' : String(Number(settings.dropInPrice) / 100),
     facilityHighlights: (Array.isArray(settings?.facilityHighlights) ? settings!.facilityHighlights : []).map((item: any) => ({ title: String(item?.title ?? ''), description: String(item?.description ?? ''), features: Array.isArray(item?.features) ? item.features.map(String) : [] })) as HighlightBlock[],
   }
 }
@@ -140,7 +141,7 @@ function mergeAfterSave(current: Draft, submitted: Draft, saved: Draft): Draft {
     if (current.form[key] !== submitted.form[key]) form[key] = current.form[key]
   }
   const pick = <K extends Exclude<keyof Draft, 'form'>>(key: K): Draft[K] => (sameDraft(current[key], submitted[key]) ? saved[key] : current[key])
-  return { form, logoIcon: pick('logoIcon'), logoColor: pick('logoColor'), hours: pick('hours'), contactTopics: pick('contactTopics'), facilityHighlights: pick('facilityHighlights') }
+  return { form, logoIcon: pick('logoIcon'), logoColor: pick('logoColor'), hours: pick('hours'), contactTopics: pick('contactTopics'), facilityHighlights: pick('facilityHighlights'), dropInPrice: pick('dropInPrice') }
 }
 
 export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false }: { initial: GymSettingsEditorData | null; loadError?: string | null; canPublishPolicy?: boolean }) {
@@ -193,6 +194,13 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
       const unset = days.find((day) => draft.hours[day.key].unset)
       if (unset) return setError(`Set ${unset.label}'s opening hours (closed, all day, or times) before saving hours.`)
       data.hours = serializeHours(draft.hours)
+    }
+    if (draft.dropInPrice !== baseline.dropInPrice) {
+      const dollars = Number(draft.dropInPrice.trim() || '0')
+      if (!Number.isFinite(dollars) || dollars < 0 || dollars > 1000) return setError('Drop-in price must be between $0 and $1,000.')
+      const cents = Math.round(dollars * 100)
+      if (cents > 0 && cents < 50) return setError('Drop-in price must be at least $0.50, or $0 to stop selling drop-ins online.')
+      data.dropInPrice = cents
     }
     if (!sameDraft(draft.contactTopics, baseline.contactTopics)) {
       data.contactTopics = draft.contactTopics.map((item) => ({ title: item.title.trim(), details: item.details.map((line) => line.trim()).filter(Boolean) }))
@@ -458,6 +466,9 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
               <PanelBody className="grid gap-4 md:grid-cols-3">
                 <FormField label="Currency" hint="Billing, retail and training use USD.">
                   <FieldInput value="USD" readOnly aria-readonly className="bg-muted/40" />
+                </FormField>
+                <FormField label="Drop-in class price" hint="Visitors pay this online for one class. $0 sends them to the front desk.">
+                  <FieldInput type="number" min={0} max={1000} step="0.01" inputMode="decimal" value={draft.dropInPrice} onChange={(event) => setDraft((current) => ({ ...current, dropInPrice: event.target.value }))} />
                 </FormField>
                 <FormField label="Locale">
                   <select value={form.locale} onChange={set('locale')} className="h-9 w-full rounded-md border bg-background px-3 text-sm">

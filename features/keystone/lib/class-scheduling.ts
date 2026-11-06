@@ -90,8 +90,11 @@ export async function saveControlledOccurrence(tx: any, organizationId: string, 
     for (const booking of bookings) {
       const lockedMember = await tx.member.findFirst({ where: { id: booking.memberId, organizationId }, include: { user: { include: { membership: true } } } });
       if (lockedMember?.status !== "active") throw new Error("A booked member is not eligible; resolve the booking before rescheduling");
-      assertMembershipServiceEligibility(lockedMember?.user?.membership, date);
-      if (booking.status === "confirmed" && existing.date.getTime() !== date.getTime()) {
+      const dropIn = booking.serviceSnapshot?.credit?.basis === "drop_in_paid";
+      if (!dropIn) assertMembershipServiceEligibility(lockedMember?.user?.membership, date);
+      if (dropIn && booking.status === "confirmed" && existing.date.getTime() !== date.getTime()) {
+        await assertNoMemberServiceConflict(tx, booking.memberId, organizationId, { ...data, id: existing.id, classSchedule: schedule });
+      } else if (booking.status === "confirmed" && existing.date.getTime() !== date.getTime()) {
         const debit = await tx.membershipCreditEntry.findUnique({ where: { key: `${booking.id}:debit` }, include: { grant: true } });
         if (!debit?.grant || date < debit.grant.periodStart || date >= debit.grant.periodEnd) throw new Error("Reschedule crosses a booking credit month or legacy credit provenance is missing; cancel and rebook with restored credits");
         await assertNoMemberServiceConflict(tx, booking.memberId, organizationId, { ...data, id: existing.id, classSchedule: schedule });

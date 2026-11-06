@@ -13,6 +13,8 @@ type CapacityBookingInput = {
   actorOrganizationId: string;
   actorCanManageAllRecords: boolean;
   capacityMode: CapacityMode;
+  /** A paid single-class visit: no membership or credit; the seat must be free now. */
+  dropIn?: { paymentSessionId: string; amount: number; currencyCode: string };
 };
 
 type CapacityBookingResult = {
@@ -172,7 +174,22 @@ export async function createCapacityControlledBooking(
   input: CapacityBookingInput
 ): Promise<CapacityBookingResult> {
   prisma = guardKeystonePrismaResults(prisma);
-  const result: CapacityBookingResult = await prisma.$transaction(async (transaction: any) => {
+  const result: CapacityBookingResult = await prisma.$transaction((transaction: any) => createCapacityControlledBookingInTransaction(transaction, input));
+  // After the commit, never inside it. Lazy import keeps the mail path out of the keystone import graph.
+  await sendBookingConfirmation(prisma, result.bookingId);
+  return result;
+}
+
+export async function sendBookingConfirmation(prisma: any, bookingId: string) {
+  try {
+    const { deliverBookingConfirmation } = await import("../lib/order-confirmation");
+    await deliverBookingConfirmation(prisma, bookingId);
+  } catch { /* the booking is committed; the confirmation email must never fail it */ }
+}
+
+/** The booking decision and write; the caller owns the transaction (a drop-in records its payment in it too). */
+export async function createCapacityControlledBookingInTransaction(transaction: any, input: CapacityBookingInput): Promise<CapacityBookingResult> {
+  {
     await lockParticipationPolicy(transaction, input.actorOrganizationId);
     await lockTransactionKey(transaction, `class-instance:${input.classInstanceId}`);
     await lockTransactionKey(transaction, `member:${input.memberId}`);
@@ -232,22 +249,23 @@ export async function createCapacityControlledBooking(
       throw new Error("Member already has an active booking for this class instance");
     }
 
-    const membership = await transaction.membership.findFirst({
+    const dropIn = input.dropIn ?? null;
+    const membership = dropIn ? null : await transaction.membership.findFirst({
       where: { memberId: member.user.id, organizationId: input.actorOrganizationId, status: "active" },
       include: { tier: { select: { classCreditsPerMonth: true, maxClassBookings: true } } },
     });
-    if (!membership) throw new Error("No active membership found");
-    await assertNoPendingMembershipFreeze(transaction, input.actorOrganizationId, membership.id);
+    if (!dropIn && !membership) throw new Error("No active membership found");
+    if (membership) await assertNoPendingMembershipFreeze(transaction, input.actorOrganizationId, membership.id);
 
     const participation = await assertParticipationAllowed(transaction, input.actorOrganizationId, member.id, classInstance.date, classInstance.locationId);
-    const grant = await ensureMonthlyCreditGrant(transaction, membership, classInstance.date);
-    const unlimited = grant.allowance === -1;
-    const currentCredits = grant.remaining;
-    if (!unlimited && currentCredits <= 0) {
+    const grant = membership ? await ensureMonthlyCreditGrant(transaction, membership, classInstance.date) : null;
+    const unlimited = grant ? grant.allowance === -1 : false;
+    const currentCredits = grant ? grant.remaining : 0;
+    if (grant && !unlimited && currentCredits <= 0) {
       throw new Error("No class credits remaining");
     }
 
-    const maximumBookings = membership.agreementSnapshot?.maxClassBookings ?? membership.tier?.maxClassBookings ?? 0;
+    const maximumBookings = membership ? membership.agreementSnapshot?.maxClassBookings ?? membership.tier?.maxClassBookings ?? 0 : 0;
     if (maximumBookings > 0 && await transaction.classBooking.count({ where: { organizationId: input.actorOrganizationId, memberId: member.id, status: { in: ["confirmed", "waitlist"] }, classInstance: { date: { gt: new Date() } } } }) >= maximumBookings) throw new Error("Membership concurrent booking limit reached");
 
     // Released seats go to the waitlist, in order, before a new arrival can take one.
@@ -263,6 +281,7 @@ export async function createCapacityControlledBooking(
       },
     });
     const atCapacity = confirmedCount >= capacity;
+    if (atCapacity && dropIn) throw new Error(DROP_IN_CLASS_FULL);
     if (atCapacity && input.capacityMode === "reject") {
       throw new Error("Class is at capacity, cannot process walk-in");
     }
@@ -287,7 +306,7 @@ export async function createCapacityControlledBooking(
         memberName: member.user.name || member.name,
         memberEmail: member.user.email || member.email,
         memberPhone: member.phone || "",
-        serviceSnapshot: bookingServiceSnapshot(classInstance, { unlimited, status, membership, grant, participation }),
+        serviceSnapshot: bookingServiceSnapshot(classInstance, { unlimited, status, membership, grant, participation, dropIn }),
         status,
         activeBookingKey: "active",
         waitlistPosition,
@@ -296,25 +315,26 @@ export async function createCapacityControlledBooking(
       select: { id: true },
     });
 
-    if (status === "confirmed") await debitBookingCredit(transaction, membership, booking.id, classInstance.date);
+    if (status === "confirmed" && membership) await debitBookingCredit(transaction, membership, booking.id, classInstance.date);
     await enqueueOperationalNotice(transaction, { organizationId: input.actorOrganizationId, memberId: member.id,
-      key: `booking:${booking.id}:created`, kind: "booking", message: status === "confirmed" ? "Your class booking is confirmed." : "You joined the waitlist. A released place is automatically confirmed and reserves any required class credit; we will notify you." });
+      key: `booking:${booking.id}:created`, kind: "booking", message: dropIn ? "Your drop-in class is paid and confirmed." : status === "confirmed" ? "Your class booking is confirmed." : "You joined the waitlist. A released place is automatically confirmed and reserves any required class credit; we will notify you." });
 
     return {
       bookingId: booking.id,
       status,
       waitlistPosition,
-      creditsRemaining: unlimited
+      creditsRemaining: dropIn ? 0 : unlimited
         ? -1
         : currentCredits - (status === "confirmed" ? 1 : 0),
     };
-  });
-  // After the commit, never inside it. Lazy import keeps the mail path out of the keystone import graph.
-  try {
-    const { deliverBookingConfirmation } = await import("../lib/order-confirmation");
-    await deliverBookingConfirmation(prisma, result.bookingId);
-  } catch { /* the booking is committed; the confirmation email must never fail it */ }
-  return result;
+  }
+}
+
+export const DROP_IN_CLASS_FULL = "This class filled up before your drop-in payment completed";
+
+/** A booking paid for as a single drop-in visit (no membership, no credit). */
+export function isDropInBooking(booking: { serviceSnapshot?: any } | null | undefined) {
+  return booking?.serviceSnapshot?.credit?.basis === "drop_in_paid";
 }
 
 /** The class exactly as it is being booked; history renders this, never the mutable catalog. */
@@ -323,7 +343,7 @@ export async function createCapacityControlledBooking(
  * participation terms the reservation actually relied on. Later amendments are recorded on the
  * session (changeHistory) and shown beside this; the snapshot itself is never rewritten.
  */
-function bookingServiceSnapshot(classInstance: any, terms: { unlimited: boolean; status: string; membership: any; grant: any; participation: { policyId: string | null; evidenceId: string | null } }) {
+function bookingServiceSnapshot(classInstance: any, terms: { unlimited: boolean; status: string; membership: any; grant: any; participation: { policyId: string | null; evidenceId: string | null }; dropIn?: { paymentSessionId: string; amount: number; currencyCode: string } | null }) {
   const unlimitedCredits = terms.unlimited;
   const schedule = classInstance.classSchedule;
   const coach = classInstance.instructor ?? schedule?.instructor ?? null;
@@ -344,8 +364,13 @@ function bookingServiceSnapshot(classInstance: any, terms: { unlimited: boolean;
     locationAddress: site?.address ?? null,
     startsAt: classInstance.date.toISOString(),
     endsAt: new Date(endsAt).toISOString(),
-    creditTerms: unlimitedCredits ? "unlimited membership" : "one membership class credit, restored if cancelled before the class starts",
-    credit: {
+    creditTerms: terms.dropIn ? "paid drop-in visit" : unlimitedCredits ? "unlimited membership" : "one membership class credit, restored if cancelled before the class starts",
+    credit: terms.dropIn ? {
+      basis: "drop_in_paid",
+      paymentSessionId: terms.dropIn.paymentSessionId,
+      amount: terms.dropIn.amount,
+      currencyCode: terms.dropIn.currencyCode,
+    } : {
       membershipId: terms.membership.id,
       agreementVersion: terms.membership.agreementSnapshot?.version ?? null,
       grantId: terms.grant?.id ?? null,

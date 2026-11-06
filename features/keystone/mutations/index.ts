@@ -84,6 +84,7 @@ import { bookTrainerAppointment, transitionTrainerAppointment, rescheduleTrainer
 import { importMemberContacts } from './portableData';
 import { retailTypeDefs, retailWorkspace, retailSaleItems, saveRetailItem, quoteRetailSale, sellRetail, returnRetail, closeRetail } from './retailLifecycle';
 import { counterPaymentTypeDefs, reconcileCounterPayment } from './counterPayments';
+import { completeDropInCheckout, dropInTypeDefs, startDropInCheckout } from './dropIn';
 import { beginStaffIntent, getMyPendingStaffIntents, getStaffIntent, settleStaffIntent, staffIntentTypeDefs } from './staffIntents';
 import { coachProfileTypeDefs, createCoachProfile, eligibleCoachAccounts } from './coachProfiles';
 
@@ -162,6 +163,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         phone: String
         email: String
         currencyCode: String
+        dropInPrice: Int!
         locale: String
         timezone: String
         countryCode: String
@@ -545,7 +547,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         activeMemberships: Int!
         pastDueCount: Int!
       }
-    `, trainingWorkspaceTypeDefs, retailTypeDefs, counterPaymentTypeDefs, staffIntentTypeDefs, coachProfileTypeDefs],
+    `, trainingWorkspaceTypeDefs, retailTypeDefs, counterPaymentTypeDefs, dropInTypeDefs, staffIntentTypeDefs, coachProfileTypeDefs],
     resolvers: {
       Query: {
         retailWorkspace,
@@ -591,6 +593,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
       Mutation: {
         updateGymResourceAllocation: updateGymResource,
         saveRetailItem, quoteRetailSale, sellRetail, returnRetail, closeRetail, reconcileCounterPayment,
+        startDropInCheckout, completeDropInCheckout,
         beginStaffIntent, settleStaffIntent, createCoachProfile,
         importMemberContacts,
         bookTrainerAppointment, transitionTrainerAppointment, rescheduleTrainerAppointment,

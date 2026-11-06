@@ -16,6 +16,7 @@ const ALLOWED_WHILE_SUSPENDED = new Set([
   "redeemUserPasswordResetToken",
   "changeMemberPassword",
   "completeMembershipCheckout",
+  "completeDropInCheckout",
   "cancelMembership",
   "cancelMembershipNow",
   "getStripeBillingPortal",

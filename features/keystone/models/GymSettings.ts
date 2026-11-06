@@ -131,6 +131,14 @@ export const GymSettings = list({
       defaultValue: "USD",
     }),
 
+    // One paid class without a membership (Mindbody "drop-in" pricing option), in minor units.
+    // 0 turns online drop-ins off; the storefront then points visitors to the front desk.
+    dropInPrice: integer({
+      defaultValue: 2500,
+      validation: { isRequired: true, min: 0, max: 100000 },
+      ui: { description: "Drop-in class price in cents; 0 turns online drop-ins off" },
+    }),
+
     locale: text({
       defaultValue: "en-US",
     }),

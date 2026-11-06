@@ -121,6 +121,12 @@ export function normalizeGymSettingsInput(input: Record<string, unknown>) {
       output.rating = rating.toFixed(1);
     }
   }
+  if ("dropInPrice" in input && input.dropInPrice != null) {
+    const cents = Number(input.dropInPrice);
+    if (!Number.isInteger(cents) || cents < 0 || cents > 100_000) throw new Error("Drop-in price must be between $0 and $1,000");
+    if (cents > 0 && cents < 50) throw new Error("Drop-in price must be at least $0.50, or $0 to stop selling drop-ins online");
+    output.dropInPrice = cents;
+  }
   if ("reviewCount" in input && input.reviewCount != null) {
     const count = Number(input.reviewCount);
     if (!Number.isInteger(count) || count < 0 || count > 1_000_000) {
@@ -141,7 +147,7 @@ function settingsActor(context: Context) {
 }
 
 const EDITABLE_FIELDS = [
-  "id", "name", "tagline", "logoIcon", "logoColor", "description", "address", "phone", "email", "currencyCode", "locale", "timezone", "countryCode",
+  "id", "name", "tagline", "logoIcon", "logoColor", "description", "address", "phone", "email", "currencyCode", "dropInPrice", "locale", "timezone", "countryCode",
   "hours", "heroEyebrow", "heroHeadline", "heroSubheadline", "heroImageUrl", "heroPrimaryCtaLabel", "heroPrimaryCtaHref", "heroSecondaryCtaLabel",
   "heroSecondaryCtaHref", "promoBanner", "footerTagline", "copyrightName", "facilityHeadline", "facilityDescription", "facilityHighlights", "heroStats",
   "contactTopics", "updatedAt",
