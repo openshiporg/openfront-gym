@@ -102,6 +102,7 @@ function draftFrom(settings: Settings) {
     hours: hoursState(settings?.hours),
     contactTopics: (Array.isArray(settings?.contactTopics) ? settings!.contactTopics : []).map((item: any) => ({ title: String(item?.title ?? ''), details: Array.isArray(item?.details) ? item.details.map(String) : [] })) as DetailBlock[],
     dropInPrice: settings?.dropInPrice == null ? '25' : String(Number(settings.dropInPrice) / 100),
+    lateCancelHours: settings?.lateCancelHours == null ? '12' : String(settings.lateCancelHours),
     facilityHighlights: (Array.isArray(settings?.facilityHighlights) ? settings!.facilityHighlights : []).map((item: any) => ({ title: String(item?.title ?? ''), description: String(item?.description ?? ''), features: Array.isArray(item?.features) ? item.features.map(String) : [] })) as HighlightBlock[],
   }
 }
@@ -141,7 +142,7 @@ function mergeAfterSave(current: Draft, submitted: Draft, saved: Draft): Draft {
     if (current.form[key] !== submitted.form[key]) form[key] = current.form[key]
   }
   const pick = <K extends Exclude<keyof Draft, 'form'>>(key: K): Draft[K] => (sameDraft(current[key], submitted[key]) ? saved[key] : current[key])
-  return { form, logoIcon: pick('logoIcon'), logoColor: pick('logoColor'), hours: pick('hours'), contactTopics: pick('contactTopics'), facilityHighlights: pick('facilityHighlights'), dropInPrice: pick('dropInPrice') }
+  return { form, logoIcon: pick('logoIcon'), logoColor: pick('logoColor'), hours: pick('hours'), contactTopics: pick('contactTopics'), facilityHighlights: pick('facilityHighlights'), dropInPrice: pick('dropInPrice'), lateCancelHours: pick('lateCancelHours') }
 }
 
 export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false }: { initial: GymSettingsEditorData | null; loadError?: string | null; canPublishPolicy?: boolean }) {
@@ -201,6 +202,11 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
       const cents = Math.round(dollars * 100)
       if (cents > 0 && cents < 50) return setError('Drop-in price must be at least $0.50, or $0 to stop selling drop-ins online.')
       data.dropInPrice = cents
+    }
+    if (draft.lateCancelHours !== baseline.lateCancelHours) {
+      const hours = Number(draft.lateCancelHours.trim() || '0')
+      if (!Number.isInteger(hours) || hours < 0 || hours > 72) return setError('Late-cancel window must be a whole number of hours from 0 to 72.')
+      data.lateCancelHours = hours
     }
     if (!sameDraft(draft.contactTopics, baseline.contactTopics)) {
       data.contactTopics = draft.contactTopics.map((item) => ({ title: item.title.trim(), details: item.details.map((line) => line.trim()).filter(Boolean) }))
@@ -469,6 +475,9 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
                 </FormField>
                 <FormField label="Drop-in class price" hint="Visitors pay this online for one class. $0 sends them to the front desk.">
                   <FieldInput type="number" min={0} max={1000} step="0.01" inputMode="decimal" value={draft.dropInPrice} onChange={(event) => setDraft((current) => ({ ...current, dropInPrice: event.target.value }))} />
+                </FormField>
+                <FormField label="Late-cancel window (hours)" hint="A member who cancels inside this window keeps no credit or drop-in refund. 0 turns it off.">
+                  <FieldInput type="number" min={0} max={72} step="1" inputMode="numeric" value={draft.lateCancelHours} onChange={(event) => setDraft((current) => ({ ...current, lateCancelHours: event.target.value }))} />
                 </FormField>
                 <FormField label="Locale">
                   <select value={form.locale} onChange={set('locale')} className="h-9 w-full rounded-md border bg-background px-3 text-sm">

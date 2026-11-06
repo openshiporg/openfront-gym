@@ -4,7 +4,7 @@ import { getAuthHeaders } from "./cookies";
 
 const BOOKING_FIELDS = gql`
   fragment StorefrontBooking on ClassBooking {
-    id status waitlistPosition bookedAt cancelledAt eligibilityReviewReason serviceSnapshot
+    id status waitlistPosition bookedAt cancelledAt lateCancelled eligibilityReviewReason serviceSnapshot
     classInstance {
       id date endsAt isCancelled amendments
       location { name }

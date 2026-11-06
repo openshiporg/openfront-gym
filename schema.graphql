@@ -4716,6 +4716,7 @@ type GymSettings {
   email: String
   currencyCode: String
   dropInPrice: Int
+  lateCancelHours: Int
   locale: String
   timezone: String
   countryCode: String
@@ -4766,6 +4767,7 @@ input GymSettingsWhereInput {
   email: StringFilter
   currencyCode: StringFilter
   dropInPrice: IntFilter
+  lateCancelHours: IntFilter
   locale: StringFilter
   timezone: StringFilter
   countryCode: StringFilter
@@ -4813,6 +4815,7 @@ input GymSettingsOrderByInput {
   email: OrderDirection
   currencyCode: OrderDirection
   dropInPrice: OrderDirection
+  lateCancelHours: OrderDirection
   locale: OrderDirection
   timezone: OrderDirection
   countryCode: OrderDirection
@@ -4849,6 +4852,7 @@ input GymSettingsUpdateInput {
   email: String
   currencyCode: String
   dropInPrice: Int
+  lateCancelHours: Int
   locale: String
   timezone: String
   countryCode: String
@@ -4894,6 +4898,7 @@ input GymSettingsCreateInput {
   email: String
   currencyCode: String
   dropInPrice: Int
+  lateCancelHours: Int
   locale: String
   timezone: String
   countryCode: String
@@ -5569,6 +5574,7 @@ type ClassBooking {
   status: String
   waitlistPosition: Int
   bookedAt: DateTime
+  lateCancelled: Boolean
   cancelledAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
@@ -5595,6 +5601,7 @@ input ClassBookingWhereInput {
   status: StringFilter
   waitlistPosition: IntNullableFilter
   bookedAt: DateTimeFilter
+  lateCancelled: BooleanFilter
   cancelledAt: DateTimeNullableFilter
   createdAt: DateTimeFilter
   updatedAt: DateTimeFilter
@@ -5611,6 +5618,7 @@ input ClassBookingOrderByInput {
   status: OrderDirection
   waitlistPosition: OrderDirection
   bookedAt: OrderDirection
+  lateCancelled: OrderDirection
   cancelledAt: OrderDirection
   createdAt: OrderDirection
   updatedAt: OrderDirection
@@ -5630,6 +5638,7 @@ input ClassBookingUpdateInput {
   status: String
   waitlistPosition: Int
   bookedAt: DateTime
+  lateCancelled: Boolean
   cancelledAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
@@ -5660,6 +5669,7 @@ input ClassBookingCreateInput {
   status: String
   waitlistPosition: Int
   bookedAt: DateTime
+  lateCancelled: Boolean
   cancelledAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
@@ -7404,6 +7414,7 @@ type PublicGymSettings {
   email: String
   currencyCode: String
   dropInPrice: Int!
+  lateCancelHours: Int!
   locale: String
   timezone: String
   countryCode: String

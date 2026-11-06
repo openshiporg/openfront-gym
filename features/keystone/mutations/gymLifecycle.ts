@@ -42,6 +42,17 @@ function assertOwnerOrOperator(actor: LifecycleActor, ownerUserId?: string | nul
   throw new Error("You cannot manage another member's records");
 }
 
+/** Hours before class inside which a member's own cancel forfeits the credit; 0 means no window. */
+export async function lateCancelWindowHours(tx: any, organizationId: string) {
+  const settings = await tx.gymSettings.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "asc" }], select: { lateCancelHours: true } });
+  const hours = Number(settings?.lateCancelHours ?? 0);
+  return Number.isInteger(hours) && hours > 0 ? Math.min(hours, 72) : 0;
+}
+
+export function isLateCancellation(classStart: Date, now: Date, windowHours: number) {
+  return windowHours > 0 && classStart.getTime() - now.getTime() < windowHours * 3_600_000;
+}
+
 export async function cancelCapacityControlledBooking(
   prisma: any,
   input: { bookingId: string; actor: LifecycleActor; pastBookingReason?: string }
@@ -111,6 +122,10 @@ export async function cancelCapacityControlledBooking(
       throw new Error("A class booking cannot be cancelled after the class starts");
     }
 
+    // Members (not staff) cancelling a confirmed place inside the club's window forfeit the credit or drop-in fee.
+    const late = !past && booking.status === "confirmed" && !input.actor.canManageAllRecords
+      && isLateCancellation(booking.classInstance.date, new Date(), await lateCancelWindowHours(transaction, input.actor.organizationId!));
+
     await transaction.classBooking.update({
       where: { id: booking.id },
       data: {
@@ -118,12 +133,15 @@ export async function cancelCapacityControlledBooking(
         activeBookingKey: null,
         cancelledAt: new Date(),
         waitlistPosition: null,
+        lateCancelled: late,
       },
     });
 
-    if (booking.status === "confirmed" && !isDropInBooking(booking)) await restoreBookingCredit(transaction, booking.id);
+    if (booking.status === "confirmed" && !late && !isDropInBooking(booking)) await restoreBookingCredit(transaction, booking.id);
     await enqueueOperationalNotice(transaction, { organizationId: input.actor.organizationId!, memberId: booking.memberId,
-      key: `booking:${booking.id}:cancelled`, kind: "cancellation", message: "Your class booking has been cancelled. Any restorable credit returns to its original service month.",
+      key: `booking:${booking.id}:cancelled`, kind: "cancellation", message: late
+        ? "Your class booking has been cancelled. It was inside the club's late-cancel window, so the class credit or drop-in fee isn't returned."
+        : "Your class booking has been cancelled. Any restorable credit returns to its original service month.",
       ...(past ? { history: [{ action: "past_booking_cancelled", at: new Date().toISOString(), actorId: input.actor.userId, note: reason }] } : {}) });
 
     const waiting = await transaction.classBooking.findMany({
@@ -158,6 +176,7 @@ export async function cancelCapacityControlledBooking(
       bookingId: booking.id,
       classInstanceId: booking.classInstance.id,
       cancelled: true,
+      lateCancelled: late,
       releasedConfirmedSpot,
       promotion,
     };

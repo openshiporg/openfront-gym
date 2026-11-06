@@ -127,6 +127,11 @@ export function normalizeGymSettingsInput(input: Record<string, unknown>) {
     if (cents > 0 && cents < 50) throw new Error("Drop-in price must be at least $0.50, or $0 to stop selling drop-ins online");
     output.dropInPrice = cents;
   }
+  if ("lateCancelHours" in input && input.lateCancelHours != null) {
+    const hours = Number(input.lateCancelHours);
+    if (!Number.isInteger(hours) || hours < 0 || hours > 72) throw new Error("Late-cancel window must be a whole number of hours from 0 to 72");
+    output.lateCancelHours = hours;
+  }
   if ("reviewCount" in input && input.reviewCount != null) {
     const count = Number(input.reviewCount);
     if (!Number.isInteger(count) || count < 0 || count > 1_000_000) {
@@ -147,7 +152,7 @@ function settingsActor(context: Context) {
 }
 
 const EDITABLE_FIELDS = [
-  "id", "name", "tagline", "logoIcon", "logoColor", "description", "address", "phone", "email", "currencyCode", "dropInPrice", "locale", "timezone", "countryCode",
+  "id", "name", "tagline", "logoIcon", "logoColor", "description", "address", "phone", "email", "currencyCode", "dropInPrice", "lateCancelHours", "locale", "timezone", "countryCode",
   "hours", "heroEyebrow", "heroHeadline", "heroSubheadline", "heroImageUrl", "heroPrimaryCtaLabel", "heroPrimaryCtaHref", "heroSecondaryCtaLabel",
   "heroSecondaryCtaHref", "promoBanner", "footerTagline", "copyrightName", "facilityHeadline", "facilityDescription", "facilityHighlights", "heroStats",
   "contactTopics", "updatedAt",

@@ -14,8 +14,9 @@ export async function cancelBookingAction(formData: FormData): Promise<void> {
   if (!Object.keys(headers).length) {
     redirect("/account?returnTo=%2Faccount%2Fbookings");
   }
+  let notice = "Booking cancelled";
   try {
-    await gymClient.request(
+    const result = await gymClient.request<{ cancelClassBooking: { message: string } }>(
       gql`
         mutation CancelClassBooking($bookingId: ID!) {
           cancelClassBooking(bookingId: $bookingId) {
@@ -28,6 +29,7 @@ export async function cancelBookingAction(formData: FormData): Promise<void> {
       { bookingId },
       headers
     );
+    if (/late-cancel/.test(result?.cancelClassBooking?.message || "")) notice = "Booking cancelled (late cancel: the credit isn't returned)";
   } catch {
     redirect("/account/bookings?error=Unable%20to%20cancel%20this%20booking");
   }
@@ -36,5 +38,5 @@ export async function cancelBookingAction(formData: FormData): Promise<void> {
   revalidatePath("/account/bookings");
   revalidatePath("/account");
   revalidatePath("/dashboard/platform/rosters");
-  redirect("/account/bookings?notice=Booking%20cancelled");
+  redirect(`/account/bookings?notice=${encodeURIComponent(notice)}`);
 }

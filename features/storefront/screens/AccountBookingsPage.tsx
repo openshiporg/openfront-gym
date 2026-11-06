@@ -34,6 +34,7 @@ export default async function AccountBookingsPage({
     getStorefrontConfig(),
   ]);
   const timeZone = config?.timezone || "UTC";
+  const lateCancelHours = Number(config?.lateCancelHours) || 0;
   const current = view === "history" ? history : view === "waitlist" ? waitlist : confirmed;
   const rows = current.items;
 
@@ -65,7 +66,7 @@ export default async function AccountBookingsPage({
           <span className="sf-meta">Times in {timeZone}</span>
         </div>
         {rows.length ? (
-          <div className="sf-bookings">{rows.map((booking: any) => <BookingRow key={booking.id} booking={booking} canCancel={view !== "history"} timeZone={timeZone} />)}</div>
+          <div className="sf-bookings">{rows.map((booking: any) => <BookingRow key={booking.id} booking={booking} canCancel={view !== "history"} timeZone={timeZone} lateCancelHours={lateCancelHours} />)}</div>
         ) : (
           <EmptyState
             headingLevel={2}
@@ -98,10 +99,12 @@ function BookingRow({
   booking,
   canCancel = false,
   timeZone,
+  lateCancelHours = 0,
 }: {
   booking: any;
   canCancel?: boolean;
   timeZone: string;
+  lateCancelHours?: number;
 }) {
   // What was booked comes from the reservation snapshot. The session itself can be moved by the
   // club, so the date, coach and location shown are the session's actual ones, and any change
@@ -139,12 +142,12 @@ function BookingRow({
           {instructorName ? ` · ${instructorName}` : ""}
         </p>
         {locationName ? <p>{locationName}</p> : null}
-        {credit ? <p className="sf-meta">{credit}</p> : null}
+        {booking.lateCancelled ? <p className="sf-meta">Late cancel: inside the club's {lateCancelHours || ""}{lateCancelHours ? "-hour " : ""}window, so the {booked?.credit?.basis === "drop_in_paid" ? "drop-in fee wasn't refunded" : "class credit wasn't returned"}.</p> : credit ? <p className="sf-meta">{credit}</p> : null}
         {!booked ? <p className="sf-meta">Booked before booking details were recorded; shown as the session is scheduled now.</p> : null}
       </div>
       {canCancel && booking.status !== "cancelled" ? (
         <div className="sf-booking-side">
-          <CancelBookingForm bookingId={booking.id} sessionName={`${name}${date ? `, ${formatOccurrenceDate(date, timeZone)}, ${formatOccurrenceTime(date, timeZone)}` : ""}`} waitlist={booking.status === "waitlist"} dropIn={booked?.credit?.basis === "drop_in_paid"} />
+          <CancelBookingForm bookingId={booking.id} sessionName={`${name}${date ? `, ${formatOccurrenceDate(date, timeZone)}, ${formatOccurrenceTime(date, timeZone)}` : ""}`} waitlist={booking.status === "waitlist"} dropIn={booked?.credit?.basis === "drop_in_paid"} lateWindowHours={booking.status === "confirmed" && date && lateCancelHours > 0 && new Date(date).getTime() - Date.now() < lateCancelHours * 3_600_000 ? lateCancelHours : 0} />
         </div>
       ) : null}
       {booking.classInstance?.isCancelled ? (
@@ -178,7 +181,7 @@ function listOf(items: string[]) {
 /** The credit terms this booking was made on, from its snapshot. */
 function creditLine(booked: any) {
   const credit = booked?.credit;
-  if (credit?.basis === "drop_in_paid") return `Paid drop-in${Number(credit.amount) ? ` ($${(Number(credit.amount) / 100).toFixed(2)})` : ""}; refunded to your card if you or the club cancel before the class starts.`;
+  if (credit?.basis === "drop_in_paid") return `Paid drop-in${Number(credit.amount) ? ` ($${(Number(credit.amount) / 100).toFixed(2)})` : ""}; refunded to your card if the club cancels, or if you cancel before the late-cancel window.`;
   if (credit?.basis === "unlimited") return "Booked on an unlimited membership.";
   if (credit?.basis === "debited_at_booking") return "Used one class credit from your membership allowance; it's returned if you cancel before the class starts.";
   if (credit?.basis === "debited_when_confirmed") return "A class credit is used only if your waitlist place is confirmed.";

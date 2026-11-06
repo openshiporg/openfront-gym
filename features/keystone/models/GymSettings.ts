@@ -139,6 +139,14 @@ export const GymSettings = list({
       ui: { description: "Drop-in class price in cents; 0 turns online drop-ins off" },
     }),
 
+    // Members who cancel a confirmed class this close to the start forfeit its credit (Mindbody late-cancel window).
+    // A late-cancelled paid drop-in is not refunded. Staff cancellations are always treated as waived. 0 turns it off.
+    lateCancelHours: integer({
+      defaultValue: 12,
+      validation: { isRequired: true, min: 0, max: 72 },
+      ui: { description: "Late-cancel window in hours before class; 0 turns it off" },
+    }),
+
     locale: text({
       defaultValue: "en-US",
     }),

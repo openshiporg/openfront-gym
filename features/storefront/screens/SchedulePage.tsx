@@ -63,6 +63,7 @@ export async function SchedulePage({ searchParams = {} }: { searchParams?: Recor
     membership: membershipStatus === "active" ? "active" : membershipStatus === "frozen" || membershipStatus === "past-due" ? "attention" : "none",
     signupsAllowed: process.env.PUBLIC_MEMBER_SIGNUPS_ALLOWED === "true",
     dropInPrice: config?.salesOpen === false ? 0 : config?.dropInPrice ?? 0,
+    lateCancelHours: Number(config?.lateCancelHours) || 0,
     dropInError: param(searchParams.dropInError, 300) || null,
     terms: terms?.acceptanceRequired ? { policyId: terms.policyId, version: terms.version } : null,
     participation,

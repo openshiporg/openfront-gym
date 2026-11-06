@@ -1030,6 +1030,7 @@ model GymSettings {
   email                 String       @default("")
   currencyCode          String       @default("USD")
   dropInPrice           Int          @default(2500)
+  lateCancelHours       Int          @default(12)
   locale                String       @default("en-US")
   timezone              String       @default("America/New_York")
   countryCode           String       @default("US")
@@ -1239,6 +1240,7 @@ model ClassBooking {
   status                             String                  @default("confirmed")
   waitlistPosition                   Int?
   bookedAt                           DateTime                @default(now())
+  lateCancelled                      Boolean                 @default(false)
   cancelledAt                        DateTime?
   createdAt                          DateTime                @default(now())
   updatedAt                          DateTime                @default(now()) @updatedAt

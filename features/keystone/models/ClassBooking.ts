@@ -1,6 +1,7 @@
 import { list } from "@keystone-6/core";
 import { allOperations, denyAll } from "@keystone-6/core/access";
 import {
+  checkbox,
   relationship,
   select,
   timestamp,
@@ -134,6 +135,12 @@ export const ClassBooking = list({
       access: { update: denyAll },
       validation: { isRequired: true },
       defaultValue: { kind: "now" },
+    }),
+
+    lateCancelled: checkbox({
+      defaultValue: false,
+      access: { update: denyAll },
+      ui: { description: "The member cancelled inside the club's late-cancel window; the class credit was not returned" },
     }),
 
     cancelledAt: timestamp({

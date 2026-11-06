@@ -31,9 +31,9 @@ test("the booking is written only after the provider reports the checkout paid, 
   assert.match(webhook, /session\.metadata\?\.source === DROP_IN_SOURCE\) \{\s*await fulfillDropInCheckout/);
 });
 
-test("cancelling a drop-in (by the visitor or the club) refunds it and never touches membership credit", () => {
+test("cancelling a drop-in (by the visitor outside the late-cancel window, or by the club) refunds it and never touches membership credit", () => {
   const lifecycle = source("features/keystone/mutations/gymLifecycle.ts");
-  assert.match(lifecycle, /booking\.status === "confirmed" && !isDropInBooking\(booking\)\) await restoreBookingCredit/);
+  assert.match(lifecycle, /booking\.status === "confirmed" && !late && !isDropInBooking\(booking\)\) await restoreBookingCredit/);
   assert.match(lifecycle, /if \(!isDropInBooking\(booking\)\) try \{/);
   const resolvers = source("features/keystone/mutations/gymLifecycleResolvers.ts");
   assert.equal((resolvers.match(/await refundCancelledDropIns\(/g) || []).length, 2);

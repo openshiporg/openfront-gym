@@ -26,12 +26,13 @@ export async function cancelClassBooking(
     bookingId,
     actor,
   });
-  if (result.cancelled) await refundCancelledDropIns(context, actor.organizationId!, [result.bookingId]);
+  const late = Boolean((result as { lateCancelled?: boolean }).lateCancelled);
+  if (result.cancelled && !late) await refundCancelledDropIns(context, actor.organizationId!, [result.bookingId]);
   const booking = await context.db.ClassBooking.findOne({ where: { id: result.bookingId } });
   return {
     booking,
     promoted: result.promotion.promoted,
-    message: result.cancelled ? "Booking cancelled" : "Booking was already cancelled",
+    message: !result.cancelled ? "Booking was already cancelled" : late ? "Booking cancelled inside the late-cancel window; the credit isn't returned" : "Booking cancelled",
   };
 }
 

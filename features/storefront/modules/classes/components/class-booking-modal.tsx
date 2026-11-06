@@ -24,6 +24,8 @@ export type BookingViewer = {
   signupsAllowed: boolean;
   /** Club's online drop-in price in cents; 0 when drop-ins are arranged by the front desk. */
   dropInPrice?: number;
+  /** Hours before class inside which a member's cancel forfeits the credit; 0 when the club has no window. */
+  lateCancelHours?: number;
   /** A drop-in checkout that couldn't start, shown on the membership step. */
   dropInError?: string | null;
   /** The member's upcoming confirmed or waitlisted bookings, by session id. */
@@ -190,7 +192,7 @@ export default function ClassBookingModal({
         <>
           {canDropIn ? (
             <Banner title={`Drop in for ${dropInLabel}`} action={contactLink}>
-              Pay for this one class now and your place is confirmed. Coming regularly? A membership includes classes.
+              Pay for this one class now and your place is confirmed.{viewer?.lateCancelHours ? ` Cancel at least ${viewer.lateCancelHours} hours before class for a full refund.` : " Cancel before class for a full refund."} Coming regularly? A membership includes classes.
             </Banner>
           ) : (
             <Banner tone="warn" title="A membership is needed to book classes" action={contactLink}>
@@ -238,6 +240,8 @@ export default function ClassBookingModal({
               <Link href={result.actionHref} className="sf-btn" data-variant="accent">{result.actionLabel}</Link>
             </div>
           ) : (
+            <>
+            {isBookable && !isFull && viewer?.lateCancelHours ? <p className="sf-meta">Can’t make it? Cancel at least {viewer.lateCancelHours} hours before class to keep your credit.</p> : null}
             <div className="sf-sheet-actions">
               <button type="button" className="sf-btn" data-variant="secondary" onClick={handleClose} disabled={isPending}>Cancel</button>
               <button type="button" className="sf-btn" data-variant="accent" onClick={handleBook} disabled={isPending || !isBookable}>
@@ -245,6 +249,7 @@ export default function ClassBookingModal({
                 {!isBookable ? "Unavailable" : isPending ? (isFull ? "Joining…" : "Booking…") : isFull ? "Join waitlist" : "Confirm booking"}
               </button>
             </div>
+            </>
           )}
         </>
       )}

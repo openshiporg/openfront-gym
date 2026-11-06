@@ -164,6 +164,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         email: String
         currencyCode: String
         dropInPrice: Int!
+        lateCancelHours: Int!
         locale: String
         timezone: String
         countryCode: String

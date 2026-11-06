@@ -217,7 +217,7 @@ export async function completeDropInCheckout(_root: unknown, { providerSessionId
 export async function refundCancelledDropIns(context: Context, organizationId: string, bookingIds: string[]) {
   if (!bookingIds.length) return { refunded: 0 };
   const prisma = guardKeystonePrismaResults(context.prisma as any);
-  const bookings = await prisma.classBooking.findMany({ where: { organizationId, id: { in: bookingIds }, status: "cancelled" }, select: { id: true, serviceSnapshot: true } });
+  const bookings = await prisma.classBooking.findMany({ where: { organizationId, id: { in: bookingIds }, status: "cancelled", lateCancelled: false }, select: { id: true, serviceSnapshot: true } });
   let refunded = 0;
   for (const booking of bookings) {
     const credit = (booking.serviceSnapshot as any)?.credit;
