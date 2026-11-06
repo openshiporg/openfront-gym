@@ -35,6 +35,8 @@ export type CounterCheckoutInput = {
   cancelUrl: string;
   expiresAt?: Date;
   idempotencyKey: string;
+  /** Prefills the receipt email when the payer is a signed-in account. */
+  customerEmail?: string;
 };
 
 export type CounterCheckoutResult = {

@@ -111,6 +111,7 @@ export async function startDropInCheckout(_root: unknown, { classInstanceId }: {
       cancelUrl: publicAppUrl(`/schedule?book=${encodeURIComponent(id)}`),
       expiresAt: new Date(Date.now() + CHECKOUT_MINUTES * 60_000 + 60_000),
       idempotencyKey: key,
+      customerEmail: user.email || undefined,
     });
     const saved = await prisma.paymentSession.updateMany({
       where: { id: local.id, status: "processing" },

@@ -135,6 +135,7 @@ export const stripePaymentProviderAdapter: PaymentProviderAdapter = {
         mode: "payment",
         ...(input.expiresAt ? { expires_at: Math.floor(input.expiresAt.getTime() / 1000) } : {}),
         client_reference_id: input.idempotencyKey,
+        ...(input.customerEmail ? { customer_email: input.customerEmail } : {}),
         line_items: [{
           quantity: 1,
           price_data: {
