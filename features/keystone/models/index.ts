@@ -39,6 +39,7 @@ import { TrainingCreditEntry } from './TrainingCreditEntry';
 import { CoachingAssignment } from './CoachingAssignment';
 import { TrainingLead } from './TrainingLead';
 import { ContactMessage } from './ContactMessage';
+import { GiftCard } from './GiftCard';
 import { MemberImportRecord } from './MemberImportRecord';
 import { RetailItem, RetailSale, RetailReturn, RetailStockEntry, RetailClose } from './RetailModels';
 import { CounterPaymentAttempt } from './CounterPaymentAttempt';
@@ -49,6 +50,7 @@ export const models = {
   MemberImportRecord,
   TrainingPackage, TrainingCreditEntry, CoachingAssignment, TrainingLead,
   ContactMessage,
+  GiftCard,
   MembershipCreditGrant, MembershipCreditEntry,
   OperationalNotice, ParticipationPolicy, ParticipationEvidence, OperationsCase, IntegrationCredential,
   Organization,

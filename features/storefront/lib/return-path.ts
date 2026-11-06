@@ -11,6 +11,7 @@ const STOREFRONT_RETURN_ROOTS = [
   "/classes",
   "/instructors",
   "/memberships",
+  "/gift-cards",
 ] as const;
 
 function isAllowedRoot(pathname: string) {

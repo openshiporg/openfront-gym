@@ -10,6 +10,7 @@ const trainLinks = [
   { label: "Classes", href: "/classes" },
   { label: "Coaches", href: "/instructors" },
   { label: "Memberships", href: "/memberships" },
+  { label: "Gift cards", href: "/gift-cards" },
 ];
 
 const clubLinks = [

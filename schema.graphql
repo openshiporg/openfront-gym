@@ -1471,6 +1471,139 @@ input ContactMessageCreateInput {
   updatedAt: DateTime
 }
 
+type GiftCard {
+  id: ID!
+  organization: Organization
+  code: String
+  status: String
+  initialValue: Int
+  balance: Int
+  purchaserName: String
+  purchaserEmail: String
+  recipientName: String
+  recipientEmail: String
+  message: String
+  paymentSession: PaymentSession
+  stripePaymentIntentId: String
+  expiresAt: DateTime
+  activatedAt: DateTime
+  emailedAt: DateTime
+  refundedAt: DateTime
+  ledger: JSON
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input GiftCardWhereUniqueInput {
+  id: ID
+  code: String
+}
+
+input GiftCardWhereInput {
+  AND: [GiftCardWhereInput!]
+  OR: [GiftCardWhereInput!]
+  NOT: [GiftCardWhereInput!]
+  id: IDFilter
+  organization: OrganizationWhereInput
+  code: StringFilter
+  status: StringFilter
+  initialValue: IntFilter
+  balance: IntFilter
+  purchaserName: StringFilter
+  purchaserEmail: StringFilter
+  recipientName: StringFilter
+  recipientEmail: StringFilter
+  message: StringFilter
+  paymentSession: PaymentSessionWhereInput
+  stripePaymentIntentId: StringFilter
+  expiresAt: DateTimeNullableFilter
+  activatedAt: DateTimeNullableFilter
+  emailedAt: DateTimeNullableFilter
+  refundedAt: DateTimeNullableFilter
+  createdAt: DateTimeFilter
+  updatedAt: DateTimeFilter
+}
+
+input GiftCardOrderByInput {
+  id: OrderDirection
+  code: OrderDirection
+  status: OrderDirection
+  initialValue: OrderDirection
+  balance: OrderDirection
+  purchaserName: OrderDirection
+  purchaserEmail: OrderDirection
+  recipientName: OrderDirection
+  recipientEmail: OrderDirection
+  message: OrderDirection
+  stripePaymentIntentId: OrderDirection
+  expiresAt: OrderDirection
+  activatedAt: OrderDirection
+  emailedAt: OrderDirection
+  refundedAt: OrderDirection
+  createdAt: OrderDirection
+  updatedAt: OrderDirection
+}
+
+input GiftCardUpdateInput {
+  organization: OrganizationRelateToOneForUpdateInput
+  code: String
+  status: String
+  initialValue: Int
+  balance: Int
+  purchaserName: String
+  purchaserEmail: String
+  recipientName: String
+  recipientEmail: String
+  message: String
+  paymentSession: PaymentSessionRelateToOneForUpdateInput
+  stripePaymentIntentId: String
+  expiresAt: DateTime
+  activatedAt: DateTime
+  emailedAt: DateTime
+  refundedAt: DateTime
+  ledger: JSON
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input PaymentSessionRelateToOneForUpdateInput {
+  create: PaymentSessionCreateInput
+  connect: PaymentSessionWhereUniqueInput
+  disconnect: Boolean
+}
+
+input GiftCardUpdateArgs {
+  where: GiftCardWhereUniqueInput!
+  data: GiftCardUpdateInput!
+}
+
+input GiftCardCreateInput {
+  organization: OrganizationRelateToOneForCreateInput
+  code: String
+  status: String
+  initialValue: Int
+  balance: Int
+  purchaserName: String
+  purchaserEmail: String
+  recipientName: String
+  recipientEmail: String
+  message: String
+  paymentSession: PaymentSessionRelateToOneForCreateInput
+  stripePaymentIntentId: String
+  expiresAt: DateTime
+  activatedAt: DateTime
+  emailedAt: DateTime
+  refundedAt: DateTime
+  ledger: JSON
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+input PaymentSessionRelateToOneForCreateInput {
+  create: PaymentSessionCreateInput
+  connect: PaymentSessionWhereUniqueInput
+}
+
 type MembershipCreditGrant {
   id: ID!
   organization: Organization
@@ -4073,12 +4206,6 @@ input PaymentProviderRelateToOneForUpdateInput {
   disconnect: Boolean
 }
 
-input PaymentSessionRelateToOneForUpdateInput {
-  create: PaymentSessionCreateInput
-  connect: PaymentSessionWhereUniqueInput
-  disconnect: Boolean
-}
-
 input GymPaymentUpdateArgs {
   where: GymPaymentWhereUniqueInput!
   data: GymPaymentUpdateInput!
@@ -4118,11 +4245,6 @@ input SubscriptionRelateToOneForCreateInput {
 input PaymentProviderRelateToOneForCreateInput {
   create: PaymentProviderCreateInput
   connect: PaymentProviderWhereUniqueInput
-}
-
-input PaymentSessionRelateToOneForCreateInput {
-  create: PaymentSessionCreateInput
-  connect: PaymentSessionWhereUniqueInput
 }
 
 type PaymentMethod {
@@ -6716,6 +6838,12 @@ type Mutation {
   updateContactMessages(data: [ContactMessageUpdateArgs!]!): [ContactMessage]
   deleteContactMessage(where: ContactMessageWhereUniqueInput!): ContactMessage
   deleteContactMessages(where: [ContactMessageWhereUniqueInput!]!): [ContactMessage]
+  createGiftCard(data: GiftCardCreateInput!): GiftCard
+  createGiftCards(data: [GiftCardCreateInput!]!): [GiftCard]
+  updateGiftCard(where: GiftCardWhereUniqueInput!, data: GiftCardUpdateInput!): GiftCard
+  updateGiftCards(data: [GiftCardUpdateArgs!]!): [GiftCard]
+  deleteGiftCard(where: GiftCardWhereUniqueInput!): GiftCard
+  deleteGiftCards(where: [GiftCardWhereUniqueInput!]!): [GiftCard]
   createMembershipCreditGrant(data: MembershipCreditGrantCreateInput!): MembershipCreditGrant
   createMembershipCreditGrants(data: [MembershipCreditGrantCreateInput!]!): [MembershipCreditGrant]
   updateMembershipCreditGrant(where: MembershipCreditGrantWhereUniqueInput!, data: MembershipCreditGrantUpdateInput!): MembershipCreditGrant
@@ -7026,6 +7154,10 @@ type Mutation {
   reconcileCounterPayment(attemptId: ID, checkoutSessionId: String, action: String!): JSON!
   startDropInCheckout(classInstanceId: ID!): DropInCheckoutResult!
   completeDropInCheckout(providerSessionId: String!): DropInCompletionResult!
+  startGiftCardCheckout(amount: Int!, purchaserName: String!, purchaserEmail: String!, recipientName: String, recipientEmail: String, message: String): GiftCardCheckout!
+  confirmGiftCardOrder(ref: ID!, token: String!): GiftCardOrder!
+  redeemGiftCard(code: String!, amount: Int!, requestKey: String!, note: String!): JSON!
+  refundGiftCard(giftCardId: ID!): JSON!
   beginStaffIntent(workspace: String!, operation: String!, scope: String, requestKey: String!, form: JSON!): JSON!
   settleStaffIntent(id: ID!, outcome: String!, error: String): JSON!
   createCoachProfile(userId: ID!): JSON!
@@ -7099,6 +7231,9 @@ type Query {
   contactMessage(where: ContactMessageWhereUniqueInput!): ContactMessage
   contactMessages(where: ContactMessageWhereInput! = {}, orderBy: [ContactMessageOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ContactMessageWhereUniqueInput): [ContactMessage!]
   contactMessagesCount(where: ContactMessageWhereInput! = {}): Int
+  giftCard(where: GiftCardWhereUniqueInput!): GiftCard
+  giftCards(where: GiftCardWhereInput! = {}, orderBy: [GiftCardOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: GiftCardWhereUniqueInput): [GiftCard!]
+  giftCardsCount(where: GiftCardWhereInput! = {}): Int
   membershipCreditGrant(where: MembershipCreditGrantWhereUniqueInput!): MembershipCreditGrant
   membershipCreditGrants(where: MembershipCreditGrantWhereInput! = {}, orderBy: [MembershipCreditGrantOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: MembershipCreditGrantWhereUniqueInput): [MembershipCreditGrant!]
   membershipCreditGrantsCount(where: MembershipCreditGrantWhereInput! = {}): Int
@@ -7257,6 +7392,9 @@ type Query {
   trainingWorkspace(skip: Int = 0, cardSkip: Int = 0, availabilitySkip: Int = 0, memberQuery: String): JSON!
   retailWorkspace(skip: Int = 0, cardSkip: Int = 0, itemSkip: Int = 0, itemSite: ID): JSON!
   retailSaleItems(locationId: ID!, q: String, skip: Int = 0): JSON!
+  giftCardOptions: GiftCardOptions!
+  lookupGiftCard(code: String!): JSON!
+  giftCardsWorkspace(skip: Int = 0): JSON!
   myStaffIntent(id: ID!): JSON
   myPendingStaffIntents(workspace: String!): [JSON!]!
   eligibleCoachAccounts(q: String, skip: Int): JSON!
@@ -7717,4 +7855,22 @@ type DropInCompletionResult {
   classInstanceId: ID
   bookingId: ID
   message: String
+}
+
+type GiftCardOptions {
+  online: Boolean!
+  amounts: [Int!]!
+}
+
+type GiftCardCheckout {
+  checkoutUrl: String!
+}
+
+type GiftCardOrder {
+  status: String!
+  amount: Int!
+  recipientName: String
+  recipientEmail: String
+  code: String
+  expiresAt: String
 }

@@ -352,6 +352,34 @@ model ContactMessage {
   @@index([reference])
 }
 
+model GiftCard {
+  id                    String          @id @default(cuid())
+  organization          Organization    @relation("GiftCard_organization", fields: [organizationId], references: [id])
+  organizationId        String          @map("organization")
+  code                  String          @unique @default("")
+  status                String          @default("active")
+  initialValue          Int
+  balance               Int
+  purchaserName         String          @default("")
+  purchaserEmail        String          @default("")
+  recipientName         String          @default("")
+  recipientEmail        String          @default("")
+  message               String          @default("")
+  paymentSession        PaymentSession? @relation("GiftCard_paymentSession", fields: [paymentSessionId], references: [id])
+  paymentSessionId      String?         @map("paymentSession")
+  stripePaymentIntentId String          @default("")
+  expiresAt             DateTime?
+  activatedAt           DateTime?
+  emailedAt             DateTime?
+  refundedAt            DateTime?
+  ledger                Json?           @default("[]")
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @default(now()) @updatedAt
+
+  @@index([organizationId])
+  @@index([paymentSessionId])
+}
+
 model MembershipCreditGrant {
   id                               String                  @id @default(cuid())
   organization                     Organization?           @relation("MembershipCreditGrant_organization", fields: [organizationId], references: [id])
@@ -551,6 +579,7 @@ model Organization {
   from_CoachingAssignment_organization    CoachingAssignment[]       @relation("CoachingAssignment_organization")
   from_TrainingLead_organization          TrainingLead[]             @relation("TrainingLead_organization")
   from_ContactMessage_organization        ContactMessage[]           @relation("ContactMessage_organization")
+  from_GiftCard_organization              GiftCard[]                 @relation("GiftCard_organization")
   from_MembershipCreditGrant_organization MembershipCreditGrant[]    @relation("MembershipCreditGrant_organization")
   from_MembershipCreditEntry_organization MembershipCreditEntry[]    @relation("MembershipCreditEntry_organization")
   from_OperationalNotice_organization     OperationalNotice[]        @relation("OperationalNotice_organization")
@@ -903,34 +932,35 @@ model PaymentProvider {
 }
 
 model PaymentSession {
-  id                      String           @id @default(cuid())
-  organization            Organization     @relation("PaymentSession_organization", fields: [organizationId], references: [id])
-  organizationId          String           @map("organization")
-  user                    User?            @relation("PaymentSession_user", fields: [userId], references: [id], onDelete: Restrict)
-  userId                  String?          @map("user")
-  membershipTier          MembershipTier?  @relation("PaymentSession_membershipTier", fields: [membershipTierId], references: [id])
-  membershipTierId        String?          @map("membershipTier")
-  paymentProvider         PaymentProvider? @relation("PaymentSession_paymentProvider", fields: [paymentProviderId], references: [id])
-  paymentProviderId       String?          @map("paymentProvider")
-  status                  String           @default("pending")
-  billingCycle            String
-  amount                  Int
-  currencyCode            String           @default("USD")
-  idempotencyKey          String           @default("")
-  providerSessionId       String?          @unique
-  providerCustomerId      String           @default("")
-  providerSubscriptionId  String?          @unique
-  checkoutUrl             String?
-  data                    Json?            @default("{}")
-  expiresAt               DateTime?
-  completedAt             DateTime?
-  failedAt                DateTime?
-  cancelledAt             DateTime?
-  lastError               String           @default("")
-  provisioningLockedUntil DateTime?
-  payments                GymPayment[]     @relation("GymPayment_paymentSession")
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @default(now()) @updatedAt
+  id                           String           @id @default(cuid())
+  organization                 Organization     @relation("PaymentSession_organization", fields: [organizationId], references: [id])
+  organizationId               String           @map("organization")
+  user                         User?            @relation("PaymentSession_user", fields: [userId], references: [id], onDelete: Restrict)
+  userId                       String?          @map("user")
+  membershipTier               MembershipTier?  @relation("PaymentSession_membershipTier", fields: [membershipTierId], references: [id])
+  membershipTierId             String?          @map("membershipTier")
+  paymentProvider              PaymentProvider? @relation("PaymentSession_paymentProvider", fields: [paymentProviderId], references: [id])
+  paymentProviderId            String?          @map("paymentProvider")
+  status                       String           @default("pending")
+  billingCycle                 String
+  amount                       Int
+  currencyCode                 String           @default("USD")
+  idempotencyKey               String           @default("")
+  providerSessionId            String?          @unique
+  providerCustomerId           String           @default("")
+  providerSubscriptionId       String?          @unique
+  checkoutUrl                  String?
+  data                         Json?            @default("{}")
+  expiresAt                    DateTime?
+  completedAt                  DateTime?
+  failedAt                     DateTime?
+  cancelledAt                  DateTime?
+  lastError                    String           @default("")
+  provisioningLockedUntil      DateTime?
+  payments                     GymPayment[]     @relation("GymPayment_paymentSession")
+  createdAt                    DateTime         @default(now())
+  updatedAt                    DateTime         @default(now()) @updatedAt
+  from_GiftCard_paymentSession GiftCard[]       @relation("GiftCard_paymentSession")
 
   @@unique([organizationId, idempotencyKey], map: "PaymentSession_organization_idempotency_key")
   @@index([organizationId])

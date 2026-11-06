@@ -85,6 +85,7 @@ import { importMemberContacts } from './portableData';
 import { retailTypeDefs, retailWorkspace, retailSaleItems, saveRetailItem, quoteRetailSale, sellRetail, returnRetail, closeRetail } from './retailLifecycle';
 import { counterPaymentTypeDefs, reconcileCounterPayment } from './counterPayments';
 import { completeDropInCheckout, dropInTypeDefs, startDropInCheckout } from './dropIn';
+import { confirmGiftCardOrder, giftCardOptions, giftCardTypeDefs, giftCardsWorkspace, lookupGiftCard, redeemGiftCard, refundGiftCard, startGiftCardCheckout } from './giftCards';
 import { beginStaffIntent, getMyPendingStaffIntents, getStaffIntent, settleStaffIntent, staffIntentTypeDefs } from './staffIntents';
 import { coachProfileTypeDefs, createCoachProfile, eligibleCoachAccounts } from './coachProfiles';
 
@@ -548,7 +549,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         activeMemberships: Int!
         pastDueCount: Int!
       }
-    `, trainingWorkspaceTypeDefs, retailTypeDefs, counterPaymentTypeDefs, dropInTypeDefs, staffIntentTypeDefs, coachProfileTypeDefs],
+    `, trainingWorkspaceTypeDefs, retailTypeDefs, counterPaymentTypeDefs, dropInTypeDefs, giftCardTypeDefs, staffIntentTypeDefs, coachProfileTypeDefs],
     resolvers: {
       Query: {
         retailWorkspace,
@@ -578,6 +579,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         discoveryClasses: getDiscoveryClasses,
         discoveryClassCalendar: getDiscoveryClassCalendar,
         publicGymSettings: getPublicGymSettings,
+        giftCardOptions, lookupGiftCard, giftCardsWorkspace,
         // Accounts, history and recovery bind to the configured tenant even while its sales are paused.
         storefrontOrganization: async (_root: unknown, _args: unknown, context: any) => (await configuredStorefrontOrganization(context))?.id ?? null,
         publicGymClassTypes: getPublicGymClassTypes,
@@ -595,6 +597,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         updateGymResourceAllocation: updateGymResource,
         saveRetailItem, quoteRetailSale, sellRetail, returnRetail, closeRetail, reconcileCounterPayment,
         startDropInCheckout, completeDropInCheckout,
+        startGiftCardCheckout, confirmGiftCardOrder, redeemGiftCard, refundGiftCard,
         beginStaffIntent, settleStaffIntent, createCoachProfile,
         importMemberContacts,
         bookTrainerAppointment, transitionTrainerAppointment, rescheduleTrainerAppointment,

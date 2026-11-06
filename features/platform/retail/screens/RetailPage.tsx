@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Banknote, History, PackagePlus, Receipt, ShoppingBag, Undo2 } from "lucide-react";
+import { Banknote, Gift, History, PackagePlus, Receipt, ShoppingBag, Undo2 } from "lucide-react";
 import { requireDashboardUser } from "@/features/platform/lib/current-user";
 import { PageContainer } from "@/features/dashboard/components/PageContainer";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,8 @@ import {
 } from "@/features/platform/components/platform-ui";
 import { loadRetailWorkspace, loadSaleItemsAction, quoteRetailSaleAction, retailAction } from "../actions/retail";
 import { CounterSaleForm } from "../components/CounterSaleForm";
+import { GiftCardDesk } from "../components/GiftCardDesk";
+import { loadGiftCards } from "../actions/gift-cards";
 import { CardPaymentsPanel } from "@/features/platform/components/CardPaymentsPanel";
 import { DiscardRetainedRequest, RetainedRequestNotice } from "@/features/platform/components/RetainedRequest";
 import { retryIntentFor, retryKeyFor, retryList, retryValue, type RetryDraft } from "@/features/platform/lib/retry-draft";
@@ -88,10 +90,11 @@ export default async function RetailPage({ searchParams }: { searchParams: Promi
   await requireDashboardUser();
   const raw = await searchParams;
   const params = { skip: firstParam(raw.skip), cardSkip: firstParam(raw.cardSkip), itemSkip: firstParam(raw.itemSkip), itemSite: firstParam(raw.itemSite, 100), error: firstParam(raw.error, 1000), success: firstParam(raw.success, 1000), cardCheckout: firstParam(raw.cardCheckout, 260), cardAttempt: firstParam(raw.cardAttempt, 100), intent: firstParam(raw.intent, 100) };
-  const [data, retry, pendingIntents] = await Promise.all([
+  const [data, retry, pendingIntents, gifts] = await Promise.all([
     loadRetailWorkspace({ skip: Number(params.skip || 0), cardSkip: Number(params.cardSkip || 0), itemSkip: Number(params.itemSkip || 0), itemSite: params.itemSite || undefined }),
     loadRetryIntent(params.intent, "retail"),
     loadPendingIntents("retail"),
+    loadGiftCards(Number(firstParam(raw.giftSkip) || 0)),
   ]);
   const kept = (operation: string, field: string, scope = "") => retryValue(retry, operation, field, scope);
   const otherPending = pendingIntents.filter((row) => row.id !== retry?.intentId);
@@ -130,6 +133,7 @@ export default async function RetailPage({ searchParams }: { searchParams: Promi
         <SectionNav
           items={[
             { id: "sale", label: "Counter sale" },
+            { id: "gift-cards", label: "Gift cards", count: gifts.cards.length },
             { id: "card-payments", label: "Card payments", count: (data.cardPayments || []).length },
             { id: "sales", label: "Sales & returns", count: data.sales.length },
             { id: "catalog", label: "Catalog & stock", count: data.items.length },
@@ -158,6 +162,37 @@ export default async function RetailPage({ searchParams }: { searchParams: Promi
             )}
             {data.locationsTruncated ? <p className="mt-2 text-xs text-muted-foreground">Showing the first 500 locations by name.</p> : null}
           </PanelBody>
+        </Panel>
+
+        <Panel id="gift-cards">
+          <PanelHeader
+            icon={Gift}
+            title="Gift cards"
+            count={gifts.cards.length}
+            description="Sold online at /gift-cards and issued once Stripe confirms payment. Check a code, take payment from it, or refund an unused card to the buyer."
+          />
+          <PanelBody>
+            <GiftCardDesk />
+          </PanelBody>
+          {gifts.error ? <PanelBody><Notice tone="danger">{gifts.error}</Notice></PanelBody> : gifts.cards.length ? (
+            <DataTable label="Gift cards sold" minWidth="40rem">
+              <thead><tr><Th>Code</Th><Th>For</Th><Th align="right">Balance</Th><Th>Status</Th><Th>Sold</Th></tr></thead>
+              <tbody>
+                {gifts.cards.map((card: any) => (
+                  <Tr key={card.id}>
+                    <Td className="font-mono text-xs">{card.code}</Td>
+                    <Td><p className="text-sm">{card.recipientName || card.purchaserName}</p><p className="text-xs text-muted-foreground">{card.recipientEmail}</p></Td>
+                    <Td align="right" className="tabular-nums">{money(card.balance)} of {money(card.initialValue)}</Td>
+                    <Td>{card.status === "active" ? "Active" : card.status === "redeemed" ? "Used up" : "Refunded"}</Td>
+                    <Td className="text-xs text-muted-foreground">{utcStamp(card.createdAt)}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </DataTable>
+          ) : <EmptyBlock compact icon={Gift} title="No gift cards sold yet" />}
+          {gifts.skip > 0 || gifts.hasMore ? (
+            <PaginationBar summary={`Gift cards from ${gifts.skip + 1}`} previousHref={gifts.skip > 0 ? `?giftSkip=${Math.max(0, gifts.skip - 25)}#gift-cards` : null} nextHref={gifts.hasMore ? `?giftSkip=${gifts.skip + 25}#gift-cards` : null} />
+          ) : null}
         </Panel>
 
         <CardPaymentsPanel rows={data.cardPayments || []} surface="retail" timeZone="UTC" returnedCheckout={returnedCheckout} closedCheckout={Boolean(params.cardAttempt)}
