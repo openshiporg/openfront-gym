@@ -2,6 +2,7 @@ import { currentRoleActor } from '../access/currentRoleActor';
 import { lockTransactionKey } from './classCapacity';
 import { enqueueOperationalNotice } from '../lib/operational-notices';
 import { guardKeystonePrismaResults } from '../lib/prisma-result';
+import { MEMBER_ACCOUNT_MACHINE, assertTransition } from '../lib/lifecycles';
 
 export async function setMemberAccountStatus(
   _root: unknown,
@@ -31,6 +32,7 @@ export async function setMemberAccountStatus(
       throw new Error("A cancelled member account cannot be reactivated from this workflow");
     }
     if (member.status === status) return member;
+    assertTransition(MEMBER_ACCOUNT_MACHINE, "member account", member.status, status);
     if (status === "cancelled") {
       const [bookings, payments, checkIns, subscriptions, memberships, paymentSessions] = await Promise.all([
         transaction.classBooking.count({ where: { memberId: member.id, organizationId } }),

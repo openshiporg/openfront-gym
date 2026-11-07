@@ -11,7 +11,8 @@ export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 const TRANSITIONS: Record<AppointmentStatus, readonly AppointmentStatus[]> = {
   scheduled: ["confirmed", "checked_in", "completed", "cancelled", "no_show"],
   confirmed: ["checked_in", "completed", "cancelled", "no_show"],
-  checked_in: ["completed", "cancelled"],
+  // A started appointment can't be cancelled (its credit is closed); it ends completed.
+  checked_in: ["completed"],
   completed: [],
   cancelled: [],
   no_show: [],

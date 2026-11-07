@@ -5,6 +5,7 @@ import { provisionMembershipFromCheckoutSession } from "../../integrations/payme
 import { mapStripeStatusToMembership } from "../../integrations/payment/lifecycle";
 import { getPaymentProviderAdapterForExecution } from "../../integrations/payment";
 import type { PaymentProviderAdapter } from "../../integrations/payment/types";
+import { MEMBERSHIP_MACHINE, SUBSCRIPTION_MACHINE, settleTransition } from "../lib/lifecycles";
 import { createFinanceException, enqueueOperationalNotice } from "../lib/operational-notices";
 import { ensureMonthlyCreditGrant, reviewFutureMembershipBookings } from "../lib/membership-credits";
 import { releaseFutureBookingsForEndedMembership } from "./gymLifecycle";
@@ -230,9 +231,11 @@ export async function syncSubscription(
       membership?.creditPeriodStart && membership.creditPeriodEnd &&
       new Date(membership.creditPeriodStart) <= now && now < new Date(membership.creditPeriodEnd),
     );
-    const membershipStatus = providerMembershipStatus === "active"
+    const providerDerivedStatus = providerMembershipStatus === "active"
       ? (hasCurrentPaidServicePeriod ? "active" : "past-due")
       : providerMembershipStatus;
+    // A cancelled membership is never revived by a later provider observation.
+    const membershipStatus = membership ? settleTransition(MEMBERSHIP_MACHINE, membership.status, providerDerivedStatus) : providerDerivedStatus;
     const billingCycle = membership?.billingCycle === "annual" || (!membership && subscription.metadata?.billingCycle === "annual") ? "annual" : "monthly";
     const nextBillingDate = subscription.current_period_end
       ? new Date(subscription.current_period_end * 1000)
@@ -287,10 +290,10 @@ export async function syncSubscription(
     const projectionData = {
       memberId: member.id,
       ...(tierId ? { membershipTierId: tierId } : {}),
-      status: mapStripeStatusToSubscription(
+      status: settleTransition(SUBSCRIPTION_MACHINE, existingProjection?.status, mapStripeStatusToSubscription(
         subscription.status,
         Boolean(subscription.pause_collection),
-      ),
+      )),
       startDate,
       nextBillingDate,
       cancelledAt: subscription.status === "canceled" ? eventTime : null,
@@ -552,7 +555,7 @@ async function expireCheckoutSession(context: Context, session: Stripe.Checkout.
     if (!localSession) return;
     await lockTransactionKey(tx, `membership-checkout:${organizationId}:${localSession.userId}`);
     await tx.paymentSession.updateMany({
-      where: { id: localSession.id, organizationId, status: { notIn: ["completed", "expired"] }, OR: [{ providerSessionId: session.id }, { providerSessionId: "" }] },
+      where: { id: localSession.id, organizationId, status: { notIn: ["completed", "expired", "cancelled"] }, OR: [{ providerSessionId: session.id }, { providerSessionId: "" }] },
       data: { status: "expired", expiresAt: new Date(), provisioningLockedUntil: null },
     });
   });

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { Context } from ".keystone/types";
 import { guardKeystonePrismaResults, requirePrismaAffectedCount, withKeystonePrismaTransaction } from "../lib/prisma-result";
 import { lockActiveOrganization } from "../lib/current-actor";
+import { createFinanceException } from "../lib/operational-notices";
 import { assertParticipationAllowed } from "../lib/operational-policy";
 import { publicAppUrl } from "../lib/internal-origin";
 import { assertSingleMerchantCheckout } from "../../integrations/payment/membership-checkout-core";
@@ -193,6 +194,9 @@ export async function fulfillDropInCheckout(context: Context, organizationId: st
       await prisma.gymPayment.updateMany({ where: { organizationId, stripePaymentIntentId: paymentIntentId }, data: { status: "refunded", refundAmount: local.amount, refundedAt: new Date(), refundReason: (outcome as any).failure || DROP_IN_CLASS_FULL } });
     } catch (error) {
       console.error("Drop-in automatic refund failed", { paymentSessionId: local.id, name: error instanceof Error ? error.name : "UnknownError" });
+      // The session is already completed, so nothing retries this: put it in front of staff.
+      await withKeystonePrismaTransaction(context.prisma, (tx: any) => createFinanceException(tx, { organizationId, key: `drop-in-refund:${local.id}`, kind: "drop-in-refund",
+        reference: paymentIntentId, summary: `A drop-in payment (${paymentIntentId}) could not book its class and the automatic refund failed. Refund it from Payments.` })).catch(() => undefined);
     }
   }
   const final = await prisma.paymentSession.findFirst({ where: { id: local.id }, select: { lastError: true } });
@@ -231,6 +235,8 @@ export async function refundCancelledDropIns(context: Context, organizationId: s
       refunded += 1;
     } catch (error) {
       console.error("Drop-in refund after cancellation failed", { bookingId: booking.id, name: error instanceof Error ? error.name : "UnknownError" });
+      await withKeystonePrismaTransaction(context.prisma, (tx: any) => createFinanceException(tx, { organizationId, key: `drop-in-cancel-refund:${booking.id}`, kind: "drop-in-refund",
+        reference: payment.stripePaymentIntentId, summary: `A drop-in booking was cancelled before the class but its refund (${payment.stripePaymentIntentId}) failed. Refund it from Payments.` })).catch(() => undefined);
     }
   }
   return { refunded };

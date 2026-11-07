@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { MEMBERSHIP_MACHINE, settleTransition } from "../lib/lifecycles";
 import type { Context } from ".keystone/types";
 import { reviewFutureMembershipBookings } from "../lib/membership-credits";
 import { enqueueOperationalNotice } from "../lib/operational-notices";
@@ -277,13 +278,23 @@ export async function finishMembershipBillingAttempt(
     if (!member) throw new Error("Membership member disappeared while finalizing billing");
     await lockTransactionKey(transaction, `member:${member.id}`);
     const fenced = await transaction.membership.findFirst({ where: { id: claim.membershipId, organizationId: claim.organizationId } });
+    const requested: Record<string, unknown> = { ...(typeof membershipData === "function" ? membershipData(fenced) : membershipData) };
+    // The status the operation wants is applied only if the membership, as it stands under the fence
+    // (a webhook may have ended it meanwhile), can legally move there.
+    if (typeof requested.status === "string" && fenced) {
+      const settled = settleTransition(MEMBERSHIP_MACHINE, fenced.status, requested.status);
+      if (settled !== requested.status) {
+        delete requested.status;
+        if ("freezeStartDate" in requested && requested.freezeStartDate) { requested.freezeStartDate = null; requested.freezeEndDate = null; }
+      }
+    }
     const membershipUpdate = await transaction.membership.updateMany({
       where: {
         id: claim.membershipId,
         organizationId: claim.organizationId,
         billingGeneration: claim.generation,
       },
-      data: typeof membershipData === "function" ? membershipData(fenced) : membershipData,
+      data: requested,
     });
     if (membershipUpdate.count !== 1) throw new Error("Membership disappeared while finalizing billing operation");
     const updated = await transaction.membership.findFirst({ where: { id: claim.membershipId, organizationId: claim.organizationId } });

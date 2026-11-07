@@ -7,6 +7,7 @@ import { recordSettledTrainingPackage, recordTrainingPackageRefund } from "./tra
 import { assertTrainerAvailable, assertTrainingActor, assertTrainingTenant, minutesOfDay, trainingInteger, trainingText, unusedPackageRefundAmount, type TrainingActor } from "./trainingPolicy";
 import { counterAttemptsForWorkspace, startTrainingCardRefund, startTrainingCardSale } from "./counterPayments";
 import { hashTrainerAppointmentRequest } from "./trainerAppointmentEvidence";
+import { COACHING_MACHINE, TRAINING_LEAD_MACHINE, canTransition } from "../lib/lifecycles";
 import { allowedAppointmentTransitions } from "./trainerAppointmentPolicy";
 import { confirmedIntentResult, recordIntentResult } from "./staffIntents";
 import { enqueueOperationalNotice } from "../lib/operational-notices";
@@ -181,17 +182,17 @@ export async function transitionCoachingAtomic(prisma: any, data: any, actor: Tr
     if (data.status === "submitted") {
       if (!own) throw new Error("Only the assigned member can submit progress");
       if (row.status === "submitted" && row.memberEvidence === text) return { id: row.id, reused: true };
-      if (row.status !== "assigned") throw new Error("Only an assigned task can be submitted");
+      if (row.status === "submitted" || !canTransition(COACHING_MACHINE, row.status, "submitted")) throw new Error("Only an assigned task can be submitted");
       const log = await tx.workoutLog.create({ data: { organizationId: actor.organizationId, memberId: row.memberId, title: row.title, date: new Date(), notes: text } });
       await tx.coachingAssignment.update({ where: { id: row.id }, data: { status: "submitted", memberEvidence: text, submittedAt: new Date(), workoutLogId: log.id } });
     } else if (data.status === "reviewed") {
       if (!coach) throw new Error("Only the assigned coach or program manager can review");
       if (row.status === "reviewed" && row.review === text) return { id: row.id, reused: true };
-      if (row.status !== "submitted") throw new Error("Progress must be submitted before review");
+      if (row.status === "reviewed" || !canTransition(COACHING_MACHINE, row.status, "reviewed")) throw new Error("Progress must be submitted before review");
       await tx.coachingAssignment.update({ where: { id: row.id }, data: { status: "reviewed", review: text, reviewedAt: new Date() } });
       await enqueueOperationalNotice(tx, { organizationId: actor.organizationId, memberId: row.memberId, key: `coaching-reviewed:${row.id}`, kind: "coaching", message: `Your coach reviewed ${row.title}. Open Account → Training for feedback.` });
     } else if (data.status === "cancelled") {
-      if (!coach || row.status !== "assigned") throw new Error("Only unsubmitted coaching work can be cancelled by its coach");
+      if (!coach || row.status === "cancelled" || !canTransition(COACHING_MACHINE, row.status, "cancelled")) throw new Error("Only unsubmitted coaching work can be cancelled by its coach");
       await tx.coachingAssignment.update({ where: { id: row.id }, data: { status: "cancelled", review: text } });
     } else throw new Error("Unknown coaching transition");
     return { id: row.id };
@@ -203,15 +204,14 @@ export async function saveTrainingLeadAtomic(prisma: any, data: any, actor: Trai
   assertTrainingActor(actor); if (!actor.canManagePeople) throw new Error("People management permission required");
   const email = trainingText(data.email, "Email", 254).toLowerCase(), name = trainingText(data.name, "Name", 200), note = trainingText(data.note, "Follow-up note", 2000);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Email is invalid");
-  const allowed: Record<string, string[]> = { new: ["contacted", "closed"], contacted: ["trial_booked", "converted", "closed"], trial_booked: ["trial_attended", "contacted", "closed"], trial_attended: ["converted", "contacted", "closed"], converted: [], closed: [] };
-  if (!Object.hasOwn(allowed, data.status)) throw new Error("Unknown lead status");
+  if (!Object.hasOwn(TRAINING_LEAD_MACHINE, data.status)) throw new Error("Unknown lead status");
   const trialAt = data.trialAt ? new Date(data.trialAt) : null, nextActionAt = data.nextActionAt ? new Date(data.nextActionAt) : null;
   if ((trialAt && !Number.isFinite(trialAt.getTime())) || (nextActionAt && !Number.isFinite(nextActionAt.getTime()))) throw new Error("Follow-up date is invalid");
   return prisma.$transaction(async (tx: any) => {
     await lockTransactionKey(tx, `training-lead:${actor.organizationId}:${email}`);
     const row = await tx.trainingLead.findFirst({ where: { organizationId: actor.organizationId, email } });
     if (!row && data.status !== "new") throw new Error("New inquiries must begin as new");
-    if (row && row.status !== data.status && !allowed[row.status]?.includes(data.status)) throw new Error("Lead transition is not allowed");
+    if (row && !canTransition(TRAINING_LEAD_MACHINE, row.status, data.status)) throw new Error("Lead transition is not allowed");
     if (data.status === "trial_booked" && (!trialAt || trialAt <= new Date())) throw new Error("Choose a future trial appointment");
     if (data.status === "trial_attended" && (!row?.trialAt || new Date(row.trialAt) > new Date())) throw new Error("Trial attendance cannot precede its appointment");
     if (data.status === "converted") {

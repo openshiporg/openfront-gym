@@ -1,32 +1,14 @@
-const MEMBERSHIP_TRANSITIONS: Readonly<Record<string, ReadonlySet<string>>> = {
-  active: new Set(["frozen", "cancelled", "expired", "past-due"]),
-  frozen: new Set(["active", "cancelled", "expired", "past-due"]),
-  "past-due": new Set(["active", "frozen", "cancelled", "expired"]),
-  cancelled: new Set(),
-  expired: new Set(),
-};
-
-const BOOKING_TRANSITIONS: Readonly<Record<string, ReadonlySet<string>>> = {
-  confirmed: new Set(["cancelled"]),
-  waitlist: new Set(["confirmed", "cancelled"]),
-  cancelled: new Set(),
-};
+import { BOOKING_MACHINE, MEMBERSHIP_MACHINE, assertTransition } from "../lib/lifecycles";
 
 export type AttendanceOutcome = "attended" | "late" | "no-show";
 export type CheckInMethod = "qr_code" | "rfid" | "manual" | "app";
 
 export function assertMembershipStatusTransition(previous: string, next: string) {
-  if (previous === next) return;
-  if (!MEMBERSHIP_TRANSITIONS[previous]?.has(next)) {
-    throw new Error(`Invalid membership status transition: ${previous} -> ${next}`);
-  }
+  assertTransition(MEMBERSHIP_MACHINE, "membership", previous, next);
 }
 
 export function assertBookingStatusTransition(previous: string, next: string) {
-  if (previous === next) return;
-  if (!BOOKING_TRANSITIONS[previous]?.has(next)) {
-    throw new Error(`Invalid booking status transition: ${previous} -> ${next}`);
-  }
+  assertTransition(BOOKING_MACHINE, "booking", previous, next);
 }
 
 export function normalizeAttendanceOutcome(value: unknown): AttendanceOutcome {
