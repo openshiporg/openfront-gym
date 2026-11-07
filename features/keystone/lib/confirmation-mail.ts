@@ -1,7 +1,7 @@
 import { mailTransport } from "./mail";
 import type { ConfirmationMail } from "./order-confirmation";
+import { emailButton, emailLayout, emailParagraph, escapeHtml } from "./email-layout"
 
-const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] as string));
 
 export async function sendConfirmationMail(mail: ConfirmationMail): Promise<{ sent: boolean; error?: string; messageId?: string; response?: string }> {
   try {
@@ -9,11 +9,12 @@ export async function sendConfirmationMail(mail: ConfirmationMail): Promise<{ se
       to: mail.to,
       from: process.env.SMTP_FROM,
       subject: mail.subject,
-      html: `<body style="font-family:Helvetica,Arial,sans-serif;color:#222;max-width:560px;margin:auto">
-        <h2>${escapeHtml(mail.heading)}</h2>
-        ${mail.lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
-        <p><a href="${escapeHtml(mail.link.url)}">${escapeHtml(mail.link.label)}</a></p>
-      </body>`,
+      html: emailLayout({
+        preheader: mail.heading,
+        title: mail.heading,
+        body: `${mail.lines.map((line) => emailParagraph(escapeHtml(line))).join("")}
+${emailButton(mail.link.label, mail.link.url)}`,
+      }),
     });
     const rejected = Array.isArray(info?.rejected) && info.rejected.length > 0;
     return rejected ? { sent: false, error: "recipient_rejected" } : { sent: true, messageId: typeof info?.messageId === "string" ? info.messageId : undefined, response: typeof info?.response === "string" ? info.response : undefined };

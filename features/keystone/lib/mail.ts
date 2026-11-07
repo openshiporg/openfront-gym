@@ -1,5 +1,6 @@
 import { createTransport, getTestMessageUrl } from "nodemailer";
 import { resolvePublicBaseUrl } from "./internal-origin";
+import { emailButton, emailLayout, emailMuted } from "./email-layout";
 
 /**
  * Outbound mail is a capability: MAIL_ENABLED=false (or missing SMTP settings) means no SMTP
@@ -31,32 +32,12 @@ function escapeHtml(value: string) {
 type MailLink = { url: string; label: string };
 
 function linkEmail({ heading, links, footer }: { heading: string; links: MailLink[]; footer: string }): string {
-  const buttons = links.map((link) => `
-          <tr>
-            <td align="center" style="padding: 8px 0;">
-              <table border="0" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td align="center" style="border-radius: 5px;" bgcolor="#346df1"><a href="${escapeHtml(link.url)}" target="_blank" style="font-size: 18px; font-family: Helvetica, Arial, sans-serif; color: #ffffff; text-decoration: none; border-radius: 5px; padding: 10px 20px; border: 1px solid #346df1; display: inline-block; font-weight: bold;">${escapeHtml(link.label)}</a></td>
-                </tr>
-              </table>
-            </td>
-          </tr>`).join("");
-  return `
-    <body style="background: #f9f9f9;">
-      <table width="100%" border="0" cellspacing="20" cellpadding="0" style="background: #ffffff; max-width: 600px; margin: auto; border-radius: 10px;">
-        <tr>
-          <td align="center" style="padding: 10px 0px 0px 0px; font-size: 18px; font-family: Helvetica, Arial, sans-serif; color: #444444;">
-            ${escapeHtml(heading)}
-          </td>
-        </tr>${buttons}
-        <tr>
-          <td align="center" style="padding: 0px 0px 10px 0px; font-size: 16px; line-height: 22px; font-family: Helvetica, Arial, sans-serif; color: #444444;">
-            ${escapeHtml(footer)}
-          </td>
-        </tr>
-      </table>
-    </body>
-  `;
+  return emailLayout({
+    preheader: heading,
+    title: heading,
+    body: `${links.map((link) => emailButton(link.label, link.url)).join("")}
+${emailMuted(escapeHtml(footer))}`,
+  });
 }
 
 /**
