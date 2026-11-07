@@ -8,6 +8,7 @@ import { extendGraphqlSchema } from "./mutations";
 import { mailDeliveryEnabled, sendPasswordResetEmail } from "./lib/mail";
 import { permissions } from "./access";
 import { withGraphqlListMaxTake } from "./security/graphql-limits";
+import { pooledDatabaseUrl } from './database-url';
 
 const isNextBuild = process.env.NEXT_PHASE === "phase-production-build";
 const strictConfig = (!isNextBuild && process.env.NODE_ENV === "production") || process.env.GYM_STRICT_CONFIG === "true";
@@ -169,7 +170,7 @@ export default withAuth(
   config({
     db: {
       provider: "postgresql",
-      url: databaseURL,
+      url: pooledDatabaseUrl(databaseURL),
     },
     lists: withGraphqlListMaxTake(models),
     storage: {
