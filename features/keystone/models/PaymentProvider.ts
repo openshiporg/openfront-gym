@@ -5,6 +5,7 @@ import { checkbox, json, relationship, text } from "@keystone-6/core/fields";
 import { permissions } from "../access";
 import { tenantFilter } from "../access/tenantPolicy";
 import { trackingFields } from "./trackingFields";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 
 export const PaymentProvider = list({
@@ -16,7 +17,19 @@ export const PaymentProvider = list({
       );
     },
   },
-  hooks: { validateInput: validateTenantOwnership([]) },
+  hooks: {
+    validateInput: validateTenantOwnership([]),
+    // Payments, checkouts and webhook events are reconciled and refunded through their provider.
+    async validateDelete({ item, context, addValidationError }: any) {
+      const prisma = guardKeystonePrismaResults(context.prisma as any);
+      const [payments, sessions, events] = await Promise.all([
+        prisma.gymPayment.count({ where: { paymentProviderId: item.id } }),
+        prisma.paymentSession.count({ where: { paymentProviderId: item.id } }),
+        prisma.paymentEvent.count({ where: { paymentProviderId: item.id } }),
+      ]);
+      if (payments || sessions || events) addValidationError("This payment provider has payments, checkouts or webhook events that are refunded and reconciled through it. Turn off Installed instead of deleting it.");
+    },
+  },
   access: {
     operation: {
       query: permissions.canManageAllRecords,

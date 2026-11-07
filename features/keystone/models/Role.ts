@@ -5,6 +5,7 @@ import { checkbox, relationship, text } from '@keystone-6/core/fields'
 import { isSignedIn, permissions, rules } from '../access'
 import { trackingFields } from './trackingFields'
 import { compoundUniqueDb, validateTenantOwnership } from './tenantRelationships'
+import { guardKeystonePrismaResults } from '../lib/prisma-result'
 import { elevatedRoleCapabilities, roleCapabilityFields } from './roleCapabilities'
 
 /** Full-capability holder: can manage every record and every role. Only such a holder may complete its own role. */
@@ -71,7 +72,14 @@ export async function validateRoleInput(args: any) {
 
 export const Role = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
-  hooks: { validateInput: validateRoleInput },
+  hooks: {
+    validateInput: validateRoleInput,
+    // A person without a role loses every permission at once; reassign them first.
+    async validateDelete({ item, context, addValidationError }: any) {
+      const people = await guardKeystonePrismaResults(context.prisma as any).user.count({ where: { roleId: item.id } })
+      if (people) addValidationError(`${people} ${people === 1 ? 'person still has' : 'people still have'} this role. Give them another role before deleting it.`)
+    },
+  },
   access: {
     operation: {
       ...allOperations(permissions.canManageRoles),

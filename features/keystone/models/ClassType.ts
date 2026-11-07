@@ -12,11 +12,19 @@ import { isSignedIn, permissions } from "../access";
 import { tenantFilter } from "../access/tenantPolicy";
 import { trackingFields } from "./trackingFields";
 import { relationship } from "@keystone-6/core/fields";
+import { guardKeystonePrismaResults } from "../lib/prisma-result";
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from "./tenantRelationships";
 
 export const ClassType = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
-  hooks: { validateInput: validateTenantOwnership([]) },
+  hooks: {
+    validateInput: validateTenantOwnership([]),
+    // Every schedule needs a class type (saveClassSchedule refuses one without), so a type in use stays.
+    async validateDelete({ item, context, addValidationError }: any) {
+      const schedules = await guardKeystonePrismaResults(context.prisma as any).classSchedule.count({ where: { classTypeId: item.id } });
+      if (schedules) addValidationError(`${schedules} class ${schedules === 1 ? "schedule uses" : "schedules use"} this class type. Move ${schedules === 1 ? "it" : "them"} to another class type before deleting it.`);
+    },
+  },
   access: {
     operation: {
       query: isSignedIn,

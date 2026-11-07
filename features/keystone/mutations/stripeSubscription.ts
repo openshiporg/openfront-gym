@@ -34,7 +34,7 @@ async function getAuthorizedMembership(context: Context, membershipId: string, c
   const memberships = await context.sudo().query.Membership.findMany({
     where: { AND: [{ id: { equals: membershipId } }, { organization: { id: { equals: organizationId } } }] },
     take: 1,
-    query: "id agreementSnapshot agreementHistory organization { id defaultCurrency } stripeSubscriptionId billingCycle status autoRenew nextBillingDate creditPeriodStart creditPeriodEnd member { id stripeCustomerId organization { id } } tier { id freezeAllowed organization { id } }",
+    query: "id startDate agreementSnapshot agreementHistory organization { id defaultCurrency } stripeSubscriptionId billingCycle status autoRenew nextBillingDate creditPeriodStart creditPeriodEnd member { id stripeCustomerId organization { id } } tier { id freezeAllowed contractLength organization { id } }",
   });
   const membership = memberships[0] as any;
   if (!membership || membership.organization?.id !== organizationId || membership.member?.organization?.id !== organizationId) {
@@ -63,6 +63,28 @@ function billingAttemptScope(
     idempotencyKey,
     requestHash: membershipBillingRequestHash(operation, evidence),
   };
+}
+
+/**
+ * The minimum term the member accepted (agreementSnapshot.contractLength, in months from the
+ * start date). Renewal can't be cancelled inside it; staff can still end a membership now.
+ */
+export function minimumTermEnd(membership: { startDate?: string | Date | null; agreementSnapshot?: any; tier?: any }) {
+  const months = Number(membership.agreementSnapshot?.contractLength ?? membership.tier?.contractLength ?? 0);
+  if (!Number.isInteger(months) || months <= 0 || !membership.startDate) return null;
+  const start = new Date(membership.startDate);
+  if (!Number.isFinite(start.getTime())) return null;
+  const end = new Date(start);
+  end.setUTCMonth(end.getUTCMonth() + months);
+  return end;
+}
+
+export function minimumTermCancelProblem(membership: Parameters<typeof minimumTermEnd>[0], now = new Date()) {
+  const end = minimumTermEnd(membership);
+  if (!end || now >= end) return null;
+  const months = Number(membership.agreementSnapshot?.contractLength ?? membership.tier?.contractLength);
+  const date = end.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return `This plan has a ${months}-month minimum term, so renewal can be cancelled from ${date}. Contact the front desk to end it sooner.`;
 }
 
 async function currentMembership(context: Context, membershipId: string) {
@@ -106,6 +128,9 @@ export async function cancelMembership(
   }
   if (["cancelled", "expired"].includes(membership.status)) throw new Error(`Membership is already ${membership.status}`);
   if (!membership.autoRenew) throw new Error("Membership renewal is already cancelled");
+  // Staff may waive the term; a member cancelling their own plan is held to it.
+  const termProblem = actor.canManageAllRecords ? null : minimumTermCancelProblem(membership);
+  if (termProblem) throw new Error(termProblem);
   if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
   const attempt = await claimMembershipBillingAttempt(context, scope, {
     status: membership.status,
@@ -145,7 +170,11 @@ export async function cancelMembershipNow(
   { membershipId, reason, idempotencyKey }: { membershipId: string; reason?: string; idempotencyKey: string },
   context: Context
 ) {
-  const { membership, actor } = await getAuthorizedMembership(context, membershipId);
+  // Ending a membership today is a front-desk decision (no refund, bookings released); members
+  // cancel renewal instead. The dashboard is the only caller; the API enforces the same rule.
+  const staff = await currentRoleActor(context);
+  if (!staff.canManageAllRecords) throw new Error("Only the front desk can end a membership today. You can cancel renewal so it ends after the paid period.");
+  const { membership, actor } = await getAuthorizedMembership(context, membershipId, staff);
   const organizationId = actor.organizationId;
   const normalizedReason = reason?.trim() || "";
   if (normalizedReason.length > 500) throw new Error("Cancellation reason must be 500 characters or fewer");

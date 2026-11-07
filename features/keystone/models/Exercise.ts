@@ -10,11 +10,19 @@ import { isSignedIn, permissions } from '../access';
 import { tenantFilter } from '../access/tenantPolicy';
 import { trackingFields } from './trackingFields';
 import { relationship } from '@keystone-6/core/fields';
+import { guardKeystonePrismaResults } from '../lib/prisma-result';
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 
 export const Exercise = list({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
-  hooks: { validateInput: validateTenantOwnership([]) },
+  hooks: {
+    validateInput: validateTenantOwnership([]),
+    // Logged sets keep the exercise they name.
+    async validateDelete({ item, context, addValidationError }: any) {
+      const sets = await guardKeystonePrismaResults(context.prisma as any).workoutSet.count({ where: { exerciseId: item.id } });
+      if (sets) addValidationError(`${sets} logged workout ${sets === 1 ? "set names" : "sets name"} this exercise, so it stays for that history.`);
+    },
+  },
   access: {
     operation: {
       query: isSignedIn,
