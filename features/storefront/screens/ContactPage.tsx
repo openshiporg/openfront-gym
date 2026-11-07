@@ -8,6 +8,7 @@ import { safeStorefrontReturnPath } from "@/features/storefront/lib/return-path"
 import { PageHead } from "@/features/storefront/modules/common/page-head";
 import { ArrowLink } from "@/features/storefront/modules/common/ui";
 import { HoursList } from "@/features/storefront/modules/layout/templates/footer";
+import { timesInLabel } from "@/lib/time-zone-label";
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
@@ -86,7 +87,7 @@ export async function ContactPage({ searchParams }: { searchParams?: Promise<{ t
                 <h2>Hours</h2>
                 <div className="sf-stack" data-gap="sm">
                   {hours.length ? <HoursList hours={hours} timeZone={timeZone} /> : <p className="sf-text-2">Not published</p>}
-                  {hours.length ? <p className="sf-meta">Times in {timeZone}</p> : null}
+                  {hours.length ? <p className="sf-meta">{timesInLabel(timeZone)}</p> : null}
                 </div>
               </div>
               {otherTopics.map((topic) => (

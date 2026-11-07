@@ -1443,3 +1443,74 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
     .sf-rg-plan li svg { margin-top: 3px; }
   }
 }
+
+/*
+ * Inset track (owner, 2026-11-07): one recessed, grained well with a raised selected pill,
+ * after Oathkeeper's recess (.lab-switch-control / workspace-card .band / toolbar [data-inset]):
+ * an outer 1px lip highlight, an inset top edge and a soft inset blur, plus two tiny offset dot
+ * layers (4px / 5px) for grain. Values are re-tuned for the light Studio palette; dark mode keeps
+ * Oathkeeper's own values. Unselected items sit flat on the track (no box per item); only the
+ * selected one is raised, in the existing coral.
+ *   .sf-inset-track  the well (put it on an .sf-seg, or on a wrapper around a scrolling .sf-seg)
+ *   .sf-inset-pill   the raised pill (applied automatically to the selected child of a track)
+ */
+@layer components {
+  .sf-root, .sf-portal {
+    --sf-inset-bg: var(--sf-surface);
+    --sf-inset-grain-a: rgb(12 13 15 / 0.045);
+    --sf-inset-grain-b: rgb(12 13 15 / 0.03);
+    --sf-inset-shadow:
+      0 1px 0 rgb(255 255 255 / 0.95),
+      inset 0 1px 0 rgb(12 13 15 / 0.06),
+      inset 0 1px 4px rgb(12 13 15 / 0.1),
+      inset 0 0 0 1px rgb(12 13 15 / 0.045);
+    --sf-inset-pill-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.38),
+      0 0 0 0.5px rgb(12 13 15 / 0.08),
+      0 1px 0 rgb(12 13 15 / 0.08),
+      0 2px 4px -1px rgb(12 13 15 / 0.2);
+  }
+  .dark .sf-root, .dark .sf-portal {
+    --sf-inset-bg: #0e0e0f;
+    --sf-inset-grain-a: rgb(255 255 255 / 0.0264);
+    --sf-inset-grain-b: rgb(255 255 255 / 0.0176);
+    --sf-inset-shadow: 0 1px 0 rgb(255 255 255 / 0.1), inset 0 1px 0 rgb(0 0 0 / 0.95), inset 0 1px 4px rgb(0 0 0 / 0.4);
+    --sf-inset-pill-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 1px 0 rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.35);
+  }
+
+  .sf-inset-track,
+  .sf-seg.sf-inset-track {
+    border-radius: 999px; padding: 4px; gap: 2px;
+    background:
+      radial-gradient(circle at 18% 32%, var(--sf-inset-grain-a) 0 0.5px, transparent 0.7px),
+      radial-gradient(circle at 72% 66%, var(--sf-inset-grain-b) 0 0.5px, transparent 0.7px),
+      var(--sf-inset-bg);
+    background-size: 4px 4px, 5px 5px, auto;
+    box-shadow: var(--sf-inset-shadow);
+  }
+  /* Unselected items: flat on the well, no fill of their own. */
+  .sf-inset-track :is(a, button, label) { background: transparent; box-shadow: none; }
+  .sf-inset-pill,
+  .sf-inset-track :is(a, button, label):is([aria-current]:not([aria-current="false"]), [aria-pressed="true"], [aria-selected="true"], [data-active]),
+  .sf-inset-track label:has(input:checked) {
+    border-color: var(--sf-cta); background: var(--sf-cta); color: var(--sf-cta-on); box-shadow: var(--sf-inset-pill-shadow);
+  }
+
+  /* A track whose items scroll: the wrapper is the well (its border stays whole at both ends),
+     the inner .sf-seg scrolls and fades its items out under the rounded ends. */
+  .sf-inset-track:has(> .sf-seg) { display: flex; width: max-content; max-width: 100%; min-width: 0; overflow: hidden; }
+  .sf-inset-track > .sf-seg {
+    flex: 1 1 auto; min-width: 0; padding: 0 8px; border-radius: 0; background: none; box-shadow: none;
+    scroll-padding-inline: 8px;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+  }
+
+  /* Date strip: a 22px well around 18px day pills. */
+  .sf-inset-track.sf-dates-track { border-radius: 22px; }
+  .sf-inset-track .sf-dates > :is(a, button) { border-radius: 18px; }
+  .sf-inset-track .sf-dates > :is(a, button)[data-week] { background: transparent; }
+  .sf-inset-track .sf-dates > :is(a, button)[data-week] > span { color: var(--sf-ink-2); }
+  .sf-inset-track .sf-dates > :is(a, button):not([aria-current]):hover > strong { color: var(--sf-accent); }
+  @media (min-width: 1024px) { .sf-inset-track.sf-dates-track { width: 100%; } }
+}

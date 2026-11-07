@@ -9,6 +9,7 @@ import { formatOccurrenceDate, formatOccurrenceTime } from "@/features/storefron
 import { clubDateParts } from "@/features/storefront/lib/presentation";
 import { Banner, EmptyState } from "@/features/storefront/modules/common/ui";
 import { contactPath } from "@/features/storefront/lib/contact-config";
+import { timesInLabel } from "@/lib/time-zone-label";
 
 const BOOKING_CONTACT = contactPath("booking", "/account/bookings");
 
@@ -63,7 +64,7 @@ export default async function AccountBookingsPage({
               </Link>
             ))}
           </nav>
-          <span className="sf-meta">Times in {timeZone}</span>
+          <span className="sf-meta">{timesInLabel(timeZone)}</span>
         </div>
         {rows.length ? (
           <div className="sf-bookings">{rows.map((booking: any) => <BookingRow key={booking.id} booking={booking} canCancel={view !== "history"} timeZone={timeZone} lateCancelHours={lateCancelHours} />)}</div>

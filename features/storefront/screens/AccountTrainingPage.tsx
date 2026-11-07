@@ -14,6 +14,7 @@ import { contactPath } from "@/features/storefront/lib/contact-config";
 import { retryIntentFor, retryKeyFor, type RetryDraft } from "@/features/platform/lib/retry-draft";
 import { loadRetryIntent } from "@/features/platform/lib/staff-intent";
 import { discardStaffIntentAction } from "@/features/platform/lib/intent-actions";
+import { timeZoneLabel, timesInLabel } from "@/lib/time-zone-label";
 
 const TRAINING_CONTACT = contactPath("training", "/account/training");
 
@@ -118,7 +119,7 @@ export default async function AccountTrainingPage({ searchParams }: { searchPara
   return <>
     <div className="sf-row" data-between>
       <h1 className="sf-h2">Personal training</h1>
-      <span className="sf-meta">Times in {zone}</span>
+      <span className="sf-meta">{timesInLabel(zone)}</span>
     </div>
     {params.error ? <Banner tone="bad" action={<Link href={TRAINING_CONTACT} className="sf-link">Contact the club</Link>}>{params.error}</Banner> : null}
     {params.success ? <Banner tone="ok">Request saved.</Banner> : null}
@@ -141,7 +142,7 @@ export default async function AccountTrainingPage({ searchParams }: { searchPara
           {(row.cancellationReason || changeable) ? <div className="sf-booking-extra">
             {row.cancellationReason ? <Banner tone="warn">{row.cancellationReason}</Banner> : null}
             {changeable ? <>
-              <details className="sf-disclosure"><summary>Change time</summary><div><TrainingForm operation="reschedule" scope={row.id} retry={retry} zone={zone} label="Request new time"><input type="hidden" name="appointmentId" value={row.id} /><Choice name="instructorId" label="Coach" rows={data.instructors} optional /><Field name="startTime" label={`New start (${zone})`} when /><Field name="reason" label="Reason" /><p className="sf-hint">Your current time stays booked if the new time isn’t available.</p></TrainingForm></div></details>
+              <details className="sf-disclosure"><summary>Change time</summary><div><TrainingForm operation="reschedule" scope={row.id} retry={retry} zone={zone} label="Request new time"><input type="hidden" name="appointmentId" value={row.id} /><Choice name="instructorId" label="Coach" rows={data.instructors} optional /><Field name="startTime" label={`New start (${timeZoneLabel(zone)})`} when /><Field name="reason" label="Reason" /><p className="sf-hint">Your current time stays booked if the new time isn’t available.</p></TrainingForm></div></details>
               <details className="sf-disclosure"><summary>Cancel appointment</summary><div><p className="sf-meta">Cancelling before the start returns the credit to this package.</p><TrainingForm operation="transition" zone={zone} label="Cancel appointment" variant="danger"><input type="hidden" name="appointmentId" value={row.id} /><input type="hidden" name="status" value="cancelled" /><Field name="reason" label="Reason" /></TrainingForm></div></details>
             </> : null}
           </div> : null}
@@ -166,7 +167,7 @@ export default async function AccountTrainingPage({ searchParams }: { searchPara
                 <div><dt>Session length</dt><dd>{pack.durationMinutes} min</dd></div>
                 <div><dt>Expires</dt><dd>{date(pack.expiresAt)}</dd></div>
               </dl>
-              {selectable ? <details className="sf-disclosure"><summary>Book with this package</summary><div><TrainingForm operation="book" scope={pack.id} retry={retry} zone={zone} label="Reserve"><input type="hidden" name="trainingPackageId" value={pack.id} /><Choice name="instructorId" label="Coach" rows={data.instructors} /><Choice name="resourceId" label="Room or equipment (optional)" rows={data.resources.filter((resource: any) => !resource.locationId || resource.locationId === pack.locationId)} optional /><Field name="startTime" label={`Start (${zone})`} when /><Field name="memberNotes" label="Notes for your coach (optional)" required={false} /><p className="sf-hint">Availability is checked when you submit. One credit is held on confirmation.</p></TrainingForm></div></details> : null}
+              {selectable ? <details className="sf-disclosure"><summary>Book with this package</summary><div><TrainingForm operation="book" scope={pack.id} retry={retry} zone={zone} label="Reserve"><input type="hidden" name="trainingPackageId" value={pack.id} /><Choice name="instructorId" label="Coach" rows={data.instructors} /><Choice name="resourceId" label="Room or equipment (optional)" rows={data.resources.filter((resource: any) => !resource.locationId || resource.locationId === pack.locationId)} optional /><Field name="startTime" label={`Start (${timeZoneLabel(zone)})`} when /><Field name="memberNotes" label="Notes for your coach (optional)" required={false} /><p className="sf-hint">Availability is checked when you submit. One credit is held on confirmation.</p></TrainingForm></div></details> : null}
             </article>;
           })}
         </div>

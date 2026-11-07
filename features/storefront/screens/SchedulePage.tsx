@@ -16,6 +16,7 @@ import {
 } from "@/features/storefront/lib/class-occurrence";
 import { calendarDays, localDateKey } from "@/features/storefront/lib/discovery";
 import { PageHead } from "@/features/storefront/modules/common/page-head";
+import { timesInLabel } from "@/lib/time-zone-label";
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -102,7 +103,7 @@ export async function SchedulePage({ searchParams = {} }: { searchParams?: Recor
   return (
     <div className="sf-page">
       <div className="sf-wrap">
-        <PageHead title="Schedule" aside={<p className="sf-meta">Times in {timeZone}</p>} />
+        <PageHead title="Schedule" aside={<p className="sf-meta">{timesInLabel(timeZone)}</p>} />
         <Suspense fallback={<p role="status" className="sf-meta">Loading schedule…</p>}>
           <WeeklySchedule
             scheduleData={scheduleData}

@@ -20,6 +20,7 @@ import { formatOccurrenceDate, formatOccurrenceTime } from "@/features/storefron
 import { humanizeLabel, isClubToday } from "@/features/storefront/lib/presentation";
 import { SessionState, SessionTime } from "@/features/storefront/modules/common/training";
 import { EmptyState } from "@/features/storefront/modules/common/ui";
+import { timesInLabel } from "@/lib/time-zone-label";
 
 type BookingSummary = {
   id: string;
@@ -215,7 +216,7 @@ export async function InstructorAccountPage() {
     <>
       <div className="sf-row" data-between>
         <h1 className="sf-h2">Coach workspace</h1>
-        <span className="sf-meta">Times in {timeZone}</span>
+        <span className="sf-meta">{timesInLabel(timeZone)}</span>
       </div>
 
       <section className="sf-next sf-on-night" aria-labelledby="next-teaching-title">

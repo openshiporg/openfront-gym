@@ -26,6 +26,7 @@ import { ScheduleEditorDialog } from "../components/ScheduleEditorDialog"
 import { InstanceEditorDialog } from "../components/InstanceEditorDialog"
 import { cancelClassInstanceAction, deleteClassSchedule, generateUpcomingInstances, previewClassScheduleDelete, type ClassScheduleDeletePreview } from "../actions/scheduling"
 import { formatRosterDayHeading, rosterDayKey } from "../../rosters/timezone"
+import { timeZoneLabel } from "@/lib/time-zone-label";
 
 type Event = {
   id: string
@@ -258,7 +259,7 @@ export function SchedulingClient({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="inline-flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <Clock3 className="size-3.5" aria-hidden />
-          Times shown in <span className="font-medium text-foreground">{timeZone}</span>
+          Times shown in <span className="font-medium text-foreground">{timeZoneLabel(timeZone, { city: true })}</span>
           {!canManageWorkspace ? (
             <StatusPill tone="info" className="ml-1">{isInstructor ? 'Instructor view · roster-first access' : 'Read-only scheduling view'}</StatusPill>
           ) : null}

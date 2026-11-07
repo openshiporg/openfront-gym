@@ -5,6 +5,7 @@ import { loadTrainingWorkspace } from "../actions/training";
 import { TrainingWorkspace } from "../components/TrainingWorkspace";
 import { loadPendingIntents, loadRetryIntent } from "@/features/platform/lib/staff-intent";
 import { firstParam } from "@/features/platform/lib/search-params";
+import { timeZoneLabel } from "@/lib/time-zone-label";
 export default async function TrainingPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireDashboardUser();
   const raw = await searchParams;
@@ -19,7 +20,7 @@ export default async function TrainingPage({ searchParams }: { searchParams: Pro
     <PlatformHeader
       eyebrow="Coaching"
       title="Training"
-      description={`Appointments, prepaid packages, coaching assignments, and trial follow-up. Times shown in ${data.timeZone}.`}
+      description={`Appointments, prepaid packages, coaching assignments, and trial follow-up. Times shown in ${timeZoneLabel(data.timeZone, { city: true })}.`}
     />
   );
   const breadcrumbs = [

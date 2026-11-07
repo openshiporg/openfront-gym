@@ -11,6 +11,7 @@ import { difficultyLabel, documentText, firstName as firstNameOf, initials } fro
 import { Crumb } from "@/features/storefront/modules/common/page-head";
 import { BookSessionLink, SessionRow } from "@/features/storefront/modules/common/session-row";
 import { ArrowLink, EmptyState } from "@/features/storefront/modules/common/ui";
+import { timesInLabel } from "@/lib/time-zone-label";
 
 export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const params = await props.params;
@@ -61,7 +62,7 @@ export async function InstructorDetailPage(props: { params: Promise<{ id: string
         <section className="sf-section" aria-labelledby="coach-sessions">
           <div className="sf-section-head">
             <h2 id="coach-sessions" className="sf-h2">Upcoming with {firstName}</h2>
-            <span className="sf-meta">Times in {timeZone}</span>
+            <span className="sf-meta">{timesInLabel(timeZone)}</span>
           </div>
           {occurrences.length ? (
             <div className="sf-sessions">

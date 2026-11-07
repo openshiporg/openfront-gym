@@ -1,3 +1,5 @@
+import { timeZoneLabel } from "./time-zone-label";
+
 export type LocalDateParts = {
   year: number;
   month: number;
@@ -104,7 +106,7 @@ export function exactLocalTimeToUtc(parts: Omit<LocalDateParts, "second"> & { se
       return round.year === parts.year && round.month === parts.month && round.day === parts.day && round.hour === parts.hour && round.minute === parts.minute && round.second === second;
     })
     .sort((a, b) => a.getTime() - b.getTime());
-  if (!matches.length) throw new NonexistentLocalTimeError(`That time does not exist in ${zone} because of a daylight-saving change. Choose another time.`);
+  if (!matches.length) throw new NonexistentLocalTimeError(`That time does not exist in ${timeZoneLabel(zone)} because of a daylight-saving change. Choose another time.`);
   return matches[0];
 }
 

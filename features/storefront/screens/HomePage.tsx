@@ -19,6 +19,7 @@ import { ArrowLink, EmptyState } from "@/features/storefront/modules/common/ui";
 import { HoursList } from "@/features/storefront/modules/layout/templates/footer";
 import HomeDaySchedule, { type HomeSession } from "@/features/storefront/modules/classes/components/home-day-schedule";
 import HomeWeekStrip from "@/features/storefront/modules/classes/components/home-week-strip";
+import { timeZoneLabel } from "@/lib/time-zone-label";
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
@@ -322,7 +323,7 @@ export async function HomePage() {
           <div className="sf-stack" data-gap="sm">
             <div className="sf-row" data-between>
               <h3 className="sf-h3">Hours</h3>
-              <span className="sf-meta">{zone}</span>
+              <span className="sf-meta">{timeZoneLabel(zone)}</span>
             </div>
             {hours.length ? <HoursList hours={hours} timeZone={zone} /> : <p className="sf-text-2">Not published</p>}
           </div>

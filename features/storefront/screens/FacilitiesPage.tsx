@@ -7,6 +7,7 @@ import { publishedHours } from "@/features/storefront/lib/contact-config";
 import { PageHead } from "@/features/storefront/modules/common/page-head";
 import { ArrowLink, EmptyState } from "@/features/storefront/modules/common/ui";
 import { HoursList } from "@/features/storefront/modules/layout/templates/footer";
+import { timeZoneLabel } from "@/lib/time-zone-label";
 
 export async function generateMetadata(): Promise<Metadata> {
   const config = await getStorefrontConfig();
@@ -73,7 +74,7 @@ export async function FacilitiesPage() {
             <div className="sf-panel">
               <div className="sf-row" data-between>
                 <h3 className="sf-h3">Hours</h3>
-                <span className="sf-meta">{timeZone}</span>
+                <span className="sf-meta">{timeZoneLabel(timeZone)}</span>
               </div>
               {hours.length ? <HoursList hours={hours} timeZone={timeZone} /> : <p className="sf-text-2">Not published</p>}
             </div>

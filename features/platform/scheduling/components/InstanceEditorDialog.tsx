@@ -21,6 +21,7 @@ import {
   formatDuration,
   minutesBetween,
 } from "./editor-dialog"
+import { timeZoneLabel } from "@/lib/time-zone-label";
 
 const DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 const WEEKDAY_BY_UTC_INDEX = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
@@ -223,7 +224,7 @@ export function InstanceEditorDialog({
       return
     }
     if (inPast) {
-      setError(`That start time has already passed in ${timeZone}. Sessions must start in the future.`)
+      setError(`That start time has already passed in ${timeZoneLabel(timeZone)}. Sessions must start in the future.`)
       return
     }
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > 10000) {
@@ -337,7 +338,7 @@ export function InstanceEditorDialog({
           ) : null}
         </EditorSection>
 
-        <EditorSection title="Date and time" description={`Times are in the gym's time zone, ${timeZone}.`}>
+        <EditorSection title="Date and time" description={`Times are in the gym's time zone, ${timeZoneLabel(timeZone, { city: true })}.`}>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Date">
               <FieldInput type="date" required value={form.date} onChange={(event) => set("date", event.target.value)} className="tabular-nums" />

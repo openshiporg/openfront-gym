@@ -28,6 +28,7 @@ import {
 import { isTrainingPackageSelectable, trainingPackageDisplayStatus } from "../lib/package-availability";
 import { retryIntentFor, retryKeyFor, retryValue, type RetryDraft } from "@/features/platform/lib/retry-draft";
 import { DiscardRetainedRequest, RetainedRequestNotice } from "@/features/platform/components/RetainedRequest";
+import { timeZoneLabel } from "@/lib/time-zone-label";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -191,7 +192,7 @@ export function TrainingWorkspace({ data, member = false, error, success, retry,
                     <Form operation="reschedule" scope={row.id} {...formProps} submitLabel="Reschedule" note="The old reservation is retained if the replacement cannot be booked.">
                       <input type="hidden" name="appointmentId" value={row.id}/>
                       <Choice name="instructorId" label="Replacement instructor" options={data.instructors} optional/>
-                      <Field name="startTime" label={`New start (${data.timeZone})`} type="datetime-local"/>
+                      <Field name="startTime" label={`New start (${timeZoneLabel(data.timeZone)})`} type="datetime-local"/>
                       <Field name="reason" label="Reason"/>
                     </Form>
                   </Disclosure> : null}
@@ -219,7 +220,7 @@ export function TrainingWorkspace({ data, member = false, error, success, retry,
             <Choice name="trainingPackageId" label={data.canManageAppointments ? "Member package" : "Package"} options={selectablePackages.map((p: any) => ({ id: p.id, name: packageLabel(p) }))} value={kept("book", "trainingPackageId")}/>
             <Choice name="instructorId" label="Instructor" options={data.instructors} value={kept("book", "instructorId")}/>
             <Choice name="resourceId" label="Room or resource" options={data.resources} optional value={kept("book", "resourceId")}/>
-            <Field name="startTime" label={`Start (${data.timeZone})`} type="datetime-local" value={kept("book", "startTime")}/>
+            <Field name="startTime" label={`Start (${timeZoneLabel(data.timeZone)})`} type="datetime-local" value={kept("book", "startTime")}/>
           </Grid>
           <Field name="memberNotes" label="Notes" required={false}/>
         </Form>

@@ -9,6 +9,7 @@ import { difficultyLabel, documentText, humanizeLabel } from "@/features/storefr
 import { PageHead } from "@/features/storefront/modules/common/page-head";
 import { BookSessionLink, SessionRow } from "@/features/storefront/modules/common/session-row";
 import { ArrowLink, EmptyState } from "@/features/storefront/modules/common/ui";
+import { timesInLabel } from "@/lib/time-zone-label";
 
 export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const params = await props.params;
@@ -47,7 +48,7 @@ export async function ClassDetailPage(props: { params: Promise<{ id: string }> }
           <section aria-labelledby="class-sessions" className="sf-stack">
             <div className="sf-section-head" style={{ marginBottom: 0 }}>
               <h2 id="class-sessions" className="sf-h2">Upcoming</h2>
-              <span className="sf-meta">Times in {timeZone}</span>
+              <span className="sf-meta">{timesInLabel(timeZone)}</span>
             </div>
             {occurrences.length ? (
               <div className="sf-sessions">

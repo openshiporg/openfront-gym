@@ -22,6 +22,7 @@ import { LogoMark } from '../components/LogoMark'
 import { StoreSettingsSaveBar } from '../components/StoreSettingsSaveBar'
 import { HUE_PRESETS, LOGO_ICONS } from '../lib/icon-registry'
 import { DEFAULT_GYM_LOGO_ICON, DEFAULT_LIBRARY_LOGO_COLOR, normalizeGymLogoColor } from '../lib/storefront-branding'
+import { timeZoneLabel } from "@/lib/time-zone-label";
 
 type Settings = Record<string, any> | null
 type Policy = {
@@ -486,7 +487,7 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
                 </FormField>
                 <FormField label="Time zone">
                   <select value={form.timezone} onChange={set('timezone')} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
-                    {[...new Set([form.timezone, ...timezoneOptions])].map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+                    {[...new Set([form.timezone, ...timezoneOptions])].map((zone) => <option key={zone} value={zone}>{timeZoneLabel(zone, { city: true })}</option>)}
                   </select>
                 </FormField>
               </PanelBody>

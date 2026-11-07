@@ -20,6 +20,7 @@ import {
 import { dateParam, enumParam, firstParam, pageParam, type SearchParamValue } from "@/features/platform/lib/search-params";
 import { getRosterSessionPage } from "../actions/rosters";
 import { formatRosterDayHeading, formatRosterTime, rosterDayKey } from "../timezone";
+import { timeZoneLabel } from "@/lib/time-zone-label";
 
 type Params = Record<string, SearchParamValue>;
 type SessionState = "cancelled" | "started" | "full" | "upcoming";
@@ -133,7 +134,7 @@ export async function RosterListPage({ searchParams }: { searchParams?: Promise<
               </label>
               <Button type="submit" variant="outline" className="self-end">Apply</Button>
             </form>
-            <p className="text-xs text-muted-foreground">{from ? "" : "Without a start date the queue begins 24 hours ago. "}Dates use the gym&apos;s time zone{page?.timeZone ? ` (${page.timeZone})` : ""}.</p>
+            <p className="text-xs text-muted-foreground">{from ? "" : "Without a start date the queue begins 24 hours ago. "}Dates use the gym&apos;s time zone{page?.timeZone ? ` (${timeZoneLabel(page.timeZone, { city: true })})` : ""}.</p>
           </div>
 
           {!result.ok ? null : sessions.length === 0 ? (

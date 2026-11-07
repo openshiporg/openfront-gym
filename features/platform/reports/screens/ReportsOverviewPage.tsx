@@ -26,6 +26,7 @@ import { getReportsDashboardData } from '../actions/reports';
 import { formatMinorUnits } from '@/features/platform/lib/currency';
 import { formatReportDate, formatReportDateTime } from '../timezone';
 import { formatCreditsLeft } from '@/lib/class-credits';
+import { timeZoneLabel } from "@/lib/time-zone-label";
 
 function creditsLabel(value?: number | null) {
   return formatCreditsLeft(value) ?? '—';
@@ -55,7 +56,7 @@ export async function ReportsOverviewPage() {
       eyebrow="Insights"
       title="Reports"
       description="Morning operator summary across attendance, utilization, revenue, and membership health."
-      meta={<span className="text-xs text-muted-foreground">All times in {data.timeZone}</span>}
+      meta={<span className="text-xs text-muted-foreground">All times in {timeZoneLabel(data.timeZone)}</span>}
     />
   );
 

@@ -125,6 +125,7 @@ export default function WeeklySchedule({ scheduleData, truncated = false, loaded
 
   return <section aria-label="Find a class" className="sf-schedule">
     <div className="sf-dates-bar">
+      <div className="sf-inset-track sf-dates-track">
       <nav className="sf-seg sf-dates" aria-label="Choose a date">
         {allDays.map(item => {
           const count = countFor(item.key);
@@ -147,10 +148,11 @@ export default function WeeklySchedule({ scheduleData, truncated = false, loaded
           );
         })}
       </nav>
+      </div>
     </div>
     <div className="sf-schedule-top sf-stack">
       <div className="sf-controls">
-        <div className="sf-seg" role="group" aria-label="Schedule view">
+        <div className="sf-seg sf-inset-track" role="group" aria-label="Schedule view">
           <button type="button" aria-pressed={!week} onClick={() => navigate({ view: null })}>Day</button>
           <button type="button" aria-pressed={week} onClick={() => navigate({ view: "week" })}>Week</button>
         </div>

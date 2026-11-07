@@ -38,13 +38,13 @@ export default function ClassFilters({
 
   return (
     <div className="sf-row">
-      <nav className="sf-seg" aria-label="Level">
+      <nav className="sf-seg sf-inset-track" aria-label="Level">
         {difficulties.map((item) => {
           const active = selectedDifficulty === item.id || (!selectedDifficulty && item.id === "all");
           return <Link key={item.id} href={buildHref({ difficulty: item.id })} aria-current={active ? "page" : undefined} scroll={false}>{item.name}</Link>;
         })}
       </nav>
-      <nav className="sf-seg" aria-label="Length">
+      <nav className="sf-seg sf-inset-track" aria-label="Length">
         {durations.map((item) => {
           const active = selectedDuration === item.id || (!selectedDuration && item.id === "all");
           return <Link key={item.id} href={buildHref({ duration: item.id })} aria-current={active ? "page" : undefined} scroll={false}>{item.name}</Link>;
