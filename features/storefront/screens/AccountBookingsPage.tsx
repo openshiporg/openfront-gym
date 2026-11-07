@@ -36,6 +36,9 @@ export default async function AccountBookingsPage({
   ]);
   const timeZone = config?.timezone || "UTC";
   const lateCancelHours = Number(config?.lateCancelHours) || 0;
+  // One server-time clock for every row's late-cancel window, read once per request.
+  // eslint-disable-next-line react-hooks/purity -- server-only time comparison
+  const now = Date.now();
   const current = view === "history" ? history : view === "waitlist" ? waitlist : confirmed;
   const rows = current.items;
 
@@ -67,7 +70,7 @@ export default async function AccountBookingsPage({
           <span className="sf-meta">{timesInLabel(timeZone)}</span>
         </div>
         {rows.length ? (
-          <div className="sf-bookings">{rows.map((booking: any) => <BookingRow key={booking.id} booking={booking} canCancel={view !== "history"} timeZone={timeZone} lateCancelHours={lateCancelHours} />)}</div>
+          <div className="sf-bookings">{rows.map((booking: any) => <BookingRow key={booking.id} booking={booking} canCancel={view !== "history"} timeZone={timeZone} lateCancelHours={lateCancelHours} now={now} />)}</div>
         ) : (
           <EmptyState
             headingLevel={2}
@@ -101,11 +104,13 @@ function BookingRow({
   canCancel = false,
   timeZone,
   lateCancelHours = 0,
+  now,
 }: {
   booking: any;
   canCancel?: boolean;
   timeZone: string;
   lateCancelHours?: number;
+  now: number;
 }) {
   // What was booked comes from the reservation snapshot. The session itself can be moved by the
   // club, so the date, coach and location shown are the session's actual ones, and any change
@@ -143,12 +148,12 @@ function BookingRow({
           {instructorName ? ` · ${instructorName}` : ""}
         </p>
         {locationName ? <p>{locationName}</p> : null}
-        {booking.lateCancelled ? <p className="sf-meta">Late cancel: inside the club's {lateCancelHours || ""}{lateCancelHours ? "-hour " : ""}window, so the {booked?.credit?.basis === "drop_in_paid" ? "drop-in fee wasn't refunded" : "class credit wasn't returned"}.</p> : credit ? <p className="sf-meta">{credit}</p> : null}
+        {booking.lateCancelled ? <p className="sf-meta">Late cancel: inside the club&apos;s {lateCancelHours || ""}{lateCancelHours ? "-hour " : ""}window, so the {booked?.credit?.basis === "drop_in_paid" ? "drop-in fee wasn't refunded" : "class credit wasn't returned"}.</p> : credit ? <p className="sf-meta">{credit}</p> : null}
         {!booked ? <p className="sf-meta">Booked before booking details were recorded; shown as the session is scheduled now.</p> : null}
       </div>
       {canCancel && booking.status !== "cancelled" ? (
         <div className="sf-booking-side">
-          <CancelBookingForm bookingId={booking.id} sessionName={`${name}${date ? `, ${formatOccurrenceDate(date, timeZone)}, ${formatOccurrenceTime(date, timeZone)}` : ""}`} waitlist={booking.status === "waitlist"} dropIn={booked?.credit?.basis === "drop_in_paid"} lateWindowHours={booking.status === "confirmed" && date && lateCancelHours > 0 && new Date(date).getTime() - Date.now() < lateCancelHours * 3_600_000 ? lateCancelHours : 0} />
+          <CancelBookingForm bookingId={booking.id} sessionName={`${name}${date ? `, ${formatOccurrenceDate(date, timeZone)}, ${formatOccurrenceTime(date, timeZone)}` : ""}`} waitlist={booking.status === "waitlist"} dropIn={booked?.credit?.basis === "drop_in_paid"} lateWindowHours={booking.status === "confirmed" && date && lateCancelHours > 0 && new Date(date).getTime() - now < lateCancelHours * 3_600_000 ? lateCancelHours : 0} />
         </div>
       ) : null}
       {booking.classInstance?.isCancelled ? (
