@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [{ source: '/api/stripe/webhook', destination: '/api/payment-webhooks/pp_stripe' }];
   },
+  // A member opens on the shared item page; the platform path is kept so links to it still work.
+  // An HTTP redirect, not redirect() inside the streamed platform route (that swapped hook trees: React #310).
+  async redirects() {
+    return [{ source: '/dashboard/platform/members/:id', destination: '/dashboard/members/:id', permanent: false }];
+  },
   serverExternalPackages: ['graphql'],
   // Workaround since we diverged from Keystone reltionship and document views
   // typescript: {
