@@ -5,7 +5,9 @@
  */
 
 type SidebarList = { path: string; isHidden?: boolean | null }
-type SidebarUser = { role?: { canAccessDashboard?: boolean | null } | null } | null | undefined
+type SidebarUser = {
+  role?: { canAccessDashboard?: boolean | null; canManageAllRecords?: boolean | null; isInstructor?: boolean | null } | null
+} | null | undefined
 
 /** Only an explicit false hides navigation; an unknown user is left to the middleware. */
 export function canUseDashboardNav(user: SidebarUser) {
@@ -28,8 +30,15 @@ export function visiblePlatformItems<T extends { href: string }>(
 ): T[] {
   if (!canUseDashboardNav(user)) return []
   const hiddenPaths = new Set(lists.filter((list) => list.isHidden).map((list) => list.path))
+  // The same checks the pages' server queries make: Operations needs full record management,
+  // Scheduling needs full record management or an instructor role. Unknown users stay with the middleware.
+  const roleHidden = new Set<string>()
+  if (user?.role && user.role.canManageAllRecords !== true) {
+    roleHidden.add('operations')
+    if (user.role.isInstructor !== true) roleHidden.add('scheduling')
+  }
   return items.filter((item) => {
     const slug = item.href.split('/platform/')[1]?.split(/[/?#]/)[0]
-    return !slug || !hiddenPaths.has(slug)
+    return !slug || (!hiddenPaths.has(slug) && !roleHidden.has(slug))
   })
 }

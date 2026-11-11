@@ -167,6 +167,15 @@ test('sidebar shows only lists and platform pages the session can see', () => {
   assert.equal(access.visibleSidebarLists(lists, null).length, 1);
 });
 
+test('sidebar hides Operations and Scheduling from roles their server queries refuse', () => {
+  const access = sandbox().load('features/dashboard/lib/sidebarAccess.ts');
+  const items = [{ href: '/dashboard/platform/operations' }, { href: '/dashboard/platform/scheduling' }, { href: '/dashboard/platform/billing' }];
+  const hrefs = user => plain(access.visiblePlatformItems(items, [], user)).map(item => item.href);
+  assert.equal(hrefs({ role: { canAccessDashboard: true, canManageAllRecords: true } }).length, 3);
+  assert.deepEqual(hrefs({ role: { canAccessDashboard: true, isInstructor: true } }), ['/dashboard/platform/scheduling', '/dashboard/platform/billing']);
+  assert.deepEqual(hrefs({ role: { canAccessDashboard: true } }), ['/dashboard/platform/billing']);
+});
+
 test('formatInZone: viewer zone by default, explicit zone when given, labelled', () => {
   const t = sandbox().load('features/dashboard/lib/storeTime.ts');
   const d = new Date('2026-11-02T18:00:00Z');
