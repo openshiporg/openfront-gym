@@ -271,3 +271,7 @@ No top-level license file or package license declaration is included in this rep
 ---
 
 Built with [Next.js](https://nextjs.org) and [KeystoneJS](https://keystonejs.com).
+
+## No background loops
+
+This app runs no timers, cron, workers or reminder senders. Time-based state is computed on read or advanced by the request or staff button that touches it; external events go through Openfront Commerce webhooks. See `AGENTS.md`.
