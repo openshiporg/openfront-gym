@@ -55,6 +55,7 @@ interface User {
     canManageOnboarding?: boolean;
     canManageAllRecords?: boolean;
     isInstructor?: boolean;
+    [capability: string]: boolean | undefined;
   };
 }
 

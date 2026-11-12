@@ -14,6 +14,7 @@ import { isSignedIn, permissions, rules } from '../access';
 import { trackingFields } from './trackingFields';
 import { compoundUniqueDb, requiredRelationshipDb, validateTenantOwnership } from './tenantRelationships';
 import { guardKeystonePrismaResults } from '../lib/prisma-result';
+import { personFieldMode } from './User';
 import { memberHasHistory } from '../lib/lifecycle-guards';
 import { lockTransactionKey } from '../mutations/classCapacity';
 
@@ -80,16 +81,7 @@ export const Member = list({
       initialColumns: ['name', 'email', 'membershipTier', 'status', 'joinDate'],
     },
     itemView: {
-      defaultFieldMode: ({ session, item }) => {
-        // canEditOtherPeople can edit other people
-        if (session?.data.role?.canEditOtherPeople) return 'edit';
-
-        // Members can edit their own profile
-        if (session?.data.member?.id === item?.id) return 'edit';
-
-        // else, default all fields to read mode
-        return 'read';
-      },
+      defaultFieldMode: (args) => personFieldMode(args, (args.item as any)?.userId),
     },
   },
   fields: {

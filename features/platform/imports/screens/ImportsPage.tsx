@@ -1,8 +1,10 @@
 import { PageContainer } from '@/features/dashboard/components/PageContainer';
 import { PlatformHeader } from '@/features/platform/components/platform-ui';
 import { ImportsClient } from './ImportsClient';
+import { requireDashboardRole } from '@/features/platform/lib/current-user';
 
-export default function ImportsPage() {
+export default async function ImportsPage() {
+  await requireDashboardRole((role) => Boolean(role.canManagePeople));
   const header = (
     <PlatformHeader
       eyebrow="Gym management"

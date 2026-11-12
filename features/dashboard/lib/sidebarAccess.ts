@@ -5,9 +5,13 @@
  */
 
 type SidebarList = { path: string; isHidden?: boolean | null }
-type SidebarUser = {
-  role?: { canAccessDashboard?: boolean | null; canManageAllRecords?: boolean | null; isInstructor?: boolean | null } | null
-} | null | undefined
+type SidebarRole = {
+  canAccessDashboard?: boolean | null
+  canManageAllRecords?: boolean | null
+  isInstructor?: boolean | null
+  [capability: string]: boolean | null | undefined
+}
+type SidebarUser = { role?: SidebarRole | null } | null | undefined
 
 /** Only an explicit false hides navigation; an unknown user is left to the middleware. */
 export function canUseDashboardNav(user: SidebarUser) {
@@ -20,8 +24,35 @@ export function visibleSidebarLists<T extends SidebarList>(lists: T[], user: Sid
 }
 
 /**
- * A platform page whose first segment is a list path follows that list's visibility;
- * pages that are not tied to one list stay visible to dashboard users.
+ * The capabilities each platform page's own guard accepts besides full record management
+ * (an empty list means operators only). Pages not listed are open to every dashboard role.
+ */
+export const PLATFORM_PAGE_CAPABILITIES: Record<string, string[]> = {
+  operations: [],
+  billing: [],
+  locations: [],
+  instructors: [],
+  'membership-plans': [],
+  'class-catalog': [],
+  scheduling: ['isInstructor'],
+  rosters: ['isInstructor'],
+  retail: ['canManageRetail'],
+  'check-in': ['canManageCheckIns', 'canManageFacilities'],
+  imports: ['canManagePeople'],
+  members: ['canManagePeople', 'canSeeOtherPeople', 'canEditOtherPeople'],
+  reports: ['canViewReports'],
+  'store-settings': ['canManageSettings'],
+}
+
+export function canOpenPlatformPage(slug: string, role: SidebarRole) {
+  const accepted = PLATFORM_PAGE_CAPABILITIES[slug]
+  if (!accepted || role.canManageAllRecords === true) return true
+  return accepted.some((capability) => role[capability] === true)
+}
+
+/**
+ * A platform page follows its own guard for the session's role, and a page whose slug is a list
+ * path also follows that list's visibility. Unknown users stay with the middleware.
  */
 export function visiblePlatformItems<T extends { href: string }>(
   items: T[],
@@ -30,15 +61,11 @@ export function visiblePlatformItems<T extends { href: string }>(
 ): T[] {
   if (!canUseDashboardNav(user)) return []
   const hiddenPaths = new Set(lists.filter((list) => list.isHidden).map((list) => list.path))
-  // The same checks the pages' server queries make: Operations needs full record management,
-  // Scheduling needs full record management or an instructor role. Unknown users stay with the middleware.
-  const roleHidden = new Set<string>()
-  if (user?.role && user.role.canManageAllRecords !== true) {
-    roleHidden.add('operations')
-    if (user.role.isInstructor !== true) roleHidden.add('scheduling')
-  }
   return items.filter((item) => {
-    const slug = item.href.split('/platform/')[1]?.split(/[/?#]/)[0]
-    return !slug || (!hiddenPaths.has(slug) && !roleHidden.has(slug))
+    const path = item.href.split(/[?#]/)[0]
+    const slug = path.includes('/platform/') ? path.split('/platform/')[1]?.split('/')[0] : path.split('/').filter(Boolean).pop()
+    if (!slug) return true
+    if (hiddenPaths.has(slug)) return false
+    return !user?.role || canOpenPlatformPage(slug, user.role)
   })
 }

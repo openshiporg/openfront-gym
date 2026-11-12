@@ -1,7 +1,7 @@
 import { addDays, endOfDay, format, startOfMonth, startOfWeek } from 'date-fns';
 import { PageContainer } from '@/features/dashboard/components/PageContainer';
 import { PlatformHeader } from '@/features/platform/components/platform-ui';
-import { requireDashboardUser } from '@/features/platform/lib/current-user';
+import { requireDashboardRole } from '@/features/platform/lib/current-user';
 import { toPlainData } from '@/features/platform/lib/serialization';
 import { getSchedulingWorkspaceData } from '../actions/scheduling';
 import { SchedulingClient } from './SchedulingClient';
@@ -25,7 +25,7 @@ export async function SchedulingPage({
 }: {
   searchParams?: Promise<{ from?: string | string[] }>;
 }) {
-  const user = await requireDashboardUser();
+  const user = await requireDashboardRole((role) => Boolean(role.canManageAllRecords || role.isInstructor));
   const params = searchParams ? await searchParams : {};
   const requested = parseDay(params.from);
   const windowStart = startOfWeek(requested ?? startOfMonth(new Date()));

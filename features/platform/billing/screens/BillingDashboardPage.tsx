@@ -5,6 +5,7 @@
 
 import crypto from 'node:crypto';
 import { getBillingWorkspaceData } from '../actions/billing';
+import { requireDashboardManager } from '@/features/platform/lib/current-user';
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,8 @@ export async function BillingDashboardPage({
 }: {
   searchParams?: Promise<Record<string, SearchParamValue>>;
 }) {
+  // The billing workspace query is operator-only; other roles get no-access, not an error panel.
+  await requireDashboardManager();
   const resolved = searchParams ? await searchParams : {};
   const q = firstParam(resolved.q, 100);
   const skips = {

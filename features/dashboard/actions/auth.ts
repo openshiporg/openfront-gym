@@ -154,7 +154,7 @@ export async function getAuthenticatedUser() {
       authenticatedItem {
         ... on User {
           id email name onboardingStatus
-          role { canAccessDashboard canManageOnboarding canManageAllRecords isInstructor }
+          role { canAccessDashboard canManageOnboarding canManageAllRecords isInstructor canManageRetail canManageCheckIns canManageFacilities canManagePeople canSeeOtherPeople canEditOtherPeople canViewReports canManageSettings }
         }
       }
     }

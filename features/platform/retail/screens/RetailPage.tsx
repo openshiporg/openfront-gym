@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Banknote, Gift, History, PackagePlus, Receipt, ShoppingBag, Undo2 } from "lucide-react";
-import { requireDashboardUser } from "@/features/platform/lib/current-user";
+import { requireDashboardRole } from "@/features/platform/lib/current-user";
 import { PageContainer } from "@/features/dashboard/components/PageContainer";
 import { Button } from "@/components/ui/button";
 import {
@@ -87,7 +87,7 @@ function utcStamp(value: string) {
 }
 
 export default async function RetailPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requireDashboardUser();
+  await requireDashboardRole((role) => Boolean(role.canManageAllRecords || role.canManageRetail));
   const raw = await searchParams;
   const params = { skip: firstParam(raw.skip), cardSkip: firstParam(raw.cardSkip), itemSkip: firstParam(raw.itemSkip), itemSite: firstParam(raw.itemSite, 100), error: firstParam(raw.error, 1000), success: firstParam(raw.success, 1000), cardCheckout: firstParam(raw.cardCheckout, 260), cardAttempt: firstParam(raw.cardAttempt, 100), intent: firstParam(raw.intent, 100) };
   const [data, retry, pendingIntents, gifts] = await Promise.all([

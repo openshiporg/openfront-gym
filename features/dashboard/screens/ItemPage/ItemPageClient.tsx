@@ -295,6 +295,12 @@ export function ItemPageClient({ list, item, itemId }: ItemPageClientProps) {
     return result
   }, [enhancedFields, list.adminMetaFields])
 
+  // A view where the session can edit no field (read-only access to this record) offers no Save or Delete.
+  const canEditItem = useMemo(
+    () => Object.values(list.fields || {}).some((field: any) => field?.path !== 'id' && (field?.itemView?.fieldMode ?? 'edit') === 'edit'),
+    [list.fields]
+  )
+
   // Use Keystone's useInvalidFields hook with enhanced fields
   const invalidFields = useInvalidFields(enhancedFields, value, isRequireds)
   
@@ -434,7 +440,7 @@ export function ItemPageClient({ list, item, itemId }: ItemPageClientProps) {
         items={breadcrumbItems} 
         actions={
           <div className="flex items-center gap-2">
-            {!list.hideDelete && (
+            {!list.hideDelete && canEditItem && (
               <DeleteButton
                 list={list}
                 value={value}
@@ -450,7 +456,7 @@ export function ItemPageClient({ list, item, itemId }: ItemPageClientProps) {
                 isDesktop={true}
               />
             )}
-            <Button
+            {canEditItem && <Button
               size="sm"
               className="sm:text-sm text-xs"
               onClick={handleSave}
@@ -458,7 +464,7 @@ export function ItemPageClient({ list, item, itemId }: ItemPageClientProps) {
             >
               Save Changes
               <Check className="ml-1 stroke-[1.5px]" width="8" height="8" />
-            </Button>
+            </Button>}
           </div>
         }
       />

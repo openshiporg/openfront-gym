@@ -17,6 +17,7 @@ import {
   humanize,
 } from "@/features/platform/components/platform-ui";
 import { getFrontDeskData } from "../actions/check-in";
+import { requireDashboardRole } from "@/features/platform/lib/current-user";
 import { enumParam, firstParam, pageParam, type SearchParamValue } from "@/features/platform/lib/search-params";
 import { CheckInForm, CheckOutForm } from "../components/FrontDeskForms";
 
@@ -43,6 +44,7 @@ export async function CheckInPage({
 }: {
   searchParams?: Promise<Record<string, SearchParamValue>>;
 }) {
+  await requireDashboardRole((role) => Boolean(role.canManageAllRecords || role.canManageFacilities || role.canManageCheckIns));
   const resolved = searchParams ? await searchParams : {};
   const q = firstParam(resolved.q, 100);
   const visitQuery = firstParam(resolved.vq, 100);

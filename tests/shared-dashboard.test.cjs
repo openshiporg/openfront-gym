@@ -167,13 +167,62 @@ test('sidebar shows only lists and platform pages the session can see', () => {
   assert.equal(access.visibleSidebarLists(lists, null).length, 1);
 });
 
-test('sidebar hides Operations and Scheduling from roles their server queries refuse', () => {
+test('sidebar shows each platform page only to roles its page guard accepts', () => {
   const access = sandbox().load('features/dashboard/lib/sidebarAccess.ts');
-  const items = [{ href: '/dashboard/platform/operations' }, { href: '/dashboard/platform/scheduling' }, { href: '/dashboard/platform/billing' }];
-  const hrefs = user => plain(access.visiblePlatformItems(items, [], user)).map(item => item.href);
-  assert.equal(hrefs({ role: { canAccessDashboard: true, canManageAllRecords: true } }).length, 3);
-  assert.deepEqual(hrefs({ role: { canAccessDashboard: true, isInstructor: true } }), ['/dashboard/platform/scheduling', '/dashboard/platform/billing']);
-  assert.deepEqual(hrefs({ role: { canAccessDashboard: true } }), ['/dashboard/platform/billing']);
+  const slugs = ['operations', 'scheduling', 'billing', 'check-in', 'retail', 'rosters', 'reports', 'account', 'training'];
+  const items = [...slugs.map(slug => ({ href: `/dashboard/platform/${slug}` })), { href: '/dashboard/contact-messages' }];
+  const hrefs = role => plain(access.visiblePlatformItems(items, [], { role: { canAccessDashboard: true, ...role } }))
+    .map(item => item.href.split('/').pop());
+  assert.equal(hrefs({ canManageAllRecords: true }).length, items.length);
+  assert.deepEqual(hrefs({ isInstructor: true }), ['scheduling', 'rosters', 'account', 'training', 'contact-messages']);
+  assert.deepEqual(hrefs({ canManageCheckIns: true, canManageRetail: true }), ['check-in', 'retail', 'account', 'training', 'contact-messages']);
+  assert.deepEqual(hrefs({ canManageCheckIns: true, canViewReports: true }), ['check-in', 'reports', 'account', 'training', 'contact-messages']);
+  // A list-backed link (Messages) still follows the list's per-session visibility.
+  assert.deepEqual(plain(access.visiblePlatformItems(items, [{ path: 'contact-messages', isHidden: true }], { role: { canAccessDashboard: true } }))
+    .map(item => item.href.split('/').pop()), ['account', 'training']);
+});
+
+test('model links: a list is shown only to roles that work in it, Create/Delete follow operation access', async () => {
+  const ui = sandbox().load('features/keystone/security/list-ui-access.ts');
+  const denyAll = () => false;
+  const isSignedIn = ({ session }) => Boolean(session);
+  const models = ui.withSessionListUi({
+    GymPayment: { access: { operation: { query: isSignedIn, create: denyAll, update: denyAll, delete: denyAll } } },
+    Member: { access: { operation: { query: isSignedIn, create: ({ session }) => Boolean(session.data.role.canManagePeople), delete: ({ session }) => Boolean(session.data.role.canManagePeople) } } },
+    AuthRateLimitBucket: { access: { operation: { query: denyAll } } },
+    StaffIntent: { ui: { isHidden: true }, access: { operation: { query: denyAll } } },
+  });
+  const args = role => ({ session: { itemId: 'u1', data: { role } }, context: {} });
+  const instructor = args({ canAccessDashboard: true, isInstructor: true });
+  const manager = args({ canAccessDashboard: true, canManagePeople: true, canSeeOtherPeople: true });
+  const operator = args({ canAccessDashboard: true, canManageAllRecords: true });
+  assert.equal(await models.GymPayment.ui.isHidden(instructor), true);
+  assert.equal(await models.Member.ui.isHidden(instructor), true);
+  assert.equal(await models.Member.ui.isHidden(manager), false);
+  assert.equal(await models.Member.ui.hideCreate(manager), false);
+  assert.equal(await models.GymPayment.ui.isHidden(operator), false);
+  assert.equal(await models.GymPayment.ui.hideCreate(operator), true);
+  assert.equal(await models.GymPayment.ui.hideDelete(operator), true);
+  assert.equal(await models.AuthRateLimitBucket.ui.isHidden(operator), true);
+  assert.equal(await models.StaffIntent.ui.isHidden(operator), true);
+});
+
+test('people editors below operator change member accounts, never another staff account', () => {
+  const { rules } = sandbox().load('features/keystone/access.ts');
+  const session = role => ({ itemId: 'me', data: { organization: { id: 'org' }, role } });
+  const org = { organization: { id: { equals: 'org' } } };
+  const manager = session({ canEditOtherPeople: true, canManagePeople: true, canAccessDashboard: true });
+  const nonStaff = { OR: [{ id: { equals: 'me' } }, { role: null }, { role: { canAccessDashboard: { equals: false } } }] };
+  assert.deepEqual(plain(rules.canUpdatePeople({ session: manager })), { AND: [org, nonStaff] });
+  assert.deepEqual(plain(rules.canDeletePeople({ session: manager, listKey: 'User' })), { AND: [org, nonStaff] });
+  assert.deepEqual(plain(rules.canUpdateMember({ session: manager })), { AND: [org, { OR: [{ user: null }, { user: nonStaff }] }] });
+  assert.deepEqual(plain(rules.canDeletePeople({ session: manager, listKey: 'Member' })), { AND: [org, { OR: [{ user: null }, { user: nonStaff }] }] });
+  const operator = session({ canManageAllRecords: true, canManagePeople: true, canEditOtherPeople: true });
+  assert.deepEqual(plain(rules.canUpdatePeople({ session: operator })), org);
+  assert.deepEqual(plain(rules.canDeletePeople({ session: operator, listKey: 'User' })), org);
+  const frontDesk = session({ canSeeOtherPeople: true, canAccessDashboard: true });
+  assert.deepEqual(plain(rules.canUpdatePeople({ session: frontDesk })), { AND: [org, { id: { equals: 'me' } }] });
+  assert.equal(rules.canDeletePeople({ session: frontDesk, listKey: 'User' }), false);
 });
 
 test('formatInZone: viewer zone by default, explicit zone when given, labelled', () => {

@@ -19,6 +19,7 @@ import {
 } from "@/features/platform/components/platform-ui";
 import { dateParam, enumParam, firstParam, pageParam, type SearchParamValue } from "@/features/platform/lib/search-params";
 import { getRosterSessionPage } from "../actions/rosters";
+import { requireDashboardRole } from "@/features/platform/lib/current-user";
 import { formatRosterDayHeading, formatRosterTime, rosterDayKey } from "../timezone";
 import { timeZoneLabel } from "@/lib/time-zone-label";
 
@@ -35,6 +36,7 @@ const stateMeta: Record<SessionState, { label: string; tone: Tone }> = {
 };
 
 export async function RosterListPage({ searchParams }: { searchParams?: Promise<Params> }) {
+  await requireDashboardRole((role) => Boolean(role.canManageAllRecords || role.isInstructor));
   const params = searchParams ? await searchParams : {};
   const q = firstParam(params.q, 100);
   const state = enumParam(params.state, STATES, "all");

@@ -73,6 +73,15 @@ export async function requireDashboardUser() {
   return user;
 }
 
+type DashboardRole = NonNullable<NonNullable<DashboardUser>["role"]>;
+
+/** A page whose server query refuses a role sends that role to no-access instead of throwing a 500. */
+export async function requireDashboardRole(allowed: (role: DashboardRole) => boolean) {
+  const user = await requireDashboardUser();
+  if (!user.role || !allowed(user.role)) redirect("/dashboard/no-access");
+  return user;
+}
+
 export async function requireDashboardManager() {
   const user = await requireDashboardUser();
 

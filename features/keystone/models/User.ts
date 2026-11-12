@@ -52,6 +52,25 @@ async function noLinkedMember({ item, context }: any) {
   return linked === 0
 }
 
+/** An account whose role opens the dashboard: staff and operators. Only an operator or its holder edits it. */
+export async function isStaffAccount(context: any, userId: string | null | undefined) {
+  if (!userId) return false
+  const user = await guardKeystonePrismaResults(context.prisma as any).user.findUnique({
+    where: { id: userId },
+    select: { role: { select: { canAccessDashboard: true } } },
+  })
+  return user?.role?.canAccessDashboard === true
+}
+
+/** Item view mode for a person record: edit for operators and the holder; people editors edit member accounts only. */
+export async function personFieldMode({ session, context }: any, userId: string | null | undefined): Promise<'edit' | 'read'> {
+  const role = session?.data?.role
+  if (role?.canManageAllRecords) return 'edit'
+  if (userId && session?.itemId === userId) return 'edit'
+  if (!role?.canEditOtherPeople) return 'read'
+  return (await isStaffAccount(context, userId)) ? 'read' : 'edit'
+}
+
 export const User = list({
   hooks: {
     validateInput: validateUserInput,
@@ -87,16 +106,7 @@ export const User = list({
       initialColumns: ['name', 'email', 'organization', 'role', 'membership'],
     },
     itemView: {
-      defaultFieldMode: ({ session, item }) => {
-        // canEditOtherPeople can edit other people
-        if (session?.data.role?.canEditOtherPeople) return 'edit'
-
-        // edit themselves
-        if (session?.itemId === item?.id) return 'edit'
-
-        // else, default all fields to read mode
-        return 'read'
-      },
+      defaultFieldMode: (args) => personFieldMode(args, args.item?.id ? String(args.item.id) : null),
     },
   },
   fields: {

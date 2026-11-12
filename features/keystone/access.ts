@@ -51,6 +51,25 @@ function canEditPeople(session?: Session) {
   return Boolean(role?.canManageAllRecords || role?.canEditOtherPeople || role?.canManagePeople)
 }
 
+/**
+ * People staff below operator edit and delete member accounts, never another staff account:
+ * an account whose role opens the dashboard is changed only by an operator or its holder.
+ */
+function nonStaffUserFilter(session: Session) {
+  return { OR: [
+    { id: { equals: session.itemId } },
+    { role: null },
+    { role: { canAccessDashboard: { equals: false } } },
+  ] }
+}
+
+function nonStaffMemberFilter(session: Session) {
+  return { OR: [
+    { user: null },
+    { user: nonStaffUserFilter(session) },
+  ] }
+}
+
 function ownBookingFilter(session: Session) {
   return { member: { user: { id: { equals: session.itemId } } } }
 }
@@ -103,9 +122,11 @@ export const rules = {
 
   canUpdateMember: ({ session }: AccessArgs) => {
     if (!session) return false
-    const narrower = canEditPeople(session)
+    const narrower = isOperatorSession(session)
       ? undefined
-      : { user: { id: { equals: session.itemId } } }
+      : canEditPeople(session)
+        ? nonStaffMemberFilter(session)
+        : { user: { id: { equals: session.itemId } } }
     return tenantFilter({ session }, narrower)
   },
 
@@ -209,12 +230,15 @@ export const rules = {
     if (!session) return false
     return tenantFilter(
       { session },
-      canEditPeople(session) ? undefined : { id: { equals: session.itemId } }
+      isOperatorSession(session)
+        ? undefined
+        : canEditPeople(session) ? nonStaffUserFilter(session) : { id: { equals: session.itemId } }
     )
   },
-  canDeletePeople: ({ session }: AccessArgs) => {
+  canDeletePeople: ({ session, listKey }: AccessArgs & { listKey?: string }) => {
     if (!session || !session.data?.role?.canManagePeople) return false
     // Delete is always tenant-bound, including for global-capability operators.
-    return tenantFilter({ session })
+    if (isOperatorSession(session)) return tenantFilter({ session })
+    return tenantFilter({ session }, listKey === 'Member' ? nonStaffMemberFilter(session) : nonStaffUserFilter(session))
   },
 }

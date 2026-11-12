@@ -1,12 +1,12 @@
 import { PageContainer } from '@/features/dashboard/components/PageContainer';
-import { requireDashboardUser } from '@/features/platform/lib/current-user';
+import { requireDashboardManager } from '@/features/platform/lib/current-user';
 import { PlatformHeader } from '@/features/platform/components/platform-ui';
 import { loadOperations } from './actions';
 import { firstParam } from '@/features/platform/lib/search-params';
 import { OperationsClient } from './OperationsClient';
 
 export async function OperationsPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
-  await requireDashboardUser();
+  await requireDashboardManager();
   const raw = searchParams ? await searchParams : {};
   const number = (name: string) => Number(firstParam(raw[name])) || 0;
   const data = await loadOperations(false, undefined, undefined, {
