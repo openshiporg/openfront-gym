@@ -1513,4 +1513,10 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-inset-track .sf-dates > :is(a, button)[data-week] > span { color: var(--sf-ink-2); }
   .sf-inset-track .sf-dates > :is(a, button):not([aria-current]):hover > strong { color: var(--sf-accent); }
   @media (min-width: 1024px) { .sf-inset-track.sf-dates-track { width: 100%; } }
+
+  /* 44px taps for inline name links (class, coach) and small buttons; the phone day strip bleeds to the edge below 360px so seven days stay 44px wide. */
+  .sf-btn[data-size="sm"], .sf-rg-pill, .sf-rg-plan .sf-rg-choose { min-height: 44px; }
+  .sf-rg-coaches a, .sf-class-card :is(h2, h3) a, .sf-coach :is(h2, h3) a, .sf-titleline h3 a, .sf-session-meta a { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; }
+  .sf-rg-class strong a { display: block; min-height: 44px; overflow: hidden; line-height: 44px; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 359px) { .sf-rg-days { margin-inline: calc(var(--sf-gutter) * -1); border-radius: 0; padding: 4px 2px; gap: 0; } }
 }
