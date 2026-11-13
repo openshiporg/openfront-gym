@@ -8,6 +8,7 @@ import { extendGraphqlSchema } from "./mutations";
 import { mailDeliveryEnabled, sendPasswordResetEmail } from "./lib/mail";
 import { permissions } from "./access";
 import { withGraphqlListMaxTake } from "./security/graphql-limits";
+import { withReadScopedFilters } from "./security/filter-access";
 import { withSessionListUi } from "./security/list-ui-access";
 import { pooledDatabaseUrl } from './database-url';
 import { throwKeystonePrismaErrors } from './lib/keystonePrismaErrors';
@@ -176,7 +177,7 @@ export default withAuth(
       // Keystone returns failed queries as values; this makes them throw so transactions roll back.
       extendPrismaClient: throwKeystonePrismaErrors,
     },
-    lists: withGraphqlListMaxTake(withSessionListUi(models)),
+    lists: withGraphqlListMaxTake(withSessionListUi(withReadScopedFilters(models))),
     storage: {
       my_images: {
         kind: "s3",
