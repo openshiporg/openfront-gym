@@ -37,7 +37,7 @@ export const PROVIDER_CHANGED_MESSAGE = "The payment provider changed since this
 async function counterAdapter(context: Context, organizationId: string, purpose: Purpose, bound?: CounterProviderBinding | null) {
   const { provider, adapter } = await getAdapterForProvider(context, "pp_stripe", organizationId, purpose);
   if (bound && !sameCounterProvider(provider, bound)) throw new Error(PROVIDER_CHANGED_MESSAGE);
-  if (provider.adapterKey === "stripe" && process.env.PAYMENT_TEST_MODE !== "true") {
+  if (provider.adapterKey === "stripe") {
     const merchants = await context.sudo().query.PaymentProvider.findMany({
       where: { AND: [{ code: { equals: "pp_stripe" } }, { adapterKey: { equals: "stripe" } }, purpose === "charge" ? installedPaymentProviderWhere() : reconciliationPaymentProviderWhere()] },
       take: 2, query: "id providerAccountId organization { id }",

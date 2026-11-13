@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseCancelNowForm } from "../features/platform/billing/lib/cancel-renewal";
 import { mapStripeStatusToMembership } from "../features/integrations/payment/lifecycle";
-import { testPaymentProviderAdapter } from "../features/integrations/payment/test-adapter";
 
 const form = (values: Record<string, string>) => ({ get: (name: string) => values[name] ?? null });
 const valid = { membershipId: "ms_1", reason: " Member request ", idempotencyKey: "0123456789abcdef", confirmCancelNow: "yes" };
@@ -19,15 +18,6 @@ test("nothing is sent without the confirmation, a reason, a membership or a requ
   assert.throws(() => parseCancelNowForm(form({ ...valid, reason: " " })), /reason between 3 and 500/);
   assert.throws(() => parseCancelNowForm(form({ ...valid, membershipId: "" })), /Choose the membership/);
   assert.throws(() => parseCancelNowForm(form({ ...valid, idempotencyKey: "short" })), /request key/);
-});
-
-test("the provider ends the subscription immediately and a replay returns the same ended subscription", async () => {
-  const id = "sub_cancel_now_test";
-  const first = await testPaymentProviderAdapter.cancelSubscriptionNow(id, "k1");
-  const again = await testPaymentProviderAdapter.cancelSubscriptionNow(id, "k1");
-  assert.equal(first.status, "canceled");
-  assert.equal(first.cancel_at_period_end, false);
-  assert.equal(again.status, "canceled");
 });
 
 test("an ended provider subscription maps to a cancelled membership, the same state the webhook applies", () => {

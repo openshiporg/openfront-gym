@@ -41,7 +41,6 @@ export function assertSingleMerchantCheckout(providers: readonly any[], organiza
 function tierPriceId(tier: any, billingCycle: BillingCycle) {
   const configured = billingCycle === "annual" ? tier.stripeAnnualPriceId : tier.stripeMonthlyPriceId;
   if (configured) return configured;
-  if (process.env.PAYMENT_TEST_MODE === "true") return `test_price_${tier.id}_${billingCycle}`;
   throw new Error(`Payment provider price is not configured for the ${billingCycle} plan on ${tier.name}.`);
 }
 
@@ -135,7 +134,7 @@ export async function initiateMembershipCheckoutForUser(input: {
   }
 
   const { provider, adapter } = await getAdapterForProvider(input.context, PROVIDER_CODE, user.organization.id);
-  if (provider.adapterKey === "stripe" && process.env.PAYMENT_TEST_MODE !== "true") {
+  if (provider.adapterKey === "stripe") {
     const merchants = await ctx.query.PaymentProvider.findMany({
       where: { AND: [{ code: { equals: PROVIDER_CODE } }, { adapterKey: { equals: "stripe" } }, installedPaymentProviderWhere()] },
       take: 2, query: "id providerAccountId organization { id }",

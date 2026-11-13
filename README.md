@@ -146,7 +146,6 @@ The [Keystone model registry](features/keystone/models/index.ts) and [Prisma sch
    MAIL_ENABLED=false
    PUBLIC_SIGNUPS_ALLOWED=false
    PUBLIC_MEMBER_SIGNUPS_ALLOWED=false
-   PAYMENT_TEST_MODE=false
    KIOSK_API_TOKEN=
    KIOSK_ORGANIZATION_ID=
    ```

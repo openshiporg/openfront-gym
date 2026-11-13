@@ -36,7 +36,7 @@ export async function getPaymentProvider(
   });
   const provider = providers[0] as PaymentProviderRecord | undefined;
   if (!provider) throw new Error(`Payment provider ${providerCode} is not installed.`);
-  if (purpose === "charge" && provider.adapterKey === "stripe" && !newPaymentChargesEnabled() && process.env.PAYMENT_TEST_MODE !== "true") {
+  if (purpose === "charge" && provider.adapterKey === "stripe" && !newPaymentChargesEnabled()) {
     throw new Error("Card payments are turned off for this Gym deployment.");
   }
   return provider;

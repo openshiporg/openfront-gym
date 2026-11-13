@@ -157,22 +157,5 @@ export function useNavigation() {
   }
 }
 
-/**
- * Mock authentication context - replace with actual auth implementation
- */
-export function useAuth() {
-  // This should be replaced with your actual authentication logic
-  return {
-    user: null,
-    isAuthenticated: false,
-    signIn: async (_credentials: any) => {
-      // Implement actual sign in
-    },
-    signOut: async () => {
-      // Implement actual sign out
-    }
-  }
-}
-
 // Legacy exports for compatibility
 export const useKeystone = useAdminMeta

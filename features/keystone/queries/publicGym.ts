@@ -656,7 +656,7 @@ export async function publicCheckoutProviderEnabled(context: KeystoneContext, or
   });
   const provider = providers[0] as any;
   if (!provider) return false;
-  return provider.adapterKey !== "stripe" || newPaymentChargesEnabled() || process.env.PAYMENT_TEST_MODE === "true";
+  return provider.adapterKey !== "stripe" || newPaymentChargesEnabled();
 }
 
 export async function getPublicGymMembershipTiers(

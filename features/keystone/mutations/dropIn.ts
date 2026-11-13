@@ -32,7 +32,7 @@ function requireSession(context: Context) {
 
 async function dropInAdapter(context: Context, organizationId: string, purpose: "charge" | "reconcile") {
   const { provider, adapter } = await getAdapterForProvider(context, PROVIDER_CODE, organizationId, purpose);
-  if (purpose === "charge" && provider.adapterKey === "stripe" && process.env.PAYMENT_TEST_MODE !== "true") {
+  if (purpose === "charge" && provider.adapterKey === "stripe") {
     const merchants = await context.sudo().query.PaymentProvider.findMany({
       where: { AND: [{ code: { equals: PROVIDER_CODE } }, { adapterKey: { equals: "stripe" } }, installedPaymentProviderWhere()] },
       take: 2, query: "id providerAccountId organization { id }",

@@ -23,11 +23,6 @@ if (process.env.PUBLIC_SIGNUPS_ALLOWED === "true") {
   console.error("PUBLIC_SIGNUPS_ALLOWED=true is not supported for Gym; dashboard signup stays refused. Set it to false.");
 }
 
-// Synthetic payments can never run in production.
-if (strictConfig && process.env.PAYMENT_TEST_MODE === "true") {
-  throw new Error("PAYMENT_TEST_MODE must be disabled in strict/production mode.");
-}
-
 function requiredSecret(name: string) {
   const value = process.env[name];
   if (strictConfig && (!value || value.length < 32)) {
