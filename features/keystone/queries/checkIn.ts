@@ -47,7 +47,7 @@ export async function getFrontDeskWorkspace(
       orderBy: [{ joinDate: "desc" }],
       query: `
         id name status
-        user { membership { status creditPeriodStart creditPeriodEnd startDate nextBillingDate freezeStartDate freezeEndDate } }
+        user { membership { status autoRenew creditPeriodStart creditPeriodEnd startDate nextBillingDate freezeStartDate freezeEndDate } }
       `,
     }) : Promise.resolve([]),
     sudo.query.CheckIn.findMany({
@@ -79,7 +79,7 @@ export async function getFrontDeskWorkspace(
       if (member.status !== "active") entitlementReason = `Member account is ${member.status || "unavailable"}`;
       else if (membership) {
         try {
-          assertMembershipServiceEligibility(membership, checkedAt);
+          assertMembershipServiceEligibility(membership, checkedAt, { renewalGrace: true });
           membershipEligible = true;
           entitlementReason = "";
         } catch (error) {

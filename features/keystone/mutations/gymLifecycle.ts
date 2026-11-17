@@ -442,7 +442,7 @@ export async function recordCapacityControlledMemberCheckIn(
     assertActorOrganization(input.actor, member.organizationId);
     if (member.status !== "active") throw new Error(`Member status is ${member.status}`);
     if (member.user.membership?.id) await assertNoPendingMembershipFreeze(transaction, input.actor.organizationId!, member.user.membership.id);
-    assertMembershipServiceEligibility(member.user.membership, new Date());
+    assertMembershipServiceEligibility(member.user.membership, new Date(), { renewalGrace: true });
     await assertFacilityAccessHours(transaction, input.actor.organizationId!, member.user.membership, new Date());
     await assertParticipationAllowed(transaction, input.actor.organizationId!, member.id, new Date(), input.locationId);
 

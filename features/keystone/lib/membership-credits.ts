@@ -23,9 +23,15 @@ export function monthlyServicePeriod(membership: any, at: Date) {
   return { periodStart, periodEnd };
 }
 
-export function assertMembershipServiceEligibility(membership: any, at: Date) {
+/** Stripe charges a renewal invoice about an hour after the period ends; a failed charge makes the membership past due. */
+export const RENEWAL_GRACE_MS = 24 * 60 * 60 * 1000;
+
+export function assertMembershipServiceEligibility(membership: any, at: Date, options: { renewalGrace?: boolean } = {}) {
   if (!membership || membership.status !== "active") throw new Error("Membership is not active");
-  monthlyServicePeriod(membership, at);
+  // At the door, an auto-renewing member whose renewal invoice hasn't been charged yet is still in.
+  const end = new Date(membership.creditPeriodEnd || membership.nextBillingDate).getTime();
+  const inRenewalGrace = options.renewalGrace && membership.autoRenew && at.getTime() >= end && at.getTime() < end + RENEWAL_GRACE_MS;
+  monthlyServicePeriod(membership, inRenewalGrace ? new Date(end - 1) : at);
   if (membership.freezeStartDate && at >= new Date(membership.freezeStartDate) &&
       (!membership.freezeEndDate || at < new Date(membership.freezeEndDate))) {
     throw new Error("Membership is frozen for this service date");

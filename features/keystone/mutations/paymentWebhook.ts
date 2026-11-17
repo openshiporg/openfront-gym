@@ -7,7 +7,7 @@ import { getPaymentProviderAdapterForExecution } from "../../integrations/paymen
 import type { PaymentProviderAdapter } from "../../integrations/payment/types";
 import { MEMBERSHIP_MACHINE, SUBSCRIPTION_MACHINE, settleTransition } from "../lib/lifecycles";
 import { createFinanceException, enqueueOperationalNotice } from "../lib/operational-notices";
-import { ensureMonthlyCreditGrant, reviewFutureMembershipBookings } from "../lib/membership-credits";
+import { RENEWAL_GRACE_MS, ensureMonthlyCreditGrant, reviewFutureMembershipBookings } from "../lib/membership-credits";
 import { releaseFutureBookingsForEndedMembership } from "./gymLifecycle";
 import { currentRoleActor } from "../access/currentRoleActor";
 import { lockTransactionKey } from "./classCapacity";
@@ -229,7 +229,8 @@ export async function syncSubscription(
     // event has no such period and therefore cannot create entitlement.
     const hasCurrentPaidServicePeriod = Boolean(
       membership?.creditPeriodStart && membership.creditPeriodEnd &&
-      new Date(membership.creditPeriodStart) <= now && now < new Date(membership.creditPeriodEnd),
+      new Date(membership.creditPeriodStart) <= now &&
+      now.getTime() < new Date(membership.creditPeriodEnd).getTime() + (renewing ? RENEWAL_GRACE_MS : 0),
     );
     const providerDerivedStatus = providerMembershipStatus === "active"
       ? (hasCurrentPaidServicePeriod ? "active" : "past-due")
