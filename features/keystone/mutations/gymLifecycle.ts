@@ -586,13 +586,15 @@ export async function releaseFutureBookingsForEndedMembership(
       status: { in: ["confirmed", "waitlist"] },
       classInstance: { date: { gt: new Date() }, isCancelled: false },
     },
-    select: { id: true },
+    select: { id: true, serviceSnapshot: true },
     orderBy: { bookedAt: "asc" },
   });
   const actor: LifecycleActor = { userId: input.actorUserId, organizationId: input.organizationId, canManageAllRecords: true };
   let released = 0;
   let failed = 0;
   for (const booking of bookings) {
+    // A paid drop-in is its own entitlement for that one class; the membership ending doesn't take it.
+    if (isDropInBooking(booking)) continue;
     try {
       const result = await cancelCapacityControlledBooking(prisma, { bookingId: booking.id, actor });
       if (result.cancelled) released += 1;
