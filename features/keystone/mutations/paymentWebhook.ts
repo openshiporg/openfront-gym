@@ -227,6 +227,8 @@ export async function syncSubscription(
     // Paid service is evidenced by the period a positive paid invoice established, whatever
     // local status (frozen, past due) the membership currently has. A first active/trialing
     // event has no such period and therefore cannot create entitlement.
+    // A renewing subscription stays active until its renewal invoice is charged (invoice.paid or payment_failed).
+    const renewing = subscription.status === "active" && !subscription.cancel_at_period_end;
     const hasCurrentPaidServicePeriod = Boolean(
       membership?.creditPeriodStart && membership.creditPeriodEnd &&
       new Date(membership.creditPeriodStart) <= now &&
@@ -821,7 +823,9 @@ async function processVerifiedPaymentEvent(context: Context, provider: any, adap
         const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
         // Counter charges settle through their refund attempts; membership charges keep the receipt path.
         const counterCharge = counterRefunds > 0 || (paymentIntentId ? await ownsCounterPayment(prisma, organizationId, paymentIntentId) : false);
-        if (!counterCharge) await recordRefund(context, charge, organizationId, new Date(event.created * 1000));
+        // A gift card's refund is recorded on the card itself (refundGiftCard); it has no gym payment receipt.
+        const giftCardCharge = charge.metadata?.source === GIFT_CARD_SOURCE;
+        if (!counterCharge && !giftCardCharge) await recordRefund(context, charge, organizationId, new Date(event.created * 1000));
         break;
       }
       default:
