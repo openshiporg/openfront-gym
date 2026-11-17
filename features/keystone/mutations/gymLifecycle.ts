@@ -415,6 +415,8 @@ export async function undoCapacityControlledAttendance(
   });
 }
 
+const STALE_OPEN_VISIT_MS = 12 * 60 * 60 * 1000;
+
 export async function recordCapacityControlledMemberCheckIn(
   prisma: any,
   input: {
@@ -464,7 +466,11 @@ export async function recordCapacityControlledMemberCheckIn(
       },
       orderBy: { checkInTime: "desc" },
     });
-    if (existing) return { checkIn: existing, reused: true };
+    // A visit nobody checked out (every kiosk visit) can't still be going after 12 hours: close it and record this one.
+    if (existing && Date.now() - new Date(existing.checkInTime).getTime() < STALE_OPEN_VISIT_MS) return { checkIn: existing, reused: true };
+    if (existing) {
+      await transaction.checkIn.update({ where: { id: existing.id }, data: { checkOutTime: existing.checkInTime, openCheckInKey: null, validationNotes: `${existing.validationNotes || ""} | Not checked out; closed when the member next checked in`.slice(0, 1000) } });
+    }
 
     if (input.actor.organizationId !== member.organizationId) throw new Error("Check-in actor organization is invalid");
 
