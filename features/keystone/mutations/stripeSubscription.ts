@@ -245,14 +245,21 @@ export async function freezeMembership(
   if (await isCompletedMembershipBillingAttempt(context, scope)) {
     return { membership: await currentMembership(context, membershipId), message: "Membership freeze already completed" };
   }
-  if (membership.status !== "active") throw new Error("Only active memberships can be frozen");
-  if (!membership.autoRenew) throw new Error("A membership ending after this paid period cannot be frozen");
-  if (!(membership.agreementSnapshot?.freezeAllowed ?? membership.tier?.freezeAllowed)) throw new Error("This membership tier does not allow freezes");
+  // Retrying a freeze whose Stripe answer was lost always goes through, so its pending fence can be cleared
+  // even if the membership changed meanwhile; the result still follows the membership's current state.
+  const resumingPending = Boolean(await guardKeystonePrismaResults(context.prisma as any).membershipBillingAttempt.findFirst({
+    where: { organizationId, membershipId, operation: "freeze", idempotencyKey: scope.idempotencyKey, status: "processing" }, select: { id: true },
+  }));
+  if (!resumingPending) {
+    if (membership.status !== "active") throw new Error("Only active memberships can be frozen");
+    if (!membership.autoRenew) throw new Error("A membership ending after this paid period cannot be frozen");
+    if (!(membership.agreementSnapshot?.freezeAllowed ?? membership.tier?.freezeAllowed)) throw new Error("This membership tier does not allow freezes");
+  }
   if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
   const startsAt = new Date();
   const maximumEnd = new Date(startsAt.getTime() + 365 * 24 * 60 * 60 * 1000);
-  if (endsAt <= startsAt) throw new Error("Freeze end date must be in the future");
-  if (endsAt > maximumEnd) throw new Error("Freeze duration cannot exceed one year");
+  if (!resumingPending && endsAt <= startsAt) throw new Error("Freeze end date must be in the future");
+  if (!resumingPending && endsAt > maximumEnd) throw new Error("Freeze duration cannot exceed one year");
   const attempt = await claimMembershipBillingAttempt(context, scope, {
     status: membership.status,
     autoRenew: membership.autoRenew,
@@ -273,7 +280,9 @@ export async function freezeMembership(
   try {
     await adapter.pauseSubscription(membership.stripeSubscriptionId, endsAt, attempt.providerIdempotencyKey);
   } catch (error) {
-    await failMembershipBillingAttempt(context, attempt, error, "unknown");
+    // Stripe refusing the request (a 4xx answer) is definite: nothing was paused. No answer, or a 5xx, is unknown.
+    const status = Number((error as any)?.statusCode);
+    await failMembershipBillingAttempt(context, attempt, error, status >= 400 && status < 500 ? "definite" : "unknown");
     throw error;
   }
   await finishMembershipBillingAttempt(context, attempt, { status: "frozen", freezeStartDate: startsAt, freezeEndDate: endsAt });
