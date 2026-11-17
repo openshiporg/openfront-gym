@@ -248,7 +248,8 @@ export async function syncSubscription(
     const membershipData = {
       status: membershipStatus,
       billingCycle,
-      startDate,
+      // The agreement started once; a renewal moves the billing period, not the start (minimum term, member since).
+      startDate: membership?.stripeSubscriptionId === subscription.id && membership.startDate ? membership.startDate : startDate,
       nextBillingDate,
       autoRenew: subscription.status !== "canceled" && !subscription.cancel_at_period_end,
       stripeSubscriptionId: subscription.id,
