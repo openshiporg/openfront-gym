@@ -5,6 +5,7 @@ import {
   integer,
   select,
   multiselect,
+  image,
 } from "@keystone-6/core/fields";
 import { document } from "@keystone-6/fields-document";
 
@@ -96,6 +97,11 @@ export const ClassType = list({
         { label: "None", value: "none" },
       ],
       defaultValue: [],
+    }),
+
+    photo: image({
+      storage: "my_images",
+      ui: { description: "Shown on the class card and the class page" },
     }),
 
     caloriesBurn: integer({

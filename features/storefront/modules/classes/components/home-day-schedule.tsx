@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
-import { CalendarSearch, ChevronRight } from "lucide-react";
 import { SessionTime } from "@/features/storefront/modules/common/training";
 
 export type HomeDay = { key: string; label: string; day: string; full: string; today: boolean };
@@ -14,15 +12,13 @@ export type HomeSession = {
   name: string;
   coach: string | null;
   classHref: string | null;
-  /** The class type's photo, when one ships for it; otherwise the card keeps its dark fill. */
-  photo?: string | null;
   bookHref: string;
   spots: number;
 };
 
 /**
- * Phone "Today's schedule": a day picker over the club's next seven days and a timeline of that
- * day's dated sessions. Booking stays on /schedule (the server-checked review sheet).
+ * Home "This week": a day picker over the club's next seven days and that day's dated sessions as
+ * plain rows. Booking stays on /schedule (the server-checked review sheet).
  */
 export default function HomeDaySchedule({ days, sessions, initialKey }: { days: HomeDay[]; sessions: Record<string, HomeSession[]>; initialKey: string }) {
   const [selected, setSelected] = useState(initialKey);
@@ -30,45 +26,38 @@ export default function HomeDaySchedule({ days, sessions, initialKey }: { days: 
   const list = sessions[day?.key ?? ""] ?? [];
 
   return (
-    <section className="sf-rg-today" aria-labelledby="home-today">
-      <div className="sf-rg-head">
-        <h2 id="home-today">{day?.today ? "Today’s schedule" : day?.full}</h2>
-        <Link href={`/schedule?date=${day?.key ?? ""}`} className="sf-rg-more">View full schedule<ChevronRight aria-hidden="true" /></Link>
-      </div>
-      <div className="sf-rg-days" role="group" aria-label="Choose a day">
-        {days.map((item) => (
-          <button key={item.key} type="button" aria-pressed={item.key === day?.key} onClick={() => setSelected(item.key)} aria-label={`${item.full}, ${(sessions[item.key] ?? []).length} sessions`}>
-            <span>{item.label}</span>
-            <strong>{item.day}</strong>
-          </button>
-        ))}
+    <div className="sf-home-week">
+      <div className="sf-home-days" role="group" aria-label="Choose a day">
+        {days.map((item) => {
+          const count = (sessions[item.key] ?? []).length;
+          return (
+            <button key={item.key} type="button" aria-pressed={item.key === day?.key} onClick={() => setSelected(item.key)} aria-label={`${item.full}, ${count} ${count === 1 ? "session" : "sessions"}`}>
+              <span>{item.today ? "Today" : item.label}</span>
+              <strong>{item.day}</strong>
+            </button>
+          );
+        })}
       </div>
       {list.length ? (
-        <ol className="sf-rg-timeline">
+        <ol className="sf-home-sessions" aria-label={day?.full}>
           {list.map((session) => (
             <li key={session.id}>
-              <div className="sf-rg-class" data-photo={session.photo ? "" : undefined}>
-                {session.photo ? <Image className="sf-rg-class-photo" src={session.photo} alt="" fill sizes="(max-width: 899px) 100vw, 1px" unoptimized /> : null}
-                <div className="sf-rg-class-top">
-                  <span className="sf-rg-class-time"><SessionTime value={session.time} dateTime={session.startsAt} /></span>
-                  <Link href={session.bookHref} className="sf-rg-book">
-                    {session.spots > 0 ? "Book now" : "Waitlist"}<ChevronRight aria-hidden="true" />
-                    <span className="sr-only"> {session.name}, {session.time}</span>
-                  </Link>
-                </div>
+              <SessionTime value={session.time} dateTime={session.startsAt} />
+              <div>
                 <strong>{session.classHref ? <Link href={session.classHref}>{session.name}</Link> : session.name}</strong>
-                {session.coach ? <span>with {session.coach}</span> : null}
+                {session.coach ? <span>{session.coach}</span> : null}
               </div>
+              <span className="sf-home-spots">{session.spots > 0 ? `${session.spots} ${session.spots === 1 ? "spot" : "spots"} left` : "Full"}</span>
+              <Link href={session.bookHref} className="sf-btn" data-size="sm" data-variant={session.spots > 0 ? "accent" : "secondary"}>
+                {session.spots > 0 ? "Book" : "Waitlist"}
+                <span className="sr-only"> {session.name}, {day?.full}, {session.time}</span>
+              </Link>
             </li>
           ))}
         </ol>
       ) : (
-        <div className="sf-rg-none">
-          <CalendarSearch aria-hidden="true" />
-          <p>No sessions on {day?.full ?? "this day"}.</p>
-          <Link href="/schedule" className="sf-rg-more">Full schedule<ChevronRight aria-hidden="true" /></Link>
-        </div>
+        <p className="sf-home-none">No sessions on {day?.full ?? "this day"}. <Link className="sf-link" href="/schedule">Full schedule</Link></p>
       )}
-    </section>
+    </div>
   );
 }

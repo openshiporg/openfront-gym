@@ -1022,6 +1022,11 @@ model Location {
   organization                        Organization            @relation("Location_organization", fields: [organizationId], references: [id])
   organizationId                      String                  @map("organization")
   name                                String                  @default("")
+  photo_id                            String?
+  photo_filesize                      Int?
+  photo_width                         Int?
+  photo_height                        Int?
+  photo_extension                     String?
   address                             String                  @default("")
   phone                               String                  @default("")
   isActive                            Boolean                 @default(true)
@@ -1210,6 +1215,11 @@ model ClassType {
   difficulty      String          @default("all-levels")
   duration        Int             @default(60)
   equipmentNeeded Json            @default("[]")
+  photo_id        String?
+  photo_filesize  Int?
+  photo_width     Int?
+  photo_height    Int?
+  photo_extension String?
   caloriesBurn    Int?
   schedules       ClassSchedule[] @relation("ClassSchedule_classType")
   createdAt       DateTime        @default(now())
@@ -1292,6 +1302,11 @@ model Instructor {
   bio                                Json                  @default("[{\"type\":\"paragraph\",\"children\":[{\"text\":\"\"}]}]")
   specialties                        Json?                 @default("[]")
   certifications                     Json?                 @default("[]")
+  portrait_id                        String?
+  portrait_filesize                  Int?
+  portrait_width                     Int?
+  portrait_height                    Int?
+  portrait_extension                 String?
   photo                              String                @default("")
   isActive                           Boolean               @default(true)
   classSchedules                     ClassSchedule[]       @relation("ClassSchedule_instructor")

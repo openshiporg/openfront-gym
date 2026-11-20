@@ -36,6 +36,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const contentType = req.headers['content-type'];
   if (req.method === 'POST' && typeof contentType === 'string' && contentType.toLowerCase().startsWith('multipart/form-data')) {
+    // Image uploads (class, coach and site photos) only from a signed-in session that sends the
+    // non-simple apollo-require-preflight header, so a cross-site form cannot post one. List and
+    // field access still decide who may write each image.
+    if (!isAllowedUploadRequest(req)) {
+      return res.status(403).json({ error: 'File uploads need a signed-in staff session' });
+    }
     try {
       req.body = await processRequest(req, res, {
         maxFieldSize: 1_000_000,
@@ -77,4 +83,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     },
     multipart: false,
   })(req, res);
+}
+
+function isAllowedUploadRequest(req: NextApiRequest) {
+  if (!req.headers['apollo-require-preflight']) return false;
+  if (!/(?:^|;\s*)keystonejs-session=/.test(String(req.headers.cookie || '')) && !/^Bearer\s+\S/i.test(String(req.headers.authorization || ''))) return false;
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  } catch {
+    return false;
+  }
 }

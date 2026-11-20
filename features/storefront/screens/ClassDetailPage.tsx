@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarX } from "lucide-react";
@@ -43,6 +44,12 @@ export async function ClassDetailPage(props: { params: Promise<{ id: string }> }
           title={classType.name}
           lead={description || undefined}
         />
+
+        {classType.imageUrl ? (
+          <figure className="sf-photo" style={{ marginBottom: 32 }}>
+            <Image src={classType.imageUrl} alt="" fill priority sizes="(max-width: 1279px) 100vw, 1240px" unoptimized />
+          </figure>
+        ) : null}
 
         <div className="sf-detail">
           <section aria-labelledby="class-sessions" className="sf-stack">

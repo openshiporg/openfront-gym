@@ -197,8 +197,8 @@ export async function upsertGymSettings(
     if (existing[0] && expectedUpdatedAt && new Date(String(expectedUpdatedAt)).getTime() !== new Date(existing[0].updatedAt).getTime()) {
       throw new Error("Settings changed since you opened this page. Reload to see the latest values, then save your change again.");
     }
-    if (!existing[0] && (!normalized.name || !normalized.heroImageUrl)) {
-      throw new Error("Initial gym settings require a business name and canonical hero image");
+    if (!existing[0] && !normalized.name) {
+      throw new Error("Initial gym settings require a business name");
     }
     return existing[0]
       ? transactionContext.sudo().db.GymSettings.updateOne({ where: { id: existing[0].id }, data: normalized })

@@ -151,6 +151,13 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         publicGymMembershipTier(id: ID!): PublicGymMembershipTier
       }
 
+      type PublicGymClubPhoto {
+        id: ID!
+        name: String!
+        address: String
+        url: String!
+      }
+
       type PublicGymSettings {
         id: ID!
         salesOpen: Boolean!
@@ -174,6 +181,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         heroHeadline: String
         heroSubheadline: String
         heroImagePath: String
+        clubPhotos: [PublicGymClubPhoto!]!
         heroPrimaryCtaLabel: String
         heroPrimaryCtaHref: String
         heroSecondaryCtaLabel: String
@@ -197,6 +205,7 @@ export function extendGraphqlSchema(baseSchema: GraphQLSchema) {
         duration: Int!
         caloriesBurn: Int
         equipmentNeeded: [String!]!
+        imageUrl: String
       }
 
       type PublicGymInstructor {

@@ -4,6 +4,7 @@ import {
   text,
   checkbox,
   relationship,
+  image,
 } from '@keystone-6/core/fields';
 
 import { isSignedIn, permissions } from '../access';
@@ -67,6 +68,11 @@ export const Location = list({
       ui: {
         description: 'Location name (e.g., Downtown Gym, West Side Branch)',
       },
+    }),
+
+    photo: image({
+      storage: 'my_images',
+      ui: { description: 'Shown on the storefront home and facilities pages' },
     }),
 
     address: text({

@@ -793,6 +793,16 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-photo { position: relative; overflow: hidden; margin: 0; margin-inline: calc(-1 * var(--sf-gutter)); aspect-ratio: 4 / 3; background: var(--sf-surface); }
   .sf-photo img { width: 100%; height: 100%; object-fit: cover; }
   @media (min-width: 640px) { .sf-photo { margin-inline: 0; aspect-ratio: 21 / 9; border-radius: var(--sf-r-lg); } }
+  .sf-sites { display: grid; gap: 24px; }
+  .sf-sites figure { display: grid; gap: 8px; margin: 0; }
+  .sf-sites .sf-photo { display: block; }
+  .sf-sites figcaption { display: grid; gap: 2px; }
+  @media (min-width: 640px) {
+    .sf-sites .sf-photo { border-radius: 6px; }
+    .sf-sites:has(> :nth-child(2)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sf-sites:has(> :nth-child(2)) > :first-child { grid-column: 1 / -1; }
+    .sf-sites > :not(:first-child) .sf-photo { aspect-ratio: 3 / 2; }
+  }
 
   .sf-features { display: grid; border-top: 1px solid var(--sf-line); }
   .sf-features > article { display: grid; gap: 8px; border-bottom: 1px solid var(--sf-line); padding-block: 22px; }
@@ -1075,372 +1085,132 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-footer { border-top: 1px solid var(--sf-line); background: var(--sf-surface); color: var(--sf-ink); }
   .sf-footer .sf-wordmark-mark { color: var(--sf-accent-fill); }
 
-  /* ---------------------------------------------------------------- home */
-  .sf-rg { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; padding-bottom: 40px; }
-  .sf-rg-hero, .sf-rg-plans-section { grid-template-columns: minmax(0, 1fr); }
-  .sf-rg-hero { position: relative; display: grid; gap: 20px; padding-block: 18px 22px; }
-  .sf-rg-hero-copy { position: relative; z-index: 1; display: grid; align-content: center; gap: 12px; max-width: 66%; padding-block: 8px; }
-  .sf-rg-title { font-size: clamp(1.875rem, 1.45rem + 1.9vw, 3.375rem); font-weight: 700; line-height: 1.06; letter-spacing: -0.035em; text-wrap: balance; }
-  .sf-rg-title em { display: block; color: var(--sf-accent-display, var(--sf-accent)); font-style: normal; }
-  .sf-rg-sub { max-width: 32rem; color: var(--sf-ink-3); font-size: 1rem; line-height: 1.45; }
-  @media (max-width: 899px) { .sf-rg-sub { max-width: 15rem; text-shadow: 0 0 12px var(--sf-canvas), 0 0 4px var(--sf-canvas); } }
-  .sf-rg-actions { display: none; flex-wrap: wrap; align-items: center; gap: 12px 28px; margin-top: 10px; }
-  .sf-rg-textlink { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; font-weight: 600; }
-  .sf-rg-textlink svg { width: 18px; height: 18px; transition: transform 160ms var(--sf-ease); }
-  .sf-rg-textlink:hover svg { transform: translateX(3px); }
-  /* Phone: the photo sits behind the right of the headline and fades into the canvas. */
-  .sf-rg-hero-media {
-    position: absolute; inset: 0 0 0 46%; overflow: hidden;
-    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 45%), linear-gradient(0deg, transparent 0%, #000 22%);
-    -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent 0%, #000 45%), linear-gradient(0deg, transparent 0%, #000 22%); mask-composite: intersect;
-  }
-  .sf-rg-hero-media img { object-fit: cover; object-position: 70% 50%; }
-  .sf-rg-hero::after { content: ""; position: absolute; inset: auto var(--sf-gutter) 0; height: 1px; background: var(--sf-line); }
+  /* ---------------------------------------------------------------- home (flat: rules and type, no tiles) */
+  .sf-home { display: grid; gap: 0; padding-bottom: 56px; }
+  .sf-home-hero { display: grid; gap: 24px; padding-block: 24px 8px; }
+  .sf-home-hero-copy { display: grid; align-content: center; gap: 16px; }
+  .sf-home-hero h1 { max-width: 16ch; font-size: clamp(2.25rem, 1.5rem + 3vw, 4rem); font-weight: 700; line-height: 1.02; letter-spacing: -0.04em; text-wrap: balance; }
+  .sf-home-hero-copy > p { max-width: 34rem; color: var(--sf-ink-2); font-size: 1.125rem; line-height: 1.5; }
+  .sf-home-hero-copy .sf-actions { margin-top: 8px; }
+  .sf-home-hero-photo { position: relative; margin: 0; aspect-ratio: 3 / 2; overflow: hidden; border-radius: 6px; background: var(--sf-surface); }
+  .sf-home-hero-photo img { object-fit: cover; }
   @media (min-width: 900px) {
-    /* Design proportions: the photo is ~36% of the column and the headline keeps to two lines. */
-    .sf-rg-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 360px); align-items: center; gap: 40px; padding-block: 24px 20px; }
-    .sf-rg-title { font-size: clamp(2.25rem, 1.2rem + 1.9vw, 2.875rem); text-wrap: pretty; }
-    .sf-rg-hero::after { display: none; }
-    .sf-rg-hero-copy { max-width: none; gap: 16px; padding-left: 24px; }
-    .sf-rg-sub { max-width: 30rem; color: var(--sf-ink-2); font-size: 1.125rem; }
-    .sf-rg-actions { display: flex; }
-    .sf-rg-hero-media { position: relative; inset: auto; aspect-ratio: 456 / 293; border-radius: var(--sf-r-lg); -webkit-mask-image: none; mask-image: none; box-shadow: var(--sf-card-shadow); }
-    .sf-rg-hero-media img { object-position: 50% 50%; }
+    .sf-home-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 56px; padding-block: 48px 16px; }
   }
 
-  .sf-rg-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 14px; }
-  .sf-rg-head h2 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.015em; }
-  .sf-rg-more { display: inline-flex; min-height: 44px; align-items: center; gap: 4px; color: var(--sf-accent); font-size: 0.9375rem; font-weight: 500; }
-  .sf-rg-more[data-tone="ink"] { color: var(--sf-ink); }
-  .sf-rg-more svg { width: 16px; height: 16px; }
-  .sf-rg-more:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .sf-home-section { padding-top: 48px; }
+  @media (min-width: 900px) { .sf-home-section { padding-top: 80px; } }
+  .sf-home-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; border-bottom: 1px solid var(--sf-ink); padding-bottom: 10px; margin-bottom: 4px; }
+  .sf-home-head h2 { font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem); font-weight: 700; letter-spacing: -0.03em; }
+  .sf-home .sf-link svg { width: 16px; height: 16px; margin-left: 2px; vertical-align: -2px; }
 
-  .sf-rg-desk { display: none; }
-  @media (min-width: 900px) { .sf-rg-desk { display: block; } .sf-rg-phone { display: none !important; } }
+  /* This week: a plain day row and ruled session rows. */
+  .sf-home-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--sf-line); }
+  .sf-home-days > button {
+    display: grid; min-width: 0; min-height: 56px; place-content: center; justify-items: center; gap: 2px; border: 0; border-bottom: 2px solid transparent;
+    margin-bottom: -1px; background: transparent; color: var(--sf-ink-3); font: inherit; font-size: 0.8125rem; cursor: pointer;
+  }
+  .sf-home-days > button strong { color: var(--sf-ink-2); font-size: 1.125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sf-home-days > button:hover strong { color: var(--sf-ink); }
+  .sf-home-days > button[aria-pressed="true"] { border-bottom-color: var(--sf-cta); color: var(--sf-ink); }
+  .sf-home-days > button[aria-pressed="true"] strong { color: var(--sf-ink); }
+  .sf-home-sessions > li { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; border-bottom: 1px solid var(--sf-line); padding-block: 14px; }
+  .sf-home-sessions time { font-size: 1.125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sf-home-sessions time small { margin-left: 3px; font-size: 0.75rem; font-weight: 500; color: var(--sf-ink-3); }
+  .sf-home-sessions li > div { display: grid; min-width: 0; gap: 2px; }
+  .sf-home-sessions strong { font-size: 1.0625rem; font-weight: 600; }
+  .sf-home-sessions strong a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .sf-home-sessions li > div > span, .sf-home-spots { color: var(--sf-ink-3); font-size: 0.875rem; }
+  .sf-home-spots { display: none; }
+  @media (min-width: 640px) {
+    .sf-home-sessions > li { grid-template-columns: 6.5rem minmax(0, 1fr) auto auto; }
+    .sf-home-spots { display: inline; }
+  }
+  .sf-home-none { border-bottom: 1px solid var(--sf-line); padding-block: 20px; color: var(--sf-ink-2); }
 
-  /* Desktop weekly strip: a scroll-snap row of roomy stacked day cards (about 4.5 visible at 1440). */
-  /* The row is wider than the 1000px column so ~4.5 cards show at 1440 and ~4 at 1280. */
-  .sf-wrap.sf-rg-desk { max-width: calc(1300px + 2 * var(--sf-gutter)); }
-  .sf-rg-week { border-radius: var(--sf-r); padding: 22px 24px 24px; background: color-mix(in oklab, var(--sf-surface) 70%, var(--sf-canvas)); box-shadow: var(--sf-card-shadow); }
-  .sf-rg-week .sf-rg-head { align-items: center; margin-bottom: 16px; }
-  .sf-rg-week .sf-rg-head h2 { font-size: 1.5rem; }
-  .sf-rg-head-actions { display: flex; align-items: center; gap: 10px; }
-  .sf-rg-head-actions .sf-rg-more { margin-right: 10px; }
-  .sf-rg-arrow {
-    display: inline-grid; width: 44px; height: 44px; place-items: center; border: 1px solid var(--sf-line-strong); border-radius: 999px;
-    background: var(--sf-raised); color: var(--sf-ink); cursor: pointer; transition: border-color 120ms, color 120ms, opacity 120ms;
-  }
-  .sf-rg-arrow svg { width: 20px; height: 20px; }
-  .sf-rg-arrow:hover:not(:disabled) { border-color: var(--sf-accent-fill); color: var(--sf-accent); }
-  .sf-rg-arrow:disabled { opacity: 0.4; cursor: default; }
-  .sf-rg-strip {
-    display: grid; grid-auto-flow: column; grid-auto-columns: clamp(260px, (100% - 64px) / 4.5, 280px); gap: 16px; overflow-x: auto; overscroll-behavior-x: contain;
-    scroll-snap-type: x mandatory; scroll-padding-inline: 2px; scrollbar-width: none; margin: -4px -2px; padding: 4px 2px;
-  }
-  .sf-rg-strip::-webkit-scrollbar { display: none; }
-  .sf-rg-strip:focus-visible { outline: 2px solid var(--sf-accent-fill); outline-offset: 4px; border-radius: 18px; }
-  /* position: relative keeps the pills' absolutely positioned sr-only text inside the row's clip (no page overflow). */
-  .sf-rg-strip > li {
-    position: relative; display: flex; min-width: 0; flex-direction: column; gap: 10px; scroll-snap-align: start; border: 1px solid var(--sf-line); border-radius: 18px;
-    padding: 16px; background: var(--sf-raised);
-  }
-  .sf-rg-strip > li[data-today] { border-color: color-mix(in oklab, var(--sf-accent-fill) 55%, transparent); background: color-mix(in oklab, var(--sf-accent-fill) 7%, var(--sf-raised)); }
-  .sf-rg-date { color: var(--sf-ink-2); font-size: 0.75rem; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: 0.12em; }
-  .sf-rg-strip > li[data-today] .sf-rg-date { color: var(--sf-accent); }
-  .sf-rg-date:hover { text-decoration: underline; text-underline-offset: 3px; }
-  .sf-rg-thumb {
-    position: relative; display: grid; width: 100%; aspect-ratio: 16 / 9; place-items: center; overflow: hidden; border-radius: 12px;
-    background: linear-gradient(145deg, #2a2c34, #15161b); color: #fff; font-size: 1.5rem; font-weight: 700; letter-spacing: 0.02em;
-  }
-  .sf-rg-thumb img { object-fit: cover; }
-  .sf-rg-slot { display: grid; min-width: 0; gap: 2px; line-height: 1.25; }
-  .sf-rg-slot time { font-size: 1.625rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
-  .sf-rg-slot time small { margin-left: 4px; font-size: 1.625rem; font-weight: 600; }
-  .sf-rg-slot > :is(a, b) { color: var(--sf-accent); font-size: 1.25rem; font-weight: 600; overflow-wrap: normal; word-break: normal; hyphens: manual; }
-  .sf-rg-slot > a:hover { text-decoration: underline; text-underline-offset: 3px; }
-  .sf-rg-slot > span { color: var(--sf-ink-3); font-size: 0.9375rem; }
-  .sf-rg-thumb + .sf-rg-slot { margin-top: 4px; }
-  .sf-rg-pill { align-self: flex-start; display: inline-flex; min-height: 40px; align-items: center; margin-top: auto; flex: none; border: 1px solid var(--sf-line-strong); border-radius: 999px; padding: 0 22px; background: var(--sf-raised); font-size: 0.9375rem; font-weight: 500; }
-  .sf-rg-pill:hover { border-color: var(--sf-accent-fill); color: var(--sf-accent); }
-  .sf-rg-rest { color: var(--sf-ink-3); font-size: 0.9375rem; }
-  .sf-rg-strip > li > .sf-rg-rest { display: grid; flex: 1; min-height: 12rem; place-items: center; border: 1px dashed var(--sf-line-strong); border-radius: 12px; }
-  .sf-rg-rest a { color: var(--sf-accent); }
-  .sf-rg-avatar {
-    display: inline-grid; width: 44px; height: 44px; flex: none; place-items: center; overflow: hidden; border-radius: 12px;
-    background: linear-gradient(145deg, #2a2c34, #15161b); color: #fff; font-size: 0.875rem; font-weight: 700; letter-spacing: 0.02em;
-  }
-  .sf-rg-avatar[data-size="lg"] { width: 56px; height: 56px; border-radius: 16px; font-size: 1rem; }
-  .sf-rg-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  /* Classes: photo above a name, a meta line and the description. No card box. */
+  .sf-home-classes { display: grid; gap: 32px 24px; padding-top: 20px; }
+  @media (min-width: 640px) { .sf-home-classes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .sf-home-classes { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .sf-home-classes > li { position: relative; display: grid; align-content: start; gap: 6px; }
+  .sf-home-classes h3 { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
+  .sf-home-classes h3 a::after { content: ""; position: absolute; inset: 0; }
+  .sf-home-classes > li:hover h3 { text-decoration: underline; text-underline-offset: 3px; }
+  .sf-home-classes .sf-text-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .sf-home-photo { position: relative; display: block; aspect-ratio: 3 / 2; margin-bottom: 8px; overflow: hidden; border-radius: 4px; background: var(--sf-surface); }
+  .sf-home-photo img { object-fit: cover; }
 
-  /* Phone day picker + timeline */
-  .sf-rg-today { padding-top: 22px; }
-  .sf-rg-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; border-radius: 20px; padding: 6px; background: var(--sf-surface); }
-  .sf-rg-days > button {
-    display: grid; min-width: 0; min-height: 56px; place-content: center; justify-items: center; gap: 1px; border: 0; border-radius: 14px;
-    background: transparent; color: var(--sf-ink-2); font-size: 0.875rem; cursor: pointer;
-  }
-  .sf-rg-days > button strong { color: var(--sf-ink-3); font-size: 0.875rem; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .sf-rg-days > button[aria-pressed="true"] { background: var(--sf-accent-fill); color: var(--sf-accent-on); }
-  .sf-rg-days > button[aria-pressed="true"] strong { color: inherit; }
-  /* Film grain for the dark gradient cards (plans + schedule): a tiled 180px SVG noise, soft-light
-     blended at half alpha so it reads as texture on a phone without moving text contrast. */
-  .sf-root { --sf-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.85'/%3E%3C/svg%3E"); }
-  .sf-rg-timeline { display: grid; margin-top: 10px; }
-  .sf-rg-timeline > li { display: block; border-bottom: 1px solid var(--sf-line); padding-block: 8px; }
-  .sf-rg-class {
-    position: relative; display: grid; min-height: 72px; align-content: center; gap: 2px; overflow: hidden; border-radius: 14px; padding: 12px 14px;
-    background: var(--sf-grain), radial-gradient(120% 140% at 100% 0%, color-mix(in oklab, var(--sf-accent-fill) 42%, transparent), transparent 55%), linear-gradient(135deg, #2a2c33, #121318);
-    background-size: 180px 180px, auto, auto; background-blend-mode: soft-light, normal, normal;
-    color: #fff;
-  }
-  .sf-rg-class strong { overflow: hidden; font-size: 1.125rem; font-weight: 600; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
-  /* The class name keeps its own link to the class page, raised above the card-wide booking target. */
-  .sf-rg-class strong a { position: relative; z-index: 1; }
-  .sf-rg-class span { color: rgb(255 255 255 / 0.82); font-size: 0.8125rem; }
-  /* The session time sits on its own line above the class name, in the same muted weight as the coach line. */
-  .sf-rg-class .sf-rg-class-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .sf-rg-class-time time small { margin-left: 2px; font-size: inherit; }
-  /* Top row: time on the left, "Book now" on the right on the same baseline. The card is always dark,
-     so the link uses the dark-surface accent in both themes. Its 44px target is pulled back with negative
-     margins so the row stays text height, and its ::after stretches over the card so a tap anywhere books. */
-  .sf-rg-class-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
-  .sf-rg-book { display: inline-flex; flex: none; min-height: 44px; align-items: center; gap: 2px; margin-block: -12px; margin-right: -6px; padding-inline: 6px; color: var(--sf-accent-text-dark); font-size: 0.875rem; font-weight: 500; white-space: nowrap; }
-  .sf-rg-book::after { content: ""; position: absolute; inset: 0; }
-  .sf-rg-book svg { width: 16px; height: 16px; }
-  .sf-rg-none { display: grid; justify-items: start; gap: 6px; margin-top: 12px; border: 1px dashed var(--sf-line-strong); border-radius: var(--sf-r); padding: 18px; color: var(--sf-ink-2); }
-  .sf-rg-none > svg { width: 22px; height: 22px; color: var(--sf-ink-3); }
-
-  /* Plans */
-  .sf-rg-plans-section { display: grid; gap: 16px; padding-top: 28px; }
-  .sf-rg-center { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
-  .sf-rg-center h2 { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.015em; }
-  .sf-rg-center p { display: none; color: var(--sf-ink-2); font-size: 0.9375rem; }
-  .sf-rg-center p a { color: var(--sf-accent); }
-  .sf-rg-plans { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
-  .sf-rg-plans[data-count="1"] { grid-auto-columns: minmax(0, 1fr); }
-  .sf-rg-plan {
-    position: relative; display: flex; min-width: 0; flex-direction: column; gap: 10px; border: 2px solid transparent; border-radius: 18px; padding: 14px 12px 6px;
-    background: var(--sf-grain), radial-gradient(130% 90% at 100% 0%, color-mix(in oklab, var(--sf-accent-fill) 26%, transparent), transparent 60%), linear-gradient(160deg, #2a2c33, #111216);
-    background-size: 180px 180px, auto, auto; background-blend-mode: soft-light, normal, normal;
-    /* Size the gradients to the border box: with the default padding-box origin they repeat into the
-       2px transparent border, drawing a straight accent line along the bottom that the radius cuts off. */
-    background-origin: border-box;
-    color: #fff;
-  }
-  .sf-rg-plan[data-featured] { border-color: var(--sf-accent-text-dark); }
-  .sf-rg-plan header { display: grid; gap: 6px; }
-  .sf-rg-plan-icon { display: none; }
-  .sf-rg-plan h3 { font-size: 1.0625rem; font-weight: 600; line-height: 1.15; }
-  .sf-rg-plan header p { order: 3; color: rgb(255 255 255 / 0.85); font-size: 0.75rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .sf-rg-plan header > div { display: grid; gap: 6px; }
-  .sf-rg-price p { display: flex; align-items: baseline; gap: 3px; }
-  .sf-rg-price strong { font-size: 1.625rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; }
-  .sf-rg-price span { font-size: 0.875rem; }
-  .sf-rg-price small { color: rgb(255 255 255 / 0.7); font-size: 0.75rem; }
-  .sf-rg-plan header { order: 0; }
-  .sf-rg-plan .sf-rg-price { order: 1; }
-  .sf-rg-plan ul { order: 2; display: grid; gap: 4px; font-size: 0.8125rem; line-height: 1.3; }
-  .sf-rg-plan li { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: start; gap: 6px; }
-  .sf-rg-plan li svg { width: 14px; height: 14px; margin-top: 2px; color: var(--sf-accent-text-dark); }
-  .sf-rg-plan .sf-rg-choose { order: 3; margin-top: auto; justify-content: space-between; min-height: 44px; padding: 0; background: transparent; color: var(--sf-accent-text-dark); box-shadow: none; font-size: 1rem; font-weight: 500; }
-  .sf-rg-plan .sf-rg-choose:hover { background: transparent; text-decoration: underline; text-underline-offset: 3px; }
-  .sf-rg-label-desk { display: none; }
-  .sf-rg-badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); border: 1px solid var(--sf-accent-text-light); border-radius: 999px; padding: 2px 10px; background: var(--sf-canvas); color: var(--sf-accent); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
-  .sf-rg-plan:not([data-featured]) .sf-rg-badge { display: none; }
-  @media (max-width: 899px) { .sf-rg-badge { display: none; } }
-
-  .sf-rg-join { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid var(--sf-line-strong); border-radius: 16px; padding: 14px 16px; background: var(--sf-raised); color: var(--sf-ink-3); font-size: 1rem; }
-  .sf-rg-join strong { color: var(--sf-ink); font-weight: 600; }
-  .sf-rg-join svg { width: 22px; height: 22px; color: var(--sf-accent); }
-  .sf-rg-join svg:last-child { width: 18px; height: 18px; }
-
+  /* Memberships: three columns divided by rules. */
+  .sf-home-plans { display: grid; }
+  .sf-home-plans > li { display: grid; align-content: start; gap: 8px; border-bottom: 1px solid var(--sf-line); padding-block: 24px; }
+  .sf-home-plans h3 { font-size: 1.25rem; font-weight: 600; }
+  .sf-home-price { font-size: 0.9375rem; color: var(--sf-ink-2); }
+  .sf-home-price strong { margin-right: 4px; color: var(--sf-ink); font-size: 2rem; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .sf-home-includes { display: grid; gap: 4px; margin-block: 4px 12px; font-size: 0.9375rem; }
+  .sf-home-includes > li { padding-left: 16px; text-indent: -16px; }
+  .sf-home-includes > li::before { content: "–"; display: inline-block; width: 16px; text-indent: 0; color: var(--sf-ink-3); }
+  .sf-home-plans .sf-btn { justify-self: start; margin-top: auto; }
   @media (min-width: 900px) {
-    .sf-rg-plans-section { gap: 24px; padding-top: 36px; }
-    .sf-rg-center { flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px; }
-    .sf-rg-center h2 { font-size: 1.75rem; font-weight: 500; }
-    .sf-rg-center p { display: block; }
-    .sf-rg-phone-inline { display: none; }
-    .sf-rg-plans { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
-    .sf-rg-plans[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 360px)); justify-content: center; }
-    .sf-rg-plans[data-count="1"] { grid-template-columns: minmax(0, 380px); justify-content: center; }
-    .sf-rg-plan { gap: 18px; border: 1.5px solid transparent; padding: 24px 24px 22px; background: color-mix(in oklab, var(--sf-surface) 55%, var(--sf-raised)); color: var(--sf-ink); box-shadow: var(--sf-card-shadow); }
-    .sf-rg-plan[data-featured] { border-color: var(--sf-accent-display, var(--sf-accent-fill)); background: var(--sf-raised); box-shadow: 0 18px 40px -18px color-mix(in oklab, var(--sf-accent-fill) 45%, transparent); }
-    .sf-rg-plan header { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 14px; }
-    .sf-rg-plan-icon { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 999px; background: var(--sf-raised); color: var(--sf-accent); box-shadow: var(--sf-card-shadow); }
-    .sf-rg-plan-icon svg { width: 22px; height: 22px; }
-    .sf-rg-plan header > div { gap: 2px; }
-    .sf-rg-plan h3 { font-size: 1.375rem; font-weight: 500; }
-    .sf-rg-plan header p { color: var(--sf-ink-2); font-size: 0.875rem; -webkit-line-clamp: 2; }
-    .sf-rg-price strong { font-size: 2rem; font-weight: 500; }
-    .sf-rg-price span { color: var(--sf-ink-3); }
-    .sf-rg-price small { color: var(--sf-ink-3); }
-    .sf-rg-plan ul { gap: 6px; font-size: 0.9375rem; color: var(--sf-ink); }
-    .sf-rg-plan li svg { color: var(--sf-accent); }
-    .sf-rg-plan .sf-rg-choose { justify-content: center; min-height: 40px; padding: 0 20px; background: var(--sf-accent-fill); color: var(--sf-accent-on); font-size: 0.9375rem; box-shadow: 0 1px 2px rgb(20 20 30 / 0.08); }
-    .sf-rg-plan .sf-rg-choose:hover { background: color-mix(in oklab, var(--sf-accent-fill) 88%, #000); text-decoration: none; }
-    .sf-rg-plan .sf-rg-choose svg { display: none; }
-    .sf-rg-label-desk { display: inline; }
-    .sf-rg-label-phone { display: none; }
+    .sf-home-plans { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .sf-home-plans > li { grid-template-rows: auto auto auto auto 1fr auto; border-bottom: 0; padding: 24px 28px 8px; }
+    .sf-home-plans > li:first-child { padding-left: 0; }
+    .sf-home-plans > li + li { border-left: 1px solid var(--sf-line); }
   }
 
-  /* Stats band (desktop) */
-  .sf-rg-stats { display: none; }
-  @media (min-width: 900px) {
-    .sf-rg-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); margin-top: 44px; border-radius: var(--sf-r); padding: 22px 0; background: color-mix(in oklab, var(--sf-surface) 70%, var(--sf-canvas)); box-shadow: var(--sf-card-shadow); }
-    .sf-rg-stats > div { display: grid; justify-items: center; gap: 4px; padding-inline: 16px; text-align: center; }
-    .sf-rg-stats > div + div { border-left: 1px solid var(--sf-line); }
-    .sf-rg-stats dt { display: inline-flex; align-items: center; gap: 10px; font-size: 1.625rem; font-weight: 500; letter-spacing: -0.02em; }
-    .sf-rg-stats dt b { font-weight: 500; }
-    .sf-rg-stats dt svg { width: 24px; height: 24px; color: var(--sf-accent); stroke-width: 1.6; }
-    .sf-rg-stats dd { color: var(--sf-ink-2); font-size: 0.9375rem; }
-  }
+  /* Coaches: portraits with a name under each. */
+  .sf-home-coaches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; padding-top: 20px; }
+  @media (min-width: 900px) { .sf-home-coaches { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; } }
+  .sf-home-coaches > li { position: relative; display: grid; align-content: start; gap: 4px; }
+  .sf-home-coaches h3 { font-size: 1.0625rem; font-weight: 600; }
+  .sf-home-coaches h3 a::after { content: ""; position: absolute; inset: 0; }
+  .sf-home-coaches > li:hover h3 { text-decoration: underline; text-underline-offset: 3px; }
+  .sf-home-portrait { position: relative; display: block; aspect-ratio: 4 / 5; margin-bottom: 8px; overflow: hidden; border-radius: 4px; background: var(--sf-surface); }
+  .sf-home-portrait img { object-fit: cover; object-position: 50% 25%; }
 
-  .sf-rg-section { padding-top: 40px; }
-  @media (min-width: 900px) { .sf-rg-section { padding-top: 64px; } }
-  .sf-rg-coaches { display: grid; gap: 10px; }
-  @media (min-width: 640px) { .sf-rg-coaches { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; } }
-  .sf-rg-coaches > li { position: relative; display: flex; align-items: center; gap: 14px; border: 1px solid var(--sf-line); border-radius: var(--sf-r); padding: 12px; background: var(--sf-raised); box-shadow: var(--sf-card-shadow); }
-  .sf-rg-coaches > li > div { display: grid; min-width: 0; gap: 2px; }
-  .sf-rg-coaches a { font-weight: 600; }
-  .sf-rg-coaches a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
-  .sf-rg-coaches span:not(.sf-rg-avatar) { color: var(--sf-ink-3); font-size: 0.875rem; }
-  .sf-rg-visit { display: grid; gap: 24px; border: 1px solid var(--sf-line); border-radius: var(--sf-r); padding: 20px; background: var(--sf-raised); box-shadow: var(--sf-card-shadow); }
-  .sf-rg-visit h2 { font-size: 1.375rem; font-weight: 600; }
-  .sf-rg-address { font-size: 1.25rem; font-weight: 500; letter-spacing: -0.01em; }
-  @media (min-width: 900px) { .sf-rg-visit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; padding: 32px; } }
-}
-
-/* Rigel: coaches without a photo get the same dark initials tile as the home page. */
-@layer components {
-  .sf-coach-photo:has(> .sf-monogram) { background: linear-gradient(145deg, #2a2c34, #15161b); box-shadow: var(--sf-card-shadow); }
-  .sf-coach-photo > .sf-monogram { color: #fff; }
-  /* Coach detail: the same dark tile, sized as a portrait card rather than a full-width block on phones. */
-  .sf-portrait:has(> .sf-monogram) { background: linear-gradient(145deg, #2a2c34, #15161b); box-shadow: var(--sf-card-shadow); }
-  .sf-portrait > .sf-monogram { color: #fff; }
-  @media (max-width: 899px) { .sf-portrait:has(> .sf-monogram) { order: -1; width: 112px; aspect-ratio: 1; border-radius: 24px; } .sf-portrait > .sf-monogram { font-size: 2.25rem; } }
-  @media (min-width: 900px) { .sf-portrait:has(> .sf-monogram) { max-width: 320px; } }
-
-  /* Phone: design-scale headings, day picker and session cards (tap targets stay 44px+). */
-  @media (max-width: 899px) {
-    .sf-rg-hero { gap: 12px; padding-block: 10px 14px; }
-    .sf-rg-hero-copy { gap: 8px; padding-block: 4px; }
-    .sf-rg-title { font-size: clamp(1.5rem, 1.1rem + 1.9vw, 2.125rem); line-height: 1.1; }
-    .sf-rg-sub { font-size: 0.875rem; line-height: 1.4; }
-    .sf-rg-today { padding-top: 14px; }
-    .sf-rg-head h2, .sf-rg-center h2 { font-size: 1.0625rem; }
-    .sf-rg-today .sf-rg-more { font-size: 0.8125rem; }
-    .sf-rg-days { border-radius: 16px; padding: 4px; }
-    .sf-rg-days > button { min-height: 46px; border-radius: 12px; font-size: 0.75rem; }
-    .sf-rg-days > button strong { font-size: 0.8125rem; }
-    .sf-rg-timeline > li { padding-block: 6px; }
-    .sf-rg-class { min-height: 56px; padding: 8px 14px; }
-    .sf-rg-class strong { font-size: 1rem; }
-    .sf-rg-class span { font-size: 0.75rem; }
-    .sf-rg-book { font-size: 0.8125rem; }
-    .sf-header .sf-wordmark-mark { width: 28px; height: 28px; }
-    .sf-header .sf-wordmark-copy strong { font-size: 1.125rem; }
-    .sf-header .sf-wordmark-copy span { font-size: 0.75rem; letter-spacing: 0.06em; }
-  }
+  /* Visit */
+  .sf-home-visit { display: grid; gap: 32px; }
+  .sf-home-visit h2 { border-bottom: 1px solid var(--sf-ink); padding-bottom: 10px; font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem); font-weight: 700; letter-spacing: -0.03em; }
+  .sf-home-address { font-size: 1.25rem; font-weight: 500; letter-spacing: -0.01em; }
+  .sf-home-links { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+  .sf-home-links .sf-link { display: inline-flex; min-height: 44px; align-items: center; }
+  .sf-home-sites { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .sf-home-sites > li { display: grid; gap: 2px; }
+  .sf-home-sites strong { font-weight: 600; }
+  @media (min-width: 900px) { .sf-home-visit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; } .sf-home-visit > .sf-stack:last-child { padding-top: 58px; } }
 }
 
 /*
- * Rigel match (2026-11-02): coral actions, the club photo faded into the page, and per-class /
- * per-plan photos. The coral is derived from the tenant hue (--brand-hue, from the saved logo
- * colour) so Store Settings and the logo stay the source; ink text keeps coral buttons >= 4.5:1.
- * The logo mark keeps --sf-accent-fill. Photos come from features/storefront/lib/media.ts.
+ * Coral actions (2026-11-02): the coral is derived from the tenant hue (--brand-hue, from the saved
+ * logo colour) so Store Settings and the logo stay the source; ink text keeps coral buttons >= 4.5:1.
+ * Coaches without an uploaded portrait render a plain surface with initials, not a dark tile.
  */
 @layer components {
   .sf-root, .sf-portal {
     --sf-cta: hsl(var(--brand-hue) 80% 66%);
     --sf-cta-hover: hsl(var(--brand-hue) 80% 61%);
     --sf-cta-on: #1d1e24;
-    /* Large display type only (>= 3:1 on the canvas); small coral text keeps --sf-accent (AA). */
-    --sf-cta-display: hsl(var(--brand-hue) 80% 61%);
   }
-  .sf-rg-title em { color: var(--sf-cta-display); }
-  /* Coral reads as small text on the dark photo cards (>= 5:1). */
-  @media (max-width: 899px) { .sf-rg-plan li svg { color: var(--sf-cta); } }
   .sf-btn:is(:not([data-variant]), [data-variant="accent"]) { background: var(--sf-cta); color: var(--sf-cta-on); }
   .sf-btn:is(:not([data-variant]), [data-variant="accent"]):hover { background: var(--sf-cta-hover); }
-  /* Phone plan cards keep a text-link "Explore" in coral on the dark card; desktop uses the pill. */
-  .sf-rg-plan .sf-btn.sf-rg-choose { background: transparent; color: var(--sf-cta); }
-  .sf-rg-plan .sf-btn.sf-rg-choose:hover { background: transparent; }
-  @media (min-width: 900px) {
-    .sf-rg-plan .sf-btn.sf-rg-choose { background: var(--sf-cta); color: var(--sf-cta-on); }
-    .sf-rg-plan .sf-btn.sf-rg-choose:hover { background: var(--sf-cta-hover); }
-  }
   .sf-seg > :is([aria-current]:not([aria-current="false"]), [aria-pressed="true"], [aria-selected="true"], [data-active]),
   .sf-seg > label:has(input:checked),
-  .sf-chip[aria-current="page"], .sf-chip[aria-pressed="true"],
-  .sf-rg-days > button[aria-pressed="true"] { border-color: var(--sf-cta); background: var(--sf-cta); color: var(--sf-cta-on); }
-  .sf-rg-days > button[aria-pressed="true"] strong { color: inherit; }
+  .sf-chip[aria-current="page"], .sf-chip[aria-pressed="true"] { border-color: var(--sf-cta); background: var(--sf-cta); color: var(--sf-cta-on); }
   .sf-nav a[aria-current="page"]::after { background: var(--sf-cta); }
-  /* Today: a coral-tinted card with a thin coral border, as in the design. */
-  .sf-rg-strip > li[data-today] { border: 1.5px solid var(--sf-cta); background: color-mix(in oklab, var(--sf-cta) 14%, var(--sf-raised)); }
-  @media (min-width: 900px) {
-    .sf-rg-plan[data-featured] { border-color: var(--sf-cta); box-shadow: 0 18px 40px -18px color-mix(in oklab, var(--sf-cta) 60%, transparent); }
-  }
-  @media (max-width: 899px) { .sf-rg-plan[data-featured] { border-color: var(--sf-cta); } }
 
-  /* Hero: the club photo fades into the canvas (phone) and sits as the design's raised card (desktop). */
-  @media (max-width: 899px) {
-    .sf-rg-hero { min-height: 232px; }
-    .sf-rg-hero-media {
-      inset: 0 0 0 34%;
-      -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.55) 22%, #000 52%), linear-gradient(0deg, transparent 0%, #000 30%);
-      mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.55) 22%, #000 52%), linear-gradient(0deg, transparent 0%, #000 30%);
-    }
-    .sf-rg-hero-media img { object-position: 78% 55%; }
-  }
-  @media (min-width: 900px) {
-    .sf-rg-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 456px); }
-    .sf-rg-hero-media { aspect-ratio: 456 / 293; border-radius: 28px; }
-    .sf-rg-hero-media img { object-position: 62% 60%; }
-  }
+  .sf-coach-photo:has(> .sf-monogram), .sf-portrait:has(> .sf-monogram) { background: var(--sf-surface); box-shadow: none; }
+  .sf-coach-photo > .sf-monogram, .sf-portrait > .sf-monogram { color: var(--sf-ink-3); }
+  @media (max-width: 899px) { .sf-portrait:has(> .sf-monogram) { order: -1; width: 112px; aspect-ratio: 1; border-radius: 8px; } .sf-portrait > .sf-monogram { font-size: 2.25rem; } }
+  @media (min-width: 900px) { .sf-portrait:has(> .sf-monogram) { max-width: 320px; } }
 
-  /* Phone timeline: a class type's photo behind its name, darkened on the text side. */
-  .sf-rg-class[data-photo] { isolation: isolate; background: #15161b; }
-  .sf-rg-class-photo { z-index: -2; object-fit: cover; object-position: 70% 40%; }
-  /* Plus a top-right scrim so the in-card "Book now" stays legible over the bright side of the photo. */
-  .sf-rg-class[data-photo]::before { content: ""; position: absolute; inset: 0; z-index: -1; background-size: 180px 180px, auto, auto; background-blend-mode: soft-light, normal, normal; background-image: var(--sf-grain), radial-gradient(48% 70% at 100% 0%, rgb(10 11 14 / 0.78), transparent 100%), linear-gradient(90deg, rgb(10 11 14 / 0.86) 0%, rgb(10 11 14 / 0.6) 48%, rgb(10 11 14 / 0.18) 100%); }
-
-  /* Class cards: photo banner on top when the class type has one; the plain card otherwise. */
+  /* Class cards: the class's uploaded photo on top when it has one. */
   .sf-class-card[data-photo] { overflow: hidden; padding-top: 0; }
-  .sf-class-card-photo { position: relative; display: block; aspect-ratio: 16 / 9; margin: 0 -20px 4px; overflow: hidden; background: #15161b; }
+  .sf-class-card-photo { position: relative; display: block; aspect-ratio: 3 / 2; margin: 0 -20px 4px; overflow: hidden; background: var(--sf-surface); }
   .sf-class-card-photo img { object-fit: cover; }
-  .sf-class-card[data-photo] .sf-arrow-mark { z-index: 1; color: #fff; filter: drop-shadow(0 1px 3px rgb(0 0 0 / 0.5)); }
 
-  /* Plans (phone): the plan's photo fills the dark card under a scrim. Desktop keeps light cards. */
-  .sf-rg-plan[data-photo] { isolation: isolate; overflow: hidden; background: #15161b; }
-  .sf-rg-plan-photo { z-index: -2; object-fit: cover; object-position: 65% 30%; }
-  .sf-rg-plan[data-photo]::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background-size: 180px 180px, auto; background-blend-mode: soft-light, normal; background-image: var(--sf-grain), linear-gradient(180deg, rgb(10 11 14 / 0.55) 0%, rgb(10 11 14 / 0.72) 55%, rgb(10 11 14 / 0.9) 100%); }
-  @media (min-width: 900px) {
-    .sf-rg-plan[data-photo] { background: color-mix(in oklab, var(--sf-surface) 55%, var(--sf-raised)); }
-    .sf-rg-plan[data-photo][data-featured] { background: var(--sf-raised); }
-    .sf-rg-plan-photo, .sf-rg-plan[data-photo]::before { display: none; }
-  }
-}
-
-/* Rigel match: three plan cards fit 402 (the price and its period wrap inside the card). */
-@layer components {
   @media (max-width: 899px) {
-    .sf-rg-plan { container-type: inline-size; overflow: hidden; }
-    .sf-rg-price p { flex-wrap: wrap; column-gap: 2px; }
-    .sf-rg-price strong { font-size: clamp(1.125rem, 17cqi, 1.625rem); }
-    .sf-rg-price span { font-size: 0.75rem; }
-  }
-  /* Phones: one plan per row at full width, nothing clamped (owner, 2026-11-04). */
-  @media (max-width: 639px) {
-    .sf-rg-plans, .sf-rg-plans[data-count] { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-    .sf-rg-plan { gap: 12px; padding: 18px 18px 6px; }
-    .sf-rg-plan h3 { font-size: 1.25rem; }
-    .sf-rg-plan header p { display: block; overflow: visible; -webkit-line-clamp: unset; font-size: 0.875rem; line-height: 1.4; }
-    .sf-rg-price p { flex-wrap: nowrap; }
-    .sf-rg-price strong { font-size: 1.75rem; }
-    .sf-rg-price span { font-size: 0.875rem; }
-    .sf-rg-price small { display: block; margin-top: 4px; font-size: 0.8125rem; }
-    .sf-rg-plan ul { gap: 6px; font-size: 0.9375rem; }
-    .sf-rg-plan li svg { margin-top: 3px; }
+    .sf-header .sf-wordmark-mark { width: 28px; height: 28px; }
+    .sf-header .sf-wordmark-copy strong { font-size: 1.125rem; }
+    .sf-header .sf-wordmark-copy span { font-size: 0.75rem; letter-spacing: 0.06em; }
   }
 }
 
@@ -1515,8 +1285,7 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   @media (min-width: 1024px) { .sf-inset-track.sf-dates-track { width: 100%; } }
 
   /* 44px taps for inline name links (class, coach) and small buttons; the phone day strip bleeds to the edge below 360px so seven days stay 44px wide. */
-  .sf-btn[data-size="sm"], .sf-rg-pill, .sf-rg-plan .sf-rg-choose { min-height: 44px; }
-  .sf-rg-coaches a, .sf-class-card :is(h2, h3) a, .sf-coach :is(h2, h3) a, .sf-titleline h3 a, .sf-session-meta a { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; }
-  .sf-rg-class strong a { display: block; min-height: 44px; overflow: hidden; line-height: 44px; text-overflow: ellipsis; white-space: nowrap; }
-  @media (max-width: 359px) { .sf-rg-days { margin-inline: calc(var(--sf-gutter) * -1); border-radius: 0; padding: 4px 2px; gap: 0; } }
+  .sf-btn[data-size="sm"] { min-height: 44px; }
+  .sf-home-sessions strong a, .sf-class-card :is(h2, h3) a, .sf-coach :is(h2, h3) a, .sf-titleline h3 a, .sf-session-meta a { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; }
+  @media (max-width: 359px) { .sf-home-days { margin-inline: calc(var(--sf-gutter) * -1); } }
 }

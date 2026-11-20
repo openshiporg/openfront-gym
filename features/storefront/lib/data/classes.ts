@@ -10,6 +10,8 @@ export type ClassTypeData = {
   duration: number;
   caloriesBurn: number | null;
   equipmentNeeded: string[] | null;
+  /** The class type's uploaded photo, or null. */
+  imageUrl?: string | null;
 };
 
 export type ClassScheduleData = {
@@ -27,7 +29,7 @@ export type ClassScheduleData = {
 
 const CLASS_TYPE_FIELDS = gql`
   fragment StorefrontClassType on PublicGymClassType {
-    id name description difficulty duration caloriesBurn equipmentNeeded
+    id name description difficulty duration caloriesBurn equipmentNeeded imageUrl
   }
 `;
 const INSTRUCTOR_FIELDS = gql`

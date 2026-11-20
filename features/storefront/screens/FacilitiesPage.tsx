@@ -28,10 +28,15 @@ export async function FacilitiesPage() {
       <div className="sf-wrap">
         <PageHead title={config?.facilityHeadline || "Facilities"} lead={config?.facilityDescription || undefined} />
 
-        {config?.heroImageUrl ? (
-          <figure className="sf-photo sf-rise-2">
-            <Image src={config.heroImageUrl} alt="" fill priority sizes="(max-width: 1279px) 100vw, 1240px" unoptimized />
-          </figure>
+        {config?.clubPhotos?.length ? (
+          <div className="sf-sites">
+            {config.clubPhotos.map((site, index) => (
+              <figure key={site.id}>
+                <span className="sf-photo"><Image src={site.url} alt={site.name} fill priority={index === 0} sizes={index === 0 ? "(max-width: 1279px) 100vw, 1240px" : "(max-width: 899px) 100vw, 50vw"} unoptimized /></span>
+                <figcaption><strong>{site.name}</strong>{site.address ? <span className="sf-meta">{site.address}</span> : null}</figcaption>
+              </figure>
+            ))}
+          </div>
         ) : null}
 
         <section className="sf-section" aria-labelledby="facility-spaces">

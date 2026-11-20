@@ -136,8 +136,9 @@ async function _fetchGraphQLWithFiles(
       formData.append(`${index + 1}`, file);
     });
 
-    // Prepare headers
-    const headers: Record<string, string> = {};
+    // The GraphQL route only accepts multipart bodies that carry this non-simple header
+    // (cross-site request protection).
+    const headers: Record<string, string> = { "apollo-require-preflight": "true" };
 
     // Add auth headers if they exist
     if (authHeaders) {

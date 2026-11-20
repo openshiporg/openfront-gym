@@ -90,6 +90,12 @@ export function resolvePublicInstanceWindow(
   };
 }
 
+/** URL of an uploaded image field (S3), or null when nothing was uploaded. */
+export function uploadedImageUrl(value: unknown): string | null {
+  const url = (value as { url?: unknown } | null | undefined)?.url;
+  return typeof url === "string" && /^https:\/\//.test(url) ? url : null;
+}
+
 export function normalizePublicMediaPath(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const path = value.trim();
@@ -267,7 +273,8 @@ function publicInstructor(instructor: any) {
     specialties: Array.isArray(instructor.specialties) ? instructor.specialties.map(String) : [],
     // Names of listed and current qualifications only; evidence and verification stay private.
     certifications: publicQualificationNames(instructor.certifications),
-    imagePath: normalizePublicMediaPath(instructor.photo),
+    // The coach's uploaded portrait; no stand-in image ships with the app.
+    imagePath: uploadedImageUrl(instructor.portrait),
   };
 }
 
@@ -295,6 +302,7 @@ function publicClassType(classType: any) {
     difficulty: classType.difficulty,
     duration: classType.duration,
     caloriesBurn: classType.caloriesBurn ?? null,
+    imageUrl: uploadedImageUrl(classType.photo),
     equipmentNeeded: Array.isArray(classType.equipmentNeeded)
       ? classType.equipmentNeeded.map(String)
       : [],
@@ -415,9 +423,21 @@ export async function getPublicGymSettings(
   const organization = organizations[0];
   const projected = projectPublicGymSettings(settings, organization?.timezone);
   if (!projected) return null;
+  // The club's photos are the uploaded Location photos (main site first); the hero uses the first.
+  const sites = await publicContext(context).query.Location.findMany({
+    where: publicTenantWhere(organizationId, { isActive: { equals: true } }),
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: 6,
+    query: "id name address photo { url }",
+  });
+  const clubPhotos = sites
+    .map((site: any) => ({ id: String(site.id), name: publicText(site.name, 200) || "Location", address: publicText(site.address, 500), url: uploadedImageUrl(site.photo) }))
+    .filter((site): site is { id: string; name: string; address: string | null; url: string } => Boolean(site.url));
+  // The hero is the main site's uploaded photo; no stand-in image ships with the app.
+  projected.heroImagePath = clubPhotos[0]?.url ?? null;
   // Published participation terms (the version members accept), not the editable draft.
   const participationTerms = await currentParticipationTerms(guardKeystonePrismaResults(context.prisma as any), organizationId);
-  return { ...projected, participationTerms, salesOpen: Boolean(storefront?.salesOpen) };
+  return { ...projected, clubPhotos, participationTerms, salesOpen: Boolean(storefront?.salesOpen) };
 }
 
 export async function getPublicGymClassTypes(
@@ -440,7 +460,7 @@ export async function getPublicGymClassTypes(
     take: normalizePublicLimit(args.limit),
     skip: args.after ? 0 : publicSkip(args.skip),
     orderBy: [{ name: "asc" }, { id: "asc" }],
-    query: `id name description { document } difficulty duration caloriesBurn equipmentNeeded`,
+    query: `id name description { document } difficulty duration caloriesBurn equipmentNeeded photo { url }`,
   });
   return records.map(publicClassType);
 }
@@ -454,7 +474,7 @@ export async function getPublicGymClassType(
   const [record] = await publicContext(context).query.ClassType.findMany({
     where: publicTenantWhere(organizationId, { id: { equals: args.id } }),
     take: 1,
-    query: `id name description { document } difficulty duration caloriesBurn equipmentNeeded`,
+    query: `id name description { document } difficulty duration caloriesBurn equipmentNeeded photo { url }`,
   });
   return publicClassType(record);
 }
@@ -476,7 +496,7 @@ export async function getPublicGymSchedules(
     query: `
       id name description dayOfWeek startTime endTime maxCapacity
       classType { id name description { document } difficulty duration caloriesBurn equipmentNeeded }
-      instructor { id displayName bio { document } specialties certifications photo }
+      instructor { id displayName bio { document } specialties certifications photo portrait { url } }
     `,
   });
   return records.map(publicSchedule);
@@ -494,7 +514,7 @@ export async function getPublicGymSchedule(
     query: `
       id name description dayOfWeek startTime endTime maxCapacity isActive
       classType { id name description { document } difficulty duration caloriesBurn equipmentNeeded }
-      instructor { id displayName bio { document } specialties certifications photo }
+      instructor { id displayName bio { document } specialties certifications photo portrait { url } }
     `,
   });
   return record?.isActive ? publicSchedule(record) : null;
@@ -558,12 +578,12 @@ export async function getPublicGymClassInstances(
     query: `
       id date maxCapacity
       location { id name address isActive }
-      instructor { id displayName bio { document } specialties certifications photo }
+      instructor { id displayName bio { document } specialties certifications photo portrait { url } }
       classSchedule {
         id name description dayOfWeek startTime endTime maxCapacity
         location { id name address isActive }
         classType { id name description { document } difficulty duration caloriesBurn equipmentNeeded }
-        instructor { id displayName bio { document } specialties certifications photo }
+        instructor { id displayName bio { document } specialties certifications photo portrait { url } }
       }
       bookings { id status }
     `,
@@ -583,12 +603,12 @@ export async function getPublicGymClassInstance(
     query: `
       id date maxCapacity isCancelled
       location { id name address isActive }
-      instructor { id displayName bio { document } specialties certifications photo }
+      instructor { id displayName bio { document } specialties certifications photo portrait { url } }
       classSchedule {
         id name description dayOfWeek startTime endTime maxCapacity isActive
         location { id name address isActive }
         classType { id name description { document } difficulty duration caloriesBurn equipmentNeeded }
-        instructor { id displayName bio { document } specialties certifications photo }
+        instructor { id displayName bio { document } specialties certifications photo portrait { url } }
       }
       bookings { id status }
     `,
@@ -615,7 +635,7 @@ export async function getPublicGymInstructors(
     take: normalizePublicLimit(args.limit),
     skip: args.after ? 0 : publicSkip(args.skip),
     orderBy: [{ id: "asc" }],
-    query: `id displayName bio { document } specialties certifications photo`,
+    query: `id displayName bio { document } specialties certifications photo portrait { url }`,
   });
   // Returned in id order, the order `after` continues from; callers sort for display.
   return records
@@ -632,7 +652,7 @@ export async function getPublicGymInstructor(
   const [record] = await publicContext(context).query.Instructor.findMany({
     where: publicTenantWhere(organizationId, { id: { equals: args.id } }),
     take: 1,
-    query: `id displayName bio { document } specialties certifications photo isActive`,
+    query: `id displayName bio { document } specialties certifications photo portrait { url } isActive`,
   });
   return record?.isActive ? publicInstructor(record) : null;
 }

@@ -4749,6 +4749,7 @@ type Location {
   id: ID!
   organization: Organization!
   name: String
+  photo: ImageFieldOutput
   address: String
   phone: String
   isActive: Boolean
@@ -4796,6 +4797,7 @@ input LocationOrderByInput {
 input LocationUpdateInput {
   organization: OrganizationRelateToOneForUpdateInput
   name: String
+  photo: ImageFieldInput
   address: String
   phone: String
   isActive: Boolean
@@ -4814,6 +4816,7 @@ input LocationUpdateArgs {
 input LocationCreateInput {
   organization: OrganizationRelateToOneForCreateInput
   name: String
+  photo: ImageFieldInput
   address: String
   phone: String
   isActive: Boolean
@@ -5485,6 +5488,7 @@ type ClassType {
   difficulty: String
   duration: Int
   equipmentNeeded: [String!]
+  photo: ImageFieldOutput
   caloriesBurn: Int
   schedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
   schedulesCount(where: ClassScheduleWhereInput! = {}): Int
@@ -5532,6 +5536,7 @@ input ClassTypeUpdateInput {
   difficulty: String
   duration: Int
   equipmentNeeded: [String!]
+  photo: ImageFieldInput
   caloriesBurn: Int
   schedules: ClassScheduleRelateToManyForUpdateInput
   createdAt: DateTime
@@ -5550,6 +5555,7 @@ input ClassTypeCreateInput {
   difficulty: String
   duration: Int
   equipmentNeeded: [String!]
+  photo: ImageFieldInput
   caloriesBurn: Int
   schedules: ClassScheduleRelateToManyForCreateInput
   createdAt: DateTime
@@ -5809,6 +5815,7 @@ type Instructor {
   bio: Instructor_bio_Document
   specialties: JSON
   certifications: JSON
+  portrait: ImageFieldOutput
   photo: String
   isActive: Boolean
   classSchedules(where: ClassScheduleWhereInput! = {}, orderBy: [ClassScheduleOrderByInput!]! = [], take: Int! = 5001, skip: Int! = 0, cursor: ClassScheduleWhereUniqueInput): [ClassSchedule!]
@@ -5868,6 +5875,7 @@ input InstructorUpdateInput {
   bio: JSON
   specialties: JSON
   certifications: JSON
+  portrait: ImageFieldInput
   photo: String
   isActive: Boolean
   classSchedules: ClassScheduleRelateToManyForUpdateInput
@@ -5889,6 +5897,7 @@ input InstructorCreateInput {
   bio: JSON
   specialties: JSON
   certifications: JSON
+  portrait: ImageFieldInput
   photo: String
   isActive: Boolean
   classSchedules: ClassScheduleRelateToManyForCreateInput
@@ -7538,6 +7547,13 @@ enum KeystoneAdminUISortDirection {
   DESC
 }
 
+type PublicGymClubPhoto {
+  id: ID!
+  name: String!
+  address: String
+  url: String!
+}
+
 type PublicGymSettings {
   id: ID!
   salesOpen: Boolean!
@@ -7561,6 +7577,7 @@ type PublicGymSettings {
   heroHeadline: String
   heroSubheadline: String
   heroImagePath: String
+  clubPhotos: [PublicGymClubPhoto!]!
   heroPrimaryCtaLabel: String
   heroPrimaryCtaHref: String
   heroSecondaryCtaLabel: String
@@ -7584,6 +7601,7 @@ type PublicGymClassType {
   duration: Int!
   caloriesBurn: Int
   equipmentNeeded: [String!]!
+  imageUrl: String
 }
 
 type PublicGymInstructor {

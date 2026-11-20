@@ -29,7 +29,7 @@ function instructorShape(instructor: PublicInstructor): InstructorData {
     bio: instructor.bio ?? null,
     specialties: instructor.specialties,
     certifications: instructor.certifications,
-    photo: coachPhoto(instructor.imagePath, instructor.name),
+    photo: coachPhoto(instructor.imagePath),
     isActive: true,
   };
 }

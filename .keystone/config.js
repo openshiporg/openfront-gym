@@ -101,6 +101,113 @@ var init_prisma_result = __esm({
   }
 });
 
+// features/keystone/lib/participation-terms.ts
+function isParticipationTermsPlaceholder(text47) {
+  const normalize = (value) => value.replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim().toLowerCase();
+  return normalize(text47) === normalize(PARTICIPATION_TERMS_PLACEHOLDER);
+}
+async function publishParticipationTerms(tx, organizationId, text47, publishedBy) {
+  await lockParticipationPolicy(tx, organizationId);
+  const body = text47.trim();
+  const enforce = Boolean(body) && !isParticipationTermsPlaceholder(body);
+  const latest = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+  if (latest && latest.documentReference === PARTICIPATION_TERMS_PATH && latest.documentText === body && latest.enforceWaiver === enforce) return latest;
+  if (!latest && !body) return null;
+  const published = await tx.participationPolicy.count({ where: { organizationId } });
+  return tx.participationPolicy.create({
+    data: {
+      organizationId,
+      version: `v${published + 1}`,
+      documentReference: PARTICIPATION_TERMS_PATH,
+      documentText: body,
+      // The gym's own published terms must be accepted. Clearing them, or leaving the
+      // onboarding placeholder, publishes a version with nothing to accept.
+      enforceWaiver: enforce,
+      adultOnly: latest?.adultOnly ?? false,
+      healthPurpose: latest?.healthPurpose ?? "",
+      retentionDays: latest?.retentionDays ?? 365,
+      publishedBy
+    }
+  });
+}
+async function currentParticipationTerms(prisma, organizationId) {
+  if (!organizationId) return null;
+  const latest = await prisma.participationPolicy.findFirst({
+    where: { organizationId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, version: true, documentText: true, enforceWaiver: true }
+  });
+  if (!latest?.documentText || isParticipationTermsPlaceholder(latest.documentText)) return null;
+  return { policyId: latest.id, version: latest.version, text: latest.documentText, acceptanceRequired: Boolean(latest.enforceWaiver) };
+}
+async function participationPolicyForEditor(prisma, organizationId) {
+  const latest = await prisma.participationPolicy.findFirst({
+    where: { organizationId },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { id: true, version: true, documentReference: true, documentText: true, enforceWaiver: true, adultOnly: true, healthPurpose: true, retentionDays: true, createdAt: true }
+  });
+  if (!latest) return null;
+  return {
+    policyId: latest.id,
+    version: latest.version,
+    source: latest.documentReference === PARTICIPATION_TERMS_PATH ? "pasted" : "document",
+    documentReference: latest.documentReference,
+    text: latest.documentText || "",
+    placeholder: isParticipationTermsPlaceholder(String(latest.documentText || "")),
+    acceptanceRequired: Boolean(latest.enforceWaiver),
+    adultOnly: Boolean(latest.adultOnly),
+    healthPurpose: latest.healthPurpose || "",
+    retentionDays: latest.retentionDays,
+    publishedAt: latest.createdAt instanceof Date ? latest.createdAt.toISOString() : String(latest.createdAt)
+  };
+}
+var PARTICIPATION_TERMS_PATH, PARTICIPATION_TERMS_PLACEHOLDER, PARTICIPATION_TERMS_MAX_LENGTH;
+var init_participation_terms = __esm({
+  "features/keystone/lib/participation-terms.ts"() {
+    "use strict";
+    init_operational_policy();
+    PARTICIPATION_TERMS_PATH = "/waiver";
+    PARTICIPATION_TERMS_PLACEHOLDER = "Please replace this with your gym\u2019s terms of service.";
+    PARTICIPATION_TERMS_MAX_LENGTH = 5e4;
+  }
+});
+
+// features/keystone/lib/participation-evidence.ts
+function isEffectiveEvidence(entry, policyId, now = Date.now()) {
+  if (!entry || entry.policyId !== policyId || entry.revokedAt || !entry.acceptedAt) return false;
+  if (new Date(entry.acceptedAt).getTime() > now) return false;
+  return !entry.expiresAt || new Date(entry.expiresAt).getTime() > now;
+}
+function effectiveWhere(at) {
+  return { revokedAt: null, acceptedAt: { lte: at }, OR: [{ expiresAt: null }, { expiresAt: { gt: at } }] };
+}
+function effectiveAcceptanceWhere(organizationId, memberId, policyId, at) {
+  return { organizationId, memberId, policyId, kind: ACCEPTANCE_EVIDENCE, ...effectiveWhere(at) };
+}
+function effectiveHealthConsentWhere(organizationId, memberId, policyId, at) {
+  return { organizationId, memberId, policyId, healthConsent: true, ...effectiveWhere(at) };
+}
+function disclosedHealthPurpose(policy) {
+  const purpose = String(policy?.healthPurpose || "").trim();
+  if (!purpose || isParticipationTermsPlaceholder(String(policy?.documentText || ""))) return null;
+  return purpose;
+}
+function evidenceState(entry, now = Date.now()) {
+  if (entry.revokedAt) return "withdrawn";
+  if (entry.expiresAt && new Date(entry.expiresAt).getTime() <= now) return "expired";
+  if (entry.acceptedAt && new Date(entry.acceptedAt).getTime() > now) return "pending";
+  return "current";
+}
+var ACCEPTANCE_EVIDENCE, HEALTH_CONSENT_EVIDENCE;
+var init_participation_evidence = __esm({
+  "features/keystone/lib/participation-evidence.ts"() {
+    "use strict";
+    init_participation_terms();
+    ACCEPTANCE_EVIDENCE = "acceptance";
+    HEALTH_CONSENT_EVIDENCE = "health_consent";
+  }
+});
+
 // features/keystone/lib/operational-policy.ts
 var operational_policy_exports = {};
 __export(operational_policy_exports, {
@@ -131,29 +238,24 @@ async function assertParticipationAllowed(tx, organizationId, memberId, at, loca
   } });
   if (closure) throw new Error("Participation is unavailable during an active facility closure");
   const policy = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
-  if (!policy) return;
+  if (!policy) return { policyId: null, evidenceId: null };
   if (!memberId) {
     if (policy.enforceWaiver || policy.adultOnly) throw new Error("Registered participant verification is required by studio policy");
-    return;
+    return { policyId: policy.id, evidenceId: null };
   }
   const member = await tx.member.findFirst({ where: { id: memberId, organizationId } });
   if (!member) throw new Error("Member not found");
   if (policy.adultOnly && !isAdult(member.dateOfBirth, at)) throw new Error("Adult age verification is required before participation");
-  if (!policy.enforceWaiver) return;
-  const evidence = await tx.participationEvidence.findFirst({ where: {
-    organizationId,
-    memberId,
-    policyId: policy.id,
-    revokedAt: null,
-    acceptedAt: { lte: at },
-    OR: [{ expiresAt: null }, { expiresAt: { gt: at } }]
-  } });
+  if (!policy.enforceWaiver) return { policyId: policy.id, evidenceId: null };
+  const evidence = await tx.participationEvidence.findFirst({ where: effectiveAcceptanceWhere(organizationId, memberId, policy.id, at) });
   if (!evidence) throw new Error("Current waiver verification is required before participation");
+  return { policyId: policy.id, evidenceId: evidence.id };
 }
 var init_operational_policy = __esm({
   "features/keystone/lib/operational-policy.ts"() {
     "use strict";
     init_prisma_result();
+    init_participation_evidence();
   }
 });
 
@@ -179,9 +281,11 @@ function monthlyServicePeriod(membership, at) {
   const periodEnd = next < end ? next : end;
   return { periodStart, periodEnd };
 }
-function assertMembershipServiceEligibility(membership, at) {
+function assertMembershipServiceEligibility(membership, at, options = {}) {
   if (!membership || membership.status !== "active") throw new Error("Membership is not active");
-  monthlyServicePeriod(membership, at);
+  const end = new Date(membership.creditPeriodEnd || membership.nextBillingDate).getTime();
+  const inRenewalGrace = options.renewalGrace && membership.autoRenew && at.getTime() >= end && at.getTime() < end + RENEWAL_GRACE_MS;
+  monthlyServicePeriod(membership, inRenewalGrace ? new Date(end - 1) : at);
   if (membership.freezeStartDate && at >= new Date(membership.freezeStartDate) && (!membership.freezeEndDate || at < new Date(membership.freezeEndDate))) {
     throw new Error("Membership is frozen for this service date");
   }
@@ -341,10 +445,12 @@ async function refreshScopedMembership(prisma, organizationId, membershipId) {
     return { refreshed, reason, membershipId, reviewed, reviewLimitReached: reviewed >= 1e3 };
   });
 }
+var RENEWAL_GRACE_MS;
 var init_membership_credits = __esm({
   "features/keystone/lib/membership-credits.ts"() {
     "use strict";
     init_prisma_result();
+    RENEWAL_GRACE_MS = 24 * 60 * 60 * 1e3;
   }
 });
 
@@ -358,7 +464,7 @@ async function enqueueOperationalNotice(tx, input) {
     kind: input.kind,
     message: input.message.slice(0, 2e3),
     status: "pending",
-    history: []
+    history: input.history ?? []
   } });
 }
 async function createFinanceException(tx, input) {
@@ -383,15 +489,501 @@ var init_operational_notices = __esm({
   }
 });
 
+// features/keystone/lib/current-actor.ts
+async function lockCurrentActor(tx, userId, organizationId, capabilities, options = {}) {
+  const users = await tx.$queryRaw`SELECT "id", "organization", "role" FROM "User" WHERE "id" = ${userId} FOR SHARE`;
+  const user = Array.isArray(users) ? users[0] : null;
+  if (!user || user.organization !== organizationId || !user.role) throw new Error("Your current role does not allow this action");
+  const roles = await tx.$queryRaw`SELECT * FROM "Role" WHERE "id" = ${user.role} FOR SHARE`;
+  const role = Array.isArray(roles) ? roles[0] : null;
+  if (!role || role.organization !== organizationId || !role.canAccessDashboard) throw new Error("Your current role does not allow this action");
+  for (const capability of capabilities) {
+    if (!role[capability]) throw new Error("Your current role does not allow this action");
+  }
+  if (options.requireActiveOrganization !== false) await lockActiveOrganization(tx, organizationId);
+  return { userId, organizationId, role };
+}
+async function lockActiveOrganization(tx, organizationId) {
+  const organizations = await tx.$queryRaw`SELECT "status" FROM "Organization" WHERE "id" = ${organizationId} FOR SHARE`;
+  const organization3 = Array.isArray(organizations) ? organizations[0] : null;
+  if (!organization3 || organization3.status !== "active") throw new Error("This organization is not accepting new activity");
+}
+var init_current_actor = __esm({
+  "features/keystone/lib/current-actor.ts"() {
+    "use strict";
+  }
+});
+
+// features/keystone/security/internalIdentity.ts
+var import_node_crypto3;
+var init_internalIdentity = __esm({
+  "features/keystone/security/internalIdentity.ts"() {
+    "use strict";
+    import_node_crypto3 = require("node:crypto");
+  }
+});
+
+// lib/clientSource.ts
+function header(headers, name) {
+  if (!headers) return "";
+  if (typeof headers.get === "function") return String(headers.get(name) || "");
+  const value = headers[name];
+  return Array.isArray(value) ? value[0] || "" : value || "";
+}
+function normalizeSource(value) {
+  const trimmed = value.trim().slice(0, 64);
+  return /^[0-9A-Fa-f:.]{2,64}$/.test(trimmed) ? trimmed : "";
+}
+function proxyTrusted() {
+  return process.env.CLIENT_SOURCE_TRUST_PROXY === "true";
+}
+function clientSourceFromHeaders(headers, remoteAddress = "") {
+  const edge = railwayEdgeSource(headers, remoteAddress);
+  if (edge) return edge;
+  if (proxyTrusted()) {
+    const forwarded = header(headers, "x-forwarded-for").split(",").map((entry) => entry.trim()).filter(Boolean);
+    const source = normalizeSource(forwarded.at(-1) || "") || normalizeSource(header(headers, "x-real-ip"));
+    if (source) return source;
+  }
+  return normalizeSource(remoteAddress) || UNKNOWN_SOURCE;
+}
+function isKnownSource(source) {
+  return Boolean(source) && source !== UNKNOWN_SOURCE;
+}
+function safeEqual(left, right) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && (0, import_node_crypto4.timingSafeEqual)(leftBuffer, rightBuffer);
+}
+function verifiedInternalIdentity(headers, socketAddress, secret = String(process.env.SESSION_SECRET || ""), now = Date.now()) {
+  const loopback = /^(?:127\.|::1$|::ffff:127\.)/.test(String(socketAddress || ""));
+  if (!loopback || secret.length < 32) return null;
+  const identity = header(headers, "x-openfront-client-identity");
+  const timestamp34 = header(headers, "x-openfront-client-timestamp");
+  const signature = header(headers, "x-openfront-client-signature");
+  if (!/^[a-f0-9]{64}$/.test(identity) || !/^\d{10}$/.test(timestamp34) || !/^[a-f0-9]{64}$/.test(signature)) return null;
+  const age = Math.abs(now - Number(timestamp34) * 1e3);
+  if (!Number.isFinite(age) || age > INTERNAL_IDENTITY_MAX_AGE_MS) return null;
+  const expected = (0, import_node_crypto4.createHmac)("sha256", secret).update(`${timestamp34}:${identity}`).digest("hex");
+  return safeEqual(signature, expected) ? `forwarded:${identity}` : null;
+}
+function railwayEdgeSource(headers, socketAddress) {
+  if (!process.env.RAILWAY_ENVIRONMENT) return "";
+  const peer = String(socketAddress || "").trim();
+  if (/^(?:127\.|::1$|::ffff:127\.)/.test(peer)) return "";
+  const value = header(headers, "x-real-ip").trim();
+  if (!value || value.includes(",") || (0, import_node_net.isIP)(value.replace(/^::ffff:/, "")) === 0) return "";
+  return normalizeSource(value.replace(/^::ffff:/, "").toLowerCase());
+}
+function requestClientSource(req, secret, now) {
+  const headers = req?.headers;
+  const socketAddress = req?.socket?.remoteAddress || "";
+  const internal = verifiedInternalIdentity(headers, socketAddress, secret, now);
+  if (internal) return internal;
+  return clientSourceFromHeaders(headers, socketAddress);
+}
+var import_node_crypto4, import_node_net, UNKNOWN_SOURCE, INTERNAL_IDENTITY_MAX_AGE_MS;
+var init_clientSource = __esm({
+  "lib/clientSource.ts"() {
+    "use strict";
+    import_node_crypto4 = require("node:crypto");
+    import_node_net = require("node:net");
+    init_internalIdentity();
+    UNKNOWN_SOURCE = "unknown";
+    INTERNAL_IDENTITY_MAX_AGE_MS = 9e4;
+  }
+});
+
+// features/keystone/lib/internal-origin.ts
+function normalizeInternalOrigin(value) {
+  let url;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new Error("Internal application URL must be an absolute HTTP(S) origin");
+  }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.pathname !== "/" && url.pathname !== "" || url.search || url.hash) {
+    throw new Error("Internal application URL must be an HTTP(S) origin without credentials or a path");
+  }
+  return url.origin;
+}
+function resolvePublicBaseUrl() {
+  const configured2 = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+  if (!configured2?.trim()) throw new Error("Application base URL is not configured");
+  return normalizeInternalOrigin(configured2);
+}
+function publicAppUrl(path) {
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) throw new Error("Return path must be a local path");
+  const origin = resolvePublicBaseUrl();
+  const url = new URL(path, origin);
+  if (url.origin !== origin) throw new Error("Return path must stay on the Gym origin");
+  return url.toString();
+}
+var init_internal_origin = __esm({
+  "features/keystone/lib/internal-origin.ts"() {
+    "use strict";
+    init_internalIdentity();
+    init_clientSource();
+  }
+});
+
+// features/keystone/lib/email-layout.ts
+function storeNameFromEnv(fallback = "Gym") {
+  const match = /^\s*"?([^"<]+?)"?\s*</.exec(process.env.SMTP_FROM || "");
+  return match?.[1]?.trim() || fallback;
+}
+function emailButton(label, href) {
+  return `<table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin:8px 0 24px;">
+<tr><td class="em-btn" align="center" bgcolor="${C.button}" style="border-radius:8px;background:${C.button};">
+<a class="em-btn-a" href="${escapeHtml(href)}" target="_blank" style="display:inline-block;padding:14px 28px;font-family:${FONT};font-size:16px;font-weight:600;line-height:20px;color:${C.buttonText};text-decoration:none;border-radius:8px;">${escapeHtml(label)}</a>
+</td></tr></table>`;
+}
+function emailLayout(input) {
+  const store = escapeHtml(input.storeName || storeNameFromEnv());
+  const support = escapeHtml(input.supportEmail || SUPPORT_EMAIL);
+  return `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>${escapeHtml(input.title)}</title>
+<style>
+:root { color-scheme: light dark; supported-color-schemes: light dark; }
+body { margin:0; padding:0; -webkit-text-size-adjust:100%; }
+a { color:${C.link}; }
+@media (max-width: 620px) { .em-pad { padding-left:20px !important; padding-right:20px !important; } }
+@media (prefers-color-scheme: dark) {
+  .em-canvas { background:#09090b !important; }
+  .em-card { background:#18181b !important; border-color:#27272a !important; }
+  .em-text { color:#fafafa !important; }
+  .em-muted { color:#a1a1aa !important; }
+  .em-line { border-color:#3f3f46 !important; }
+  .em-panel { background:#27272a !important; border-color:#3f3f46 !important; color:#fafafa !important; }
+  .em-btn { background:#fafafa !important; }
+  .em-btn-a { color:#18181b !important; }
+  .em-link { color:#fafafa !important; }
+}
+[data-ogsc] .em-text { color:#fafafa !important; }
+[data-ogsc] .em-muted { color:#a1a1aa !important; }
+[data-ogsb] .em-canvas { background:#09090b !important; }
+[data-ogsb] .em-card { background:#18181b !important; }
+</style>
+</head>
+<body class="em-canvas" style="margin:0;padding:0;background:${C.canvas};">
+${input.preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${escapeHtml(input.preheader)}</div>` : ""}
+<table role="presentation" class="em-canvas" width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="${C.canvas}" style="background:${C.canvas};">
+<tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width:600px;">
+<tr><td class="em-pad" style="padding:8px 32px 20px;font-family:${FONT};font-size:18px;line-height:24px;font-weight:700;letter-spacing:-0.01em;"><span class="em-text" style="color:${C.text};">${store}</span></td></tr>
+<tr><td class="em-card" bgcolor="${C.card}" style="background:${C.card};border:1px solid ${C.line};border-radius:12px;">
+<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr><td class="em-pad" style="padding:32px 32px 16px;">
+<h1 class="em-text" style="margin:0 0 16px;font-family:${FONT};font-size:24px;line-height:32px;font-weight:700;letter-spacing:-0.02em;color:${C.text};">${escapeHtml(input.title)}</h1>
+${input.body}
+</td></tr>
+</table>
+</td></tr>
+<tr><td class="em-pad" style="padding:20px 32px 8px;font-family:${FONT};font-size:13px;line-height:20px;color:${C.subtle};">
+<span class="em-muted" style="color:${C.subtle};">${input.footerNote ? `${input.footerNote}<br>` : ""}Questions? Email <a class="em-link" href="mailto:${support}" style="color:${C.muted};text-decoration:underline;">${support}</a>.<br>${store}</span>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+var SUPPORT_EMAIL, FONT, C, escapeHtml, p, emailParagraph, emailMuted;
+var init_email_layout = __esm({
+  "features/keystone/lib/email-layout.ts"() {
+    "use strict";
+    SUPPORT_EMAIL = "hello@gym.openship.org";
+    FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
+    C = {
+      canvas: "#f4f4f5",
+      card: "#ffffff",
+      text: "#18181b",
+      muted: "#52525b",
+      subtle: "#71717a",
+      line: "#e4e4e7",
+      panel: "#fafafa",
+      button: "#18181b",
+      buttonText: "#ffffff",
+      link: "#18181b"
+    };
+    escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    p = (html, style = "") => `<p class="em-text" style="margin:0 0 16px;font-family:${FONT};font-size:16px;line-height:24px;color:${C.text};${style}">${html}</p>`;
+    emailParagraph = p;
+    emailMuted = (html) => `<p class="em-muted" style="margin:0 0 16px;font-family:${FONT};font-size:14px;line-height:22px;color:${C.muted};">${html}</p>`;
+  }
+});
+
+// features/keystone/lib/mail.ts
+var mail_exports = {};
+__export(mail_exports, {
+  mailDeliveryEnabled: () => mailDeliveryEnabled,
+  mailTransport: () => mailTransport,
+  passwordResetUrl: () => passwordResetUrl,
+  sendEmailChangeConfirmation: () => sendEmailChangeConfirmation,
+  sendEmailChangedNotice: () => sendEmailChangedNotice,
+  sendPasswordResetEmail: () => sendPasswordResetEmail
+});
+function mailDeliveryEnabled() {
+  const flag = process.env.MAIL_ENABLED;
+  const enabled = flag === "true" || flag === void 0 && process.env.NODE_ENV !== "production";
+  return enabled && Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM);
+}
+function mailTransport() {
+  if (!mailDeliveryEnabled()) throw new Error("Email delivery is turned off for this Gym deployment");
+  const port = Number(process.env.SMTP_PORT || 587);
+  return (0, import_nodemailer.createTransport)({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: port === 465,
+    auth: process.env.SMTP_USER && process.env.SMTP_PASSWORD ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : void 0
+  });
+}
+function escapeHtml2(value) {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+function linkEmail({ heading, links, footer }) {
+  return emailLayout({
+    preheader: heading,
+    title: heading,
+    body: `${links.map((link) => emailButton(link.label, link.url)).join("")}
+${emailMuted(escapeHtml2(footer))}`
+  });
+}
+function recipientOutcome(info, to) {
+  const listed = (values) => Array.isArray(values) && values.some((value) => String(value?.address ?? value).toLowerCase() === to.toLowerCase());
+  if (listed(info?.rejected)) return "rejected";
+  if (listed(info?.accepted)) return "accepted";
+  return "unconfirmed";
+}
+async function deliver(to, subject, html) {
+  const info = await mailTransport().sendMail({ to, from: process.env.SMTP_FROM, subject, html });
+  if (process.env.MAIL_USER?.includes("ethereal.email")) {
+    console.log(`\u{1F4E7} Message Sent!  Preview it at ${(0, import_nodemailer.getTestMessageUrl)(info)}`);
+  }
+  return recipientOutcome(info, to);
+}
+function passwordResetUrl(resetToken, identity, audience) {
+  const origin = resolvePublicBaseUrl();
+  if (audience === "dashboard") return `${origin}/dashboard/reset?token=${encodeURIComponent(resetToken)}`;
+  return `${origin}/reset-password?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(identity)}`;
+}
+async function sendPasswordResetEmail(resetToken, to, surfaces) {
+  const links = [];
+  if (surfaces.storefront || !surfaces.dashboard) links.push({ url: passwordResetUrl(resetToken, to, "storefront"), label: surfaces.dashboard ? "Reset on the member site" : "Set password" });
+  if (surfaces.dashboard) links.push({ url: passwordResetUrl(resetToken, to, "dashboard"), label: surfaces.storefront ? "Reset for the staff dashboard" : "Set password" });
+  return deliver(to, "Set your password", linkEmail({
+    heading: "Use this link to set your password.",
+    links,
+    footer: "The link works once and expires soon. If you did not request it, you can ignore this email."
+  }));
+}
+async function sendEmailChangeConfirmation(url, to) {
+  return deliver(to, "Confirm your new sign-in email", linkEmail({
+    heading: "Confirm this address as your new sign-in email.",
+    links: [{ url, label: "Confirm email" }],
+    footer: "Open the link while signed in to your account. It expires in an hour. If you did not ask for this, ignore this email; nothing changes."
+  }));
+}
+async function sendEmailChangedNotice(to) {
+  return deliver(to, "Your sign-in email was changed", linkEmail({
+    heading: "The sign-in email for your account was changed.",
+    links: [],
+    footer: "If you made this change, there's nothing to do. If you didn't, contact the club right away."
+  }));
+}
+var import_nodemailer;
+var init_mail = __esm({
+  "features/keystone/lib/mail.ts"() {
+    "use strict";
+    import_nodemailer = require("nodemailer");
+    init_internal_origin();
+    init_email_layout();
+  }
+});
+
+// features/keystone/lib/confirmation-mail.ts
+var confirmation_mail_exports = {};
+__export(confirmation_mail_exports, {
+  sendConfirmationMail: () => sendConfirmationMail
+});
+async function sendConfirmationMail(mail) {
+  try {
+    const info = await mailTransport().sendMail({
+      to: mail.to,
+      from: process.env.SMTP_FROM,
+      subject: mail.subject,
+      html: emailLayout({
+        preheader: mail.heading,
+        title: mail.heading,
+        body: `${mail.lines.map((line) => emailParagraph(escapeHtml(line))).join("")}
+${emailButton(mail.link.label, mail.link.url)}`
+      })
+    });
+    const rejected = Array.isArray(info?.rejected) && info.rejected.length > 0;
+    return rejected ? { sent: false, error: "recipient_rejected" } : { sent: true, messageId: typeof info?.messageId === "string" ? info.messageId : void 0, response: typeof info?.response === "string" ? info.response : void 0 };
+  } catch (error) {
+    return { sent: false, error: error instanceof Error ? error.message : "send_failed" };
+  }
+}
+var init_confirmation_mail = __esm({
+  "features/keystone/lib/confirmation-mail.ts"() {
+    "use strict";
+    init_mail();
+    init_email_layout();
+  }
+});
+
+// features/keystone/lib/order-confirmation.ts
+var order_confirmation_exports = {};
+__export(order_confirmation_exports, {
+  deliverBookingConfirmation: () => deliverBookingConfirmation,
+  deliverMembershipConfirmation: () => deliverMembershipConfirmation
+});
+async function claim(prisma, input) {
+  try {
+    return await prisma.operationalNotice.create({
+      data: { organizationId: input.organizationId, memberId: input.memberId || null, key: operationKey(input.organizationId, input.key), kind: input.kind, message: "sending", status: "resolved", resolvedAt: /* @__PURE__ */ new Date(), history: [] },
+      select: { id: true }
+    });
+  } catch (error) {
+    if (error?.code === "P2002") return null;
+    throw error;
+  }
+}
+async function record(prisma, id, status, error, messageId, response) {
+  await prisma.operationalNotice.update({ where: { id }, data: { message: status, history: [{ action: "confirmation-email", status, at: (/* @__PURE__ */ new Date()).toISOString(), ...messageId ? { messageId: messageId.slice(0, 200) } : {}, ...response ? { smtpResponse: response.slice(0, 300) } : {}, ...error ? { error: error.slice(0, 200) } : {} }] } });
+}
+async function deliver2(prisma, input, send) {
+  try {
+    const notice = await claim(prisma, input);
+    if (!notice) return;
+    try {
+      if (!input.to) {
+        await record(prisma, notice.id, "skipped_no_recipient");
+        return;
+      }
+      const mail = await Promise.resolve().then(() => (init_mail(), mail_exports));
+      if (!mail.mailDeliveryEnabled()) {
+        await record(prisma, notice.id, "skipped_not_configured");
+        return;
+      }
+      const sender = send || (await Promise.resolve().then(() => (init_confirmation_mail(), confirmation_mail_exports))).sendConfirmationMail;
+      const result = await sender(input.build());
+      await (result.sent ? record(prisma, notice.id, "sent", void 0, result.messageId, result.response) : record(prisma, notice.id, "failed", result.error || "send_failed"));
+    } catch (error) {
+      try {
+        await record(prisma, notice.id, "failed", error instanceof Error ? error.message : "send_failed");
+      } catch {
+      }
+    }
+  } catch (error) {
+    console.error("Confirmation email bookkeeping failed:", error instanceof Error ? error.message : "unknown");
+  }
+}
+async function deliverBookingConfirmation(prisma, bookingId, send) {
+  try {
+    const booking = await prisma.classBooking.findUnique({
+      where: { id: bookingId },
+      select: {
+        id: true,
+        organizationId: true,
+        memberId: true,
+        memberName: true,
+        memberEmail: true,
+        status: true,
+        waitlistPosition: true,
+        organization: { select: { name: true, timezone: true } },
+        classInstance: { select: { date: true, location: { select: { name: true } }, classSchedule: { select: { name: true, location: { select: { name: true } } } } } }
+      }
+    });
+    if (!booking) return;
+    await deliver2(prisma, {
+      organizationId: booking.organizationId,
+      memberId: booking.memberId,
+      key: `confirmation-email:booking:${booking.id}`,
+      kind: "confirmation_email",
+      to: booking.memberEmail,
+      build: () => {
+        const zone = booking.organization?.timezone || "UTC";
+        const name = booking.classInstance?.classSchedule?.name || "your class";
+        const place = booking.classInstance?.location?.name || booking.classInstance?.classSchedule?.location?.name;
+        const waitlisted = booking.status === "waitlist";
+        const publicAppUrl2 = (path) => publicAppUrl(path);
+        return {
+          to: booking.memberEmail,
+          subject: `${waitlisted ? "You are on the waitlist for" : "Booked:"} ${name} at ${booking.organization?.name || "the club"}`,
+          heading: waitlisted ? `You are on the waitlist for ${name}` : `You are booked into ${name}`,
+          lines: [when(booking.classInstance.date, zone), ...place ? [place] : [], ...waitlisted ? [`Waitlist position ${booking.waitlistPosition ?? ""}. A released place is confirmed automatically.`.trim()] : ["Cancel from your bookings if your plans change."]],
+          link: { url: publicAppUrl2("/account/bookings"), label: "View your bookings" }
+        };
+      }
+    }, send);
+  } catch (error) {
+    console.error("Booking confirmation email failed:", error instanceof Error ? error.message : "unknown");
+  }
+}
+async function deliverMembershipConfirmation(prisma, input, send) {
+  try {
+    const membership = await prisma.membership.findFirst({
+      where: { organizationId: input.organizationId, stripeSubscriptionId: input.stripeSubscriptionId },
+      select: { id: true, billingCycle: true, tier: { select: { name: true } }, organization: { select: { name: true } }, member: { select: { id: true, email: true, name: true } } }
+    });
+    if (!membership) return;
+    const memberRow = membership.member ? await prisma.member.findFirst({ where: { organizationId: input.organizationId, userId: membership.member.id }, select: { id: true } }) : null;
+    await deliver2(prisma, {
+      organizationId: input.organizationId,
+      memberId: memberRow?.id ?? null,
+      key: `confirmation-email:membership:${input.invoiceId}`,
+      kind: "confirmation_email",
+      to: membership.member?.email || "",
+      build: () => {
+        const publicAppUrl2 = (path) => publicAppUrl(path);
+        const paid = new Intl.NumberFormat("en-US", { style: "currency", currency: input.currencyCode || "USD" }).format(input.amountCents / 100);
+        return {
+          to: membership.member.email,
+          subject: `Welcome to ${membership.organization?.name || "the club"}: your membership is active`,
+          heading: `Your ${membership.tier?.name || ""} membership is active`.replace("  ", " "),
+          lines: [`${membership.billingCycle === "annual" ? "Annual" : "Monthly"} billing, first payment ${paid}.`],
+          link: { url: publicAppUrl2("/account/membership"), label: "View your membership" }
+        };
+      }
+    }, send);
+  } catch (error) {
+    console.error("Membership confirmation email failed:", error instanceof Error ? error.message : "unknown");
+  }
+}
+var when;
+var init_order_confirmation = __esm({
+  "features/keystone/lib/order-confirmation.ts"() {
+    "use strict";
+    init_operational_notices();
+    init_internal_origin();
+    when = (value, timeZone) => new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(new Date(value));
+  }
+});
+
 // features/keystone/mutations/classCapacity.ts
 var classCapacity_exports = {};
 __export(classCapacity_exports, {
+  DROP_IN_CLASS_FULL: () => DROP_IN_CLASS_FULL,
   assertNoMemberServiceConflict: () => assertNoMemberServiceConflict,
   createCapacityControlledBooking: () => createCapacityControlledBooking,
+  createCapacityControlledBookingInTransaction: () => createCapacityControlledBookingInTransaction,
+  effectivePhysicalResource: () => effectivePhysicalResource,
+  effectiveSessionCapacity: () => effectiveSessionCapacity,
   fillReleasedSeats: () => fillReleasedSeats,
+  isDropInBooking: () => isDropInBooking,
   lockTransactionKey: () => lockTransactionKey,
   promoteCapacityControlledWaitlistBooking: () => promoteCapacityControlledWaitlistBooking,
   promoteCapacityControlledWaitlistBookingInTransaction: () => promoteCapacityControlledWaitlistBookingInTransaction,
+  sendBookingConfirmation: () => sendBookingConfirmation,
   updateCapacityControlledClassInstance: () => updateCapacityControlledClassInstance,
   updateCapacityControlledClassSchedule: () => updateCapacityControlledClassSchedule,
   updateCapacityControlledClassScheduleInTransaction: () => updateCapacityControlledClassScheduleInTransaction
@@ -402,6 +994,16 @@ async function lockTransactionKey(transaction, key) {
     FROM (SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))) AS acquired
   `;
   if (result instanceof Error) throw result;
+}
+function effectivePhysicalResource(instance) {
+  if (instance?.resource) return instance.resource;
+  if (!instance?.resourceId && !instance?.endsAt) return instance?.classSchedule?.resource ?? null;
+  return null;
+}
+function effectiveSessionCapacity(instance) {
+  const declared = instance?.maxCapacity ?? instance?.classSchedule?.maxCapacity ?? 20;
+  const room = effectivePhysicalResource(instance);
+  return room && Number.isInteger(room.capacity) ? Math.min(declared, room.capacity) : declared;
 }
 function boundedCapacity(value, allowNull = false) {
   if (allowNull && value === null) return null;
@@ -414,10 +1016,11 @@ async function updateCapacityControlledClassInstance(prisma, input) {
   prisma = guardKeystonePrismaResults(prisma);
   return prisma.$transaction(async (transaction) => {
     await lockParticipationPolicy(transaction, input.organizationId);
+    await lockTransactionKey(transaction, `gym-scheduling:${input.organizationId}`);
     await lockTransactionKey(transaction, `class-instance:${input.classInstanceId}`);
     const instance = await transaction.classInstance.findFirst({
       where: { id: input.classInstanceId, organizationId: input.organizationId },
-      include: { classSchedule: { select: { maxCapacity: true } }, resource: { select: { capacity: true } } }
+      include: { classSchedule: { select: { maxCapacity: true, resource: PHYSICAL_RESOURCE } }, resource: PHYSICAL_RESOURCE }
     });
     if (!instance || instance.organizationId !== input.organizationId) {
       throw new Error("Class instance was not found in this organization");
@@ -425,7 +1028,8 @@ async function updateCapacityControlledClassInstance(prisma, input) {
     const requested = boundedCapacity(input.maxCapacity, true);
     const effectiveCapacity = requested ?? instance.classSchedule?.maxCapacity;
     if (typeof effectiveCapacity !== "number") throw new Error("Class instance capacity is unavailable");
-    if (instance.resource && effectiveCapacity > instance.resource.capacity) throw new Error("Class capacity exceeds resource capacity");
+    const room = effectivePhysicalResource(instance);
+    if (room && effectiveCapacity > room.capacity) throw new Error("Class capacity exceeds the room's capacity");
     const confirmed = await transaction.classBooking.count({
       where: { classInstanceId: instance.id, organizationId: input.organizationId, status: "confirmed" }
     });
@@ -497,7 +1101,19 @@ async function updateCapacityControlledClassSchedule(prisma, input) {
 }
 async function createCapacityControlledBooking(prisma, input) {
   prisma = guardKeystonePrismaResults(prisma);
-  return prisma.$transaction(async (transaction) => {
+  const result = await prisma.$transaction((transaction) => createCapacityControlledBookingInTransaction(transaction, input));
+  await sendBookingConfirmation(prisma, result.bookingId);
+  return result;
+}
+async function sendBookingConfirmation(prisma, bookingId) {
+  try {
+    const { deliverBookingConfirmation: deliverBookingConfirmation2 } = await Promise.resolve().then(() => (init_order_confirmation(), order_confirmation_exports));
+    await deliverBookingConfirmation2(prisma, bookingId);
+  } catch {
+  }
+}
+async function createCapacityControlledBookingInTransaction(transaction, input) {
+  {
     await lockParticipationPolicy(transaction, input.actorOrganizationId);
     await lockTransactionKey(transaction, `class-instance:${input.classInstanceId}`);
     await lockTransactionKey(transaction, `member:${input.memberId}`);
@@ -506,6 +1122,7 @@ async function createCapacityControlledBooking(prisma, input) {
       include: {
         location: { select: { id: true, name: true, address: true, isActive: true } },
         instructor: { select: { id: true, user: { select: { name: true } } } },
+        resource: PHYSICAL_RESOURCE,
         classSchedule: {
           select: {
             id: true,
@@ -514,6 +1131,7 @@ async function createCapacityControlledBooking(prisma, input) {
             startTime: true,
             endTime: true,
             isActive: true,
+            resource: PHYSICAL_RESOURCE,
             classType: { select: { id: true, name: true } },
             location: { select: { id: true, name: true, address: true, isActive: true } },
             instructor: { select: { id: true, user: { select: { name: true } } } }
@@ -551,23 +1169,25 @@ async function createCapacityControlledBooking(prisma, input) {
     if (duplicate) {
       throw new Error("Member already has an active booking for this class instance");
     }
-    const membership = await transaction.membership.findFirst({
+    const dropIn = input.dropIn ?? null;
+    const membership = dropIn ? null : await transaction.membership.findFirst({
       where: { memberId: member.user.id, organizationId: input.actorOrganizationId, status: "active" },
       include: { tier: { select: { classCreditsPerMonth: true, maxClassBookings: true } } }
     });
-    if (!membership) throw new Error("No active membership found");
-    await assertNoPendingMembershipFreeze(transaction, input.actorOrganizationId, membership.id);
-    await assertParticipationAllowed(transaction, input.actorOrganizationId, member.id, classInstance.date, classInstance.locationId);
-    const grant = await ensureMonthlyCreditGrant(transaction, membership, classInstance.date);
-    const unlimited = grant.allowance === -1;
-    const currentCredits = grant.remaining;
-    if (!unlimited && currentCredits <= 0) {
+    if (!dropIn && !membership) throw new Error("No active membership found");
+    if (membership) await assertNoPendingMembershipFreeze(transaction, input.actorOrganizationId, membership.id);
+    const participation = await assertParticipationAllowed(transaction, input.actorOrganizationId, member.id, classInstance.date, classInstance.locationId);
+    const grant = membership ? await ensureMonthlyCreditGrant(transaction, membership, classInstance.date) : null;
+    const unlimited = grant ? grant.allowance === -1 : false;
+    const currentCredits = grant ? grant.remaining : 0;
+    if (grant && !unlimited && currentCredits <= 0) {
       throw new Error("No class credits remaining");
     }
-    const maximumBookings = membership.agreementSnapshot?.maxClassBookings ?? membership.tier?.maxClassBookings ?? 0;
+    const maximumBookings = membership ? membership.agreementSnapshot?.maxClassBookings ?? membership.tier?.maxClassBookings ?? 0 : 0;
     if (maximumBookings > 0 && await transaction.classBooking.count({ where: { organizationId: input.actorOrganizationId, memberId: member.id, status: { in: ["confirmed", "waitlist"] }, classInstance: { date: { gt: /* @__PURE__ */ new Date() } } } }) >= maximumBookings) throw new Error("Membership concurrent booking limit reached");
     await fillReleasedSeats(transaction, input.classInstanceId, input.actorOrganizationId);
-    const capacity = classInstance.maxCapacity ?? classInstance.classSchedule?.maxCapacity ?? 20;
+    if (effectivePhysicalResource(classInstance)?.isActive === false) throw new Error("This class's room is closed for new bookings");
+    const capacity = effectiveSessionCapacity(classInstance);
     const confirmedCount = await transaction.classBooking.count({
       where: {
         classInstanceId: input.classInstanceId,
@@ -576,6 +1196,7 @@ async function createCapacityControlledBooking(prisma, input) {
       }
     });
     const atCapacity = confirmedCount >= capacity;
+    if (atCapacity && dropIn) throw new Error(DROP_IN_CLASS_FULL);
     if (atCapacity && input.capacityMode === "reject") {
       throw new Error("Class is at capacity, cannot process walk-in");
     }
@@ -588,6 +1209,7 @@ async function createCapacityControlledBooking(prisma, input) {
     }) + 1 : null;
     const status = atCapacity ? "waitlist" : "confirmed";
     if (status === "confirmed") await assertNoMemberServiceConflict(transaction, member.id, input.actorOrganizationId, classInstance);
+    await lockActiveOrganization(transaction, input.actorOrganizationId);
     const booking = await transaction.classBooking.create({
       data: {
         organizationId: classInstance.organizationId,
@@ -596,7 +1218,7 @@ async function createCapacityControlledBooking(prisma, input) {
         memberName: member.user.name || member.name,
         memberEmail: member.user.email || member.email,
         memberPhone: member.phone || "",
-        serviceSnapshot: bookingServiceSnapshot(classInstance, unlimited),
+        serviceSnapshot: bookingServiceSnapshot(classInstance, { unlimited, status, membership, grant, participation, dropIn }),
         status,
         activeBookingKey: "active",
         waitlistPosition,
@@ -604,23 +1226,27 @@ async function createCapacityControlledBooking(prisma, input) {
       },
       select: { id: true }
     });
-    if (status === "confirmed") await debitBookingCredit(transaction, membership, booking.id, classInstance.date);
+    if (status === "confirmed" && membership) await debitBookingCredit(transaction, membership, booking.id, classInstance.date);
     await enqueueOperationalNotice(transaction, {
       organizationId: input.actorOrganizationId,
       memberId: member.id,
       key: `booking:${booking.id}:created`,
       kind: "booking",
-      message: status === "confirmed" ? "Your class booking is confirmed." : "You joined the waitlist. A released place is automatically confirmed and reserves any required class credit; we will notify you."
+      message: dropIn ? "Your drop-in class is paid and confirmed." : status === "confirmed" ? "Your class booking is confirmed." : "You joined the waitlist. A released place is automatically confirmed and reserves any required class credit; we will notify you."
     });
     return {
       bookingId: booking.id,
       status,
       waitlistPosition,
-      creditsRemaining: unlimited ? -1 : currentCredits - (status === "confirmed" ? 1 : 0)
+      creditsRemaining: dropIn ? 0 : unlimited ? -1 : currentCredits - (status === "confirmed" ? 1 : 0)
     };
-  });
+  }
 }
-function bookingServiceSnapshot(classInstance, unlimitedCredits) {
+function isDropInBooking(booking) {
+  return booking?.serviceSnapshot?.credit?.basis === "drop_in_paid";
+}
+function bookingServiceSnapshot(classInstance, terms) {
+  const unlimitedCredits = terms.unlimited;
   const schedule = classInstance.classSchedule;
   const coach = classInstance.instructor ?? schedule?.instructor ?? null;
   const site = classInstance.location ?? schedule?.location ?? null;
@@ -628,7 +1254,7 @@ function bookingServiceSnapshot(classInstance, unlimitedCredits) {
   const duration = minutes(schedule?.endTime) - minutes(schedule?.startTime);
   const endsAt = classInstance.endsAt || new Date(classInstance.date.getTime() + (Number.isFinite(duration) && duration > 0 ? duration : 60) * 6e4);
   return {
-    version: 1,
+    version: 2,
     classScheduleId: schedule?.id ?? null,
     className: schedule?.name ?? "Class",
     classTypeId: schedule?.classType?.id ?? null,
@@ -640,7 +1266,22 @@ function bookingServiceSnapshot(classInstance, unlimitedCredits) {
     locationAddress: site?.address ?? null,
     startsAt: classInstance.date.toISOString(),
     endsAt: new Date(endsAt).toISOString(),
-    creditTerms: unlimitedCredits ? "unlimited membership" : "one membership class credit, restored if cancelled before the class starts"
+    creditTerms: terms.dropIn ? "paid drop-in visit" : unlimitedCredits ? "unlimited membership" : "one membership class credit, restored if cancelled before the class starts",
+    credit: terms.dropIn ? {
+      basis: "drop_in_paid",
+      paymentSessionId: terms.dropIn.paymentSessionId,
+      amount: terms.dropIn.amount,
+      currencyCode: terms.dropIn.currencyCode
+    } : {
+      membershipId: terms.membership.id,
+      agreementVersion: terms.membership.agreementSnapshot?.version ?? null,
+      grantId: terms.grant?.id ?? null,
+      periodStart: terms.grant?.periodStart ? new Date(terms.grant.periodStart).toISOString() : null,
+      periodEnd: terms.grant?.periodEnd ? new Date(terms.grant.periodEnd).toISOString() : null,
+      // A waitlist place reserves its credit only when it is confirmed (see the booking's credit entry).
+      basis: unlimitedCredits ? "unlimited" : terms.status === "confirmed" ? "debited_at_booking" : "debited_when_confirmed"
+    },
+    participation: terms.participation
   };
 }
 async function fillReleasedSeats(transaction, classInstanceId, organizationId) {
@@ -666,7 +1307,8 @@ async function promoteCapacityControlledWaitlistBookingInTransaction(transaction
     where: { id: classInstanceId, organizationId },
     include: {
       location: { select: { isActive: true } },
-      classSchedule: { select: { maxCapacity: true, startTime: true, endTime: true, isActive: true, location: { select: { isActive: true } } } }
+      resource: PHYSICAL_RESOURCE,
+      classSchedule: { select: { maxCapacity: true, startTime: true, endTime: true, isActive: true, location: { select: { isActive: true } }, resource: PHYSICAL_RESOURCE } }
     }
   });
   if (!classInstance) throw new Error("Class instance not found");
@@ -679,7 +1321,7 @@ async function promoteCapacityControlledWaitlistBookingInTransaction(transaction
   if (classInstance.date.getTime() <= Date.now()) {
     return { promoted: false, message: "Past classes cannot promote a waitlist" };
   }
-  const capacity = classInstance.maxCapacity ?? classInstance.classSchedule?.maxCapacity ?? 20;
+  const capacity = effectiveSessionCapacity(classInstance);
   const confirmedCount = await transaction.classBooking.count({
     where: { classInstanceId, organizationId, status: "confirmed" }
   });
@@ -778,6 +1420,7 @@ async function assertNoMemberServiceConflict(tx, memberId, organizationId, insta
     if (other.date < end && otherEnd > instance.date) throw new Error("Member has an overlapping class");
   }
 }
+var PHYSICAL_RESOURCE, DROP_IN_CLASS_FULL;
 var init_classCapacity = __esm({
   "features/keystone/mutations/classCapacity.ts"() {
     "use strict";
@@ -785,6 +1428,9 @@ var init_classCapacity = __esm({
     init_operational_policy();
     init_operational_notices();
     init_prisma_result();
+    init_current_actor();
+    PHYSICAL_RESOURCE = { select: { capacity: true, isActive: true } };
+    DROP_IN_CLASS_FULL = "This class filled up before your drop-in payment completed";
   }
 });
 
@@ -899,6 +1545,7 @@ var init_stripe_adapter = __esm({
             mode: "payment",
             ...input.expiresAt ? { expires_at: Math.floor(input.expiresAt.getTime() / 1e3) } : {},
             client_reference_id: input.idempotencyKey,
+            ...input.customerEmail ? { customer_email: input.customerEmail } : {},
             line_items: [{
               quantity: 1,
               price_data: {
@@ -948,6 +1595,14 @@ var init_stripe_adapter = __esm({
         return getStripeClient().subscriptions.update(
           subscriptionId,
           { cancel_at_period_end: true },
+          idempotencyKey ? { idempotencyKey } : void 0
+        );
+      },
+      /** Ends the subscription immediately (no further renewals); no refund is created. */
+      cancelSubscriptionNow(subscriptionId, idempotencyKey) {
+        return getStripeClient().subscriptions.cancel(
+          subscriptionId,
+          {},
           idempotencyKey ? { idempotencyKey } : void 0
         );
       },
@@ -1018,204 +1673,10 @@ var init_stripe_adapter = __esm({
       retrieveRefund(refundId) {
         return getStripeClient().refunds.retrieve(refundId);
       },
-      constructWebhookEvent(payload, signature2) {
+      constructWebhookEvent(payload, signature) {
         const secret = process.env.STRIPE_WEBHOOK_SECRET;
         if (!secret) throw new Error("Stripe webhook secret not configured.");
-        return getStripeClient().webhooks.constructEvent(payload, signature2, secret);
-      }
-    };
-  }
-});
-
-// features/integrations/payment/test-adapter.ts
-var test_adapter_exports = {};
-__export(test_adapter_exports, {
-  resetTestRefundsForTesting: () => resetTestRefundsForTesting,
-  resetTestSubscriptionStatesForTesting: () => resetTestSubscriptionStatesForTesting,
-  setTestSubscriptionStateForTesting: () => setTestSubscriptionStateForTesting,
-  testPaymentProviderAdapter: () => testPaymentProviderAdapter
-});
-function digest(value) {
-  return (0, import_node_crypto3.createHash)("sha256").update(value).digest("hex").slice(0, 24);
-}
-function encodeSession(input) {
-  return Buffer.from(JSON.stringify(input)).toString("base64url");
-}
-function decodeSession(providerSessionId) {
-  const encoded = providerSessionId.replace(/^test_cs_/, "");
-  return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-}
-function setTestSubscriptionStateForTesting(subscription) {
-  testSubscriptions.set(subscription.id, structuredClone(subscription));
-}
-function resetTestSubscriptionStatesForTesting() {
-  testSubscriptions.clear();
-}
-function resetTestRefundsForTesting() {
-  testRefunds.clear();
-}
-function updateTestSubscription(subscriptionId, data) {
-  const existing = testSubscriptions.get(subscriptionId);
-  const now = Math.floor(Date.now() / 1e3);
-  const subscription = {
-    id: subscriptionId,
-    object: "subscription",
-    customer: "test_customer",
-    status: "active",
-    current_period_start: now,
-    current_period_end: now + 30 * 24 * 60 * 60,
-    metadata: {},
-    items: { object: "list", data: [], has_more: false, url: "/v1/subscription_items" },
-    ...existing,
-    ...data
-  };
-  testSubscriptions.set(subscriptionId, subscription);
-  return structuredClone(subscription);
-}
-function verifySignature(payload, signature2) {
-  const secret = process.env.PAYMENT_TEST_WEBHOOK_SECRET;
-  if (!secret) throw new Error("Payment test webhook secret not configured.");
-  const expected = (0, import_node_crypto3.createHmac)("sha256", secret).update(payload).digest("hex");
-  const provided = signature2.replace(/^test=/, "");
-  if (expected.length !== provided.length || !(0, import_node_crypto3.timingSafeEqual)(Buffer.from(expected), Buffer.from(provided))) {
-    throw new Error("Payment test webhook signature verification failed.");
-  }
-}
-var import_node_crypto3, testSubscriptions, testRefunds, testPaymentProviderAdapter;
-var init_test_adapter = __esm({
-  "features/integrations/payment/test-adapter.ts"() {
-    "use strict";
-    import_node_crypto3 = require("node:crypto");
-    testSubscriptions = /* @__PURE__ */ new Map();
-    testRefunds = /* @__PURE__ */ new Map();
-    testPaymentProviderAdapter = {
-      async validateMembershipPrice(input) {
-        if (!input.priceId || !Number.isInteger(input.amount) || input.amount < 0) {
-          throw new Error("Payment test price configuration is invalid.");
-        }
-      },
-      async createMembershipCheckout(input) {
-        if (input.priceId === "test_fail") {
-          throw new Error("Payment test adapter forced checkout failure.");
-        }
-        const providerCustomerId = input.customerId || `test_customer_${digest(input.userId)}`;
-        const providerSessionId = `test_cs_${encodeSession({
-          userId: input.userId,
-          userName: input.userName,
-          userEmail: input.userEmail,
-          tierId: input.tierId,
-          billingCycle: input.billingCycle,
-          amount: input.amount,
-          currencyCode: input.currencyCode,
-          idempotencyKey: input.idempotencyKey,
-          providerCustomerId
-        })}`;
-        return {
-          providerSessionId,
-          providerCustomerId,
-          checkoutUrl: `https://payments.test/checkout/${digest(input.idempotencyKey)}`,
-          expiresAt: new Date(Date.now() + 30 * 60 * 1e3).toISOString()
-        };
-      },
-      async retrieveMembershipCheckout(providerSessionId) {
-        const data = decodeSession(providerSessionId);
-        const now = Math.floor(Date.now() / 1e3);
-        const subscriptionId = `test_sub_${digest(data.idempotencyKey)}`;
-        const periodEnd = new Date(now * 1e3);
-        if (data.billingCycle === "annual") periodEnd.setUTCFullYear(periodEnd.getUTCFullYear() + 1);
-        else periodEnd.setUTCMonth(periodEnd.getUTCMonth() + 1);
-        const subscription = testSubscriptions.get(subscriptionId) || updateTestSubscription(subscriptionId, {
-          customer: data.providerCustomerId,
-          status: "active",
-          current_period_start: now,
-          current_period_end: Math.floor(periodEnd.getTime() / 1e3),
-          metadata: {
-            paymentSessionKey: data.idempotencyKey,
-            userId: data.userId,
-            tierId: data.tierId,
-            billingCycle: data.billingCycle
-          }
-        });
-        return {
-          id: providerSessionId,
-          object: "checkout.session",
-          mode: "subscription",
-          status: "complete",
-          payment_status: "paid",
-          currency: data.currencyCode.toLowerCase(),
-          customer: data.providerCustomerId,
-          metadata: {
-            source: "openfront-gym-test",
-            paymentSessionKey: data.idempotencyKey,
-            userId: data.userId,
-            tierId: data.tierId,
-            billingCycle: data.billingCycle,
-            amount: String(data.amount),
-            currencyCode: data.currencyCode
-          },
-          subscription
-        };
-      },
-      async retrieveSubscription(subscriptionId) {
-        const subscription = testSubscriptions.get(subscriptionId);
-        if (!subscription) throw new Error(`Test subscription ${subscriptionId} is not configured.`);
-        return structuredClone(subscription);
-      },
-      async createSetupIntent(customerId) {
-        const id = `test_seti_${digest(customerId)}`;
-        return { id, clientSecret: `${id}_secret` };
-      },
-      async cancelSubscriptionAtPeriodEnd(subscriptionId) {
-        return updateTestSubscription(subscriptionId, {
-          status: "active",
-          cancel_at_period_end: true,
-          current_period_end: Math.floor(Date.now() / 1e3) + 30 * 24 * 60 * 60
-        });
-      },
-      async pauseSubscription(subscriptionId) {
-        return updateTestSubscription(subscriptionId, {
-          status: "active",
-          pause_collection: { behavior: "void", resumes_at: null }
-        });
-      },
-      async resumeSubscription(subscriptionId) {
-        return updateTestSubscription(subscriptionId, { status: "active", pause_collection: null });
-      },
-      async changeSubscriptionPrice(subscriptionId, _priceId, metadata, _idempotencyKey) {
-        const current = testSubscriptions.get(subscriptionId);
-        return updateTestSubscription(subscriptionId, {
-          status: "active",
-          metadata: { ...current?.metadata, ...metadata }
-        });
-      },
-      async createBillingPortalSession(customerId, returnUrl) {
-        return { url: `${returnUrl}${returnUrl.includes("?") ? "&" : "?"}testPortal=${digest(customerId)}` };
-      },
-      async refundPayment(paymentIntentId, amount, idempotencyKey, evidence) {
-        const key = `${paymentIntentId}:${idempotencyKey || "no-key"}`;
-        const existing = testRefunds.get(key);
-        if (existing) return structuredClone(existing);
-        const refund = {
-          id: `test_refund_${digest(key)}`,
-          object: "refund",
-          payment_intent: paymentIntentId,
-          amount: amount ?? 0,
-          currency: evidence?.currencyCode.toLowerCase() || "usd",
-          status: "succeeded",
-          metadata: evidence ? { gymRefundOperationKey: evidence.operationKey, gymRefundCurrency: evidence.currencyCode, gymRefundReason: evidence.reason } : {}
-        };
-        testRefunds.set(key, refund);
-        return structuredClone(refund);
-      },
-      async findRefundPayment(paymentIntentId, operationKey2) {
-        const refund = [...testRefunds.values()].find(
-          (candidate) => candidate.payment_intent === paymentIntentId && candidate.metadata?.gymRefundOperationKey === operationKey2
-        );
-        return refund ? structuredClone(refund) : null;
-      },
-      constructWebhookEvent(payload, signature2) {
-        verifySignature(payload, signature2);
-        return JSON.parse(payload);
+        return getStripeClient().webhooks.constructEvent(payload, signature, secret);
       }
     };
   }
@@ -1228,9 +1689,19 @@ __export(keystone_exports, {
 });
 module.exports = __toCommonJS(keystone_exports);
 
+// features/keystone/lib/s3-storage.ts
+function s3ForcePathStyle(endpoint2) {
+  let hostname = "";
+  try {
+    hostname = endpoint2 ? new URL(endpoint2).hostname : "";
+  } catch {
+  }
+  return !(hostname === "storageapi.dev" || hostname.endsWith(".storageapi.dev"));
+}
+
 // features/keystone/index.ts
 var import_auth2 = require("@keystone-6/auth");
-var import_core45 = require("@keystone-6/core");
+var import_core47 = require("@keystone-6/core");
 var import_config = require("dotenv/config");
 
 // features/keystone/models/Organization.ts
@@ -1273,6 +1744,19 @@ function canSeePeople(session) {
 function canEditPeople(session) {
   const role = session?.data.role;
   return Boolean(role?.canManageAllRecords || role?.canEditOtherPeople || role?.canManagePeople);
+}
+function nonStaffUserFilter(session) {
+  return { OR: [
+    { id: { equals: session.itemId } },
+    { role: null },
+    { role: { canAccessDashboard: { equals: false } } }
+  ] };
+}
+function nonStaffMemberFilter(session) {
+  return { OR: [
+    { user: null },
+    { user: nonStaffUserFilter(session) }
+  ] };
 }
 function ownBookingFilter(session) {
   return { member: { user: { id: { equals: session.itemId } } } };
@@ -1318,7 +1802,7 @@ var rules = {
   },
   canUpdateMember: ({ session }) => {
     if (!session) return false;
-    const narrower = canEditPeople(session) ? void 0 : { user: { id: { equals: session.itemId } } };
+    const narrower = isOperatorSession(session) ? void 0 : canEditPeople(session) ? nonStaffMemberFilter(session) : { user: { id: { equals: session.itemId } } };
     return tenantFilter({ session }, narrower);
   },
   canReadOwnMembership: ({ session }) => ownerFilter(session, { member: { id: { equals: session?.itemId } } }),
@@ -1338,8 +1822,8 @@ var rules = {
     if (!session.data.role?.isInstructor) return tenantFilter({ session }, memberFilter);
     return tenantFilter({ session }, { OR: [memberFilter, { classInstance: {
       OR: [
-        { instructor: { user: { id: { equals: session.itemId } } } },
-        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } } } } }] }
+        { instructor: { user: { id: { equals: session.itemId } }, isActive: { equals: true } } },
+        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } }, isActive: { equals: true } } } }] }
       ]
     } }] });
   },
@@ -1350,8 +1834,8 @@ var rules = {
     if (!session.data.role?.isInstructor) return tenantFilter({ session }, memberFilter);
     return tenantFilter({ session }, { OR: [memberFilter, { booking: { classInstance: {
       OR: [
-        { instructor: { user: { id: { equals: session.itemId } } } },
-        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } } } } }] }
+        { instructor: { user: { id: { equals: session.itemId } }, isActive: { equals: true } } },
+        { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { id: { equals: session.itemId } }, isActive: { equals: true } } } }] }
       ]
     } } }] });
   },
@@ -1389,12 +1873,13 @@ var rules = {
     if (!session) return false;
     return tenantFilter(
       { session },
-      canEditPeople(session) ? void 0 : { id: { equals: session.itemId } }
+      isOperatorSession(session) ? void 0 : canEditPeople(session) ? nonStaffUserFilter(session) : { id: { equals: session.itemId } }
     );
   },
-  canDeletePeople: ({ session }) => {
+  canDeletePeople: ({ session, listKey }) => {
     if (!session || !session.data?.role?.canManagePeople) return false;
-    return tenantFilter({ session });
+    if (isOperatorSession(session)) return tenantFilter({ session });
+    return tenantFilter({ session }, listKey === "Member" ? nonStaffMemberFilter(session) : nonStaffUserFilter(session));
   }
 };
 
@@ -1516,6 +2001,9 @@ init_prisma_result();
 function requiredRelationshipDb(relationName) {
   return (field) => field.replace(new RegExp(`(${relationName}\\s+\\w+)\\?`), "$1").replace(new RegExp(`(${relationName}Id\\s+String)\\?`), "$1");
 }
+function restrictDeleteDb(field) {
+  return field.replace(/@relation\(([^)]*fields:[^)]*)\)/, "@relation($1, onDelete: Restrict)");
+}
 function compoundUniqueDb(...constraints) {
   return (schema) => {
     const additions = constraints.map((constraint) => `  @@unique([${constraint}])`).join("\n");
@@ -1526,9 +2014,9 @@ ${additions}
 }
 function connectedRelationshipId(value) {
   if (!value || typeof value !== "object") return void 0;
-  const relationship44 = value;
-  if (relationship44.disconnect) return null;
-  return typeof relationship44.connect?.id === "string" ? relationship44.connect.id : void 0;
+  const relationship46 = value;
+  if (relationship46.disconnect) return null;
+  return typeof relationship46.connect?.id === "string" ? relationship46.connect.id : void 0;
 }
 function tenantOrganizationId(resolvedData, item) {
   const connected = connectedRelationshipId(resolvedData.organization);
@@ -1647,16 +2135,12 @@ function elevatedRoleCapabilities(candidate, actor2) {
 // lib/authRateLimit.ts
 var import_node_crypto = require("node:crypto");
 init_prisma_result();
-function rateLimitStorageKey(key) {
-  const bounded = key.trim().slice(0, 200);
-  if (!bounded) return "";
-  return `bucket:${(0, import_node_crypto.createHash)("sha256").update(bounded).digest("hex")}`;
+function budgetKey(namespace, ...parts) {
+  return JSON.stringify([namespace, ...parts.map((part) => part == null ? "" : String(part))]);
 }
-async function authAttemptAvailable(prisma, key, limit, now = /* @__PURE__ */ new Date()) {
-  const boundedKey = rateLimitStorageKey(key);
-  if (!boundedKey) return false;
-  const existing = await guardKeystonePrismaResults(prisma).authRateLimitBucket.findUnique({ where: { key: boundedKey } });
-  return !existing || existing.resetAt <= now || existing.count < limit;
+function rateLimitStorageKey(key) {
+  if (!key.trim()) return "";
+  return `bucket:${(0, import_node_crypto.createHash)("sha256").update(key).digest("hex")}`;
 }
 async function consumeAuthAttempt(prisma, key, limit, windowMs, now = /* @__PURE__ */ new Date()) {
   const boundedKey = rateLimitStorageKey(key);
@@ -1679,6 +2163,14 @@ async function consumeAuthAttempt(prisma, key, limit, windowMs, now = /* @__PURE
     return true;
   });
 }
+async function reserveAuthAttempt(prisma, key, limit, windowMs, now = /* @__PURE__ */ new Date()) {
+  return consumeAuthAttempt(prisma, key, limit, windowMs, now);
+}
+async function releaseAuthAttempt(prisma, key) {
+  const boundedKey = rateLimitStorageKey(key);
+  if (!boundedKey) return;
+  await guardKeystonePrismaResults(prisma).authRateLimitBucket.updateMany({ where: { key: boundedKey, count: { gt: 0 } }, data: { count: { decrement: 1 } } });
+}
 function normalizeAuthIdentity(value) {
   return typeof value === "string" ? value.trim().toLowerCase().slice(0, 254) : "";
 }
@@ -1688,30 +2180,55 @@ init_prisma_result();
 
 // features/keystone/lib/lifecycle-guards.ts
 init_prisma_result();
+init_classCapacity();
 var LIVE_APPOINTMENT = ["scheduled", "confirmed", "checked_in"];
-async function upcomingServicesAtLocation(context, organizationId, locationId) {
-  const prisma = guardKeystonePrismaResults(context.prisma);
-  const now = /* @__PURE__ */ new Date();
+var DAY_MS = 864e5;
+var minutesOf = (value) => {
+  const [h, m2] = String(value || "").split(":").map(Number);
+  return h * 60 + m2;
+};
+async function openClasses(tx, organizationId, scope, now) {
+  const [future, started] = await Promise.all([
+    tx.classInstance.count({ where: { organizationId, isCancelled: false, date: { gt: now }, OR: scope } }),
+    tx.classInstance.findMany({
+      where: { organizationId, isCancelled: false, date: { lte: now, gt: new Date(now.getTime() - DAY_MS) }, OR: scope },
+      select: { date: true, endsAt: true, classSchedule: { select: { startTime: true, endTime: true } } },
+      take: 500
+    })
+  ]);
+  const running = started.filter((instance) => {
+    if (instance.endsAt) return new Date(instance.endsAt) > now;
+    const duration = instance.classSchedule ? minutesOf(instance.classSchedule.endTime) - minutesOf(instance.classSchedule.startTime) : 480;
+    return new Date(instance.date).getTime() + (Number.isFinite(duration) && duration > 0 ? duration : 480) * 6e4 > now.getTime();
+  }).length;
+  return future + running;
+}
+async function openWorkAtLocation(tx, organizationId, locationId, now = /* @__PURE__ */ new Date()) {
   const [classes, appointments] = await Promise.all([
-    prisma.classInstance.count({ where: { organizationId, isCancelled: false, date: { gt: now }, OR: [
-      { locationId },
-      { locationId: null, classSchedule: { locationId } }
-    ] } }),
-    prisma.trainerAppointment.count({ where: { organizationId, locationId, status: { in: LIVE_APPOINTMENT }, endTime: { gt: now } } })
+    openClasses(tx, organizationId, [{ locationId }, { locationId: null, classSchedule: { locationId } }], now),
+    tx.trainerAppointment.count({ where: { organizationId, locationId, status: { in: LIVE_APPOINTMENT }, endTime: { gt: now } } })
   ]);
   return { classes, appointments };
 }
-async function upcomingServicesForInstructor(context, organizationId, instructorId) {
-  const prisma = guardKeystonePrismaResults(context.prisma);
-  const now = /* @__PURE__ */ new Date();
+async function openWorkForInstructor(tx, organizationId, instructorId, now = /* @__PURE__ */ new Date()) {
   const [classes, appointments] = await Promise.all([
-    prisma.classInstance.count({ where: { organizationId, isCancelled: false, date: { gt: now }, OR: [
-      { instructorId },
-      { instructorId: null, classSchedule: { instructorId } }
-    ] } }),
-    prisma.trainerAppointment.count({ where: { organizationId, instructorId, status: { in: LIVE_APPOINTMENT }, endTime: { gt: now } } })
+    openClasses(tx, organizationId, [{ instructorId }, { instructorId: null, classSchedule: { instructorId } }], now),
+    tx.trainerAppointment.count({ where: { organizationId, instructorId, status: { in: LIVE_APPOINTMENT }, endTime: { gt: now } } })
   ]);
   return { classes, appointments };
+}
+async function retireUnderSchedulingLock(context, kind, item) {
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  return prisma.$transaction(async (tx) => {
+    await lockTransactionKey(tx, `gym-scheduling:${item.organizationId}`);
+    const open = kind === "instructor" ? await openWorkForInstructor(tx, item.organizationId, item.id) : await openWorkAtLocation(tx, item.organizationId, item.id);
+    if (open.classes || open.appointments) {
+      return kind === "instructor" ? `Reassign or cancel this coach's ${open.classes} upcoming or in-progress class sessions and ${open.appointments} appointments before retiring them` : `Move or cancel this location's ${open.classes} upcoming or in-progress class sessions and ${open.appointments} appointments before closing it`;
+    }
+    if (kind === "instructor") await tx.instructor.update({ where: { id: item.id }, data: { isActive: false } });
+    else await tx.location.update({ where: { id: item.id }, data: { isActive: false } });
+    return null;
+  });
 }
 async function memberHasHistory(context, organizationId, memberId, userId) {
   const prisma = guardKeystonePrismaResults(context.prisma);
@@ -1724,7 +2241,12 @@ async function memberHasHistory(context, organizationId, memberId, userId) {
       prisma.subscription.count({ where: { organizationId, memberId } }),
       prisma.trainingPackage.count({ where: { organizationId, memberId } }),
       prisma.trainerAppointment.count({ where: { organizationId, memberId } }),
-      prisma.participationEvidence.count({ where: { organizationId, memberId } })
+      prisma.participationEvidence.count({ where: { organizationId, memberId } }),
+      prisma.workoutLog.count({ where: { memberId } }),
+      prisma.waitlist.count({ where: { memberId } }),
+      prisma.attendanceRecord.count({ where: { memberId } }),
+      prisma.coachingAssignment.count({ where: { organizationId, memberId } }),
+      prisma.operationsCase.count({ where: { organizationId, memberId } })
     );
   }
   if (userId) {
@@ -1765,22 +2287,29 @@ function canAssignRole({ session, item, operation }) {
   if (!permissions.canManageRoles({ session })) return false;
   return operation === "create" || session?.itemId !== item?.id;
 }
-async function syncMemberIdentity({ operation, item, originalItem, context }) {
-  if (operation !== "update" || !item) return;
-  const changed = {};
-  if (item.email !== originalItem?.email) changed.email = item.email;
-  if (item.name !== originalItem?.name) changed.name = item.name;
-  if (item.phone !== originalItem?.phone) changed.phone = item.phone || null;
-  if (!Object.keys(changed).length) return;
-  await guardKeystonePrismaResults(context.prisma).member.updateMany({
-    where: { userId: item.id, organizationId: item.organizationId },
-    data: changed
+async function noLinkedMember({ item, context }) {
+  if (!item?.id) return true;
+  const linked = await guardKeystonePrismaResults(context.prisma).member.count({ where: { userId: item.id } });
+  return linked === 0;
+}
+async function isStaffAccount(context, userId) {
+  if (!userId) return false;
+  const user = await guardKeystonePrismaResults(context.prisma).user.findUnique({
+    where: { id: userId },
+    select: { role: { select: { canAccessDashboard: true } } }
   });
+  return user?.role?.canAccessDashboard === true;
+}
+async function personFieldMode({ session, context }, userId) {
+  const role = session?.data?.role;
+  if (role?.canManageAllRecords) return "edit";
+  if (userId && session?.itemId === userId) return "edit";
+  if (!role?.canEditOtherPeople) return "read";
+  return await isStaffAccount(context, userId) ? "read" : "edit";
 }
 var User = (0, import_core2.list)({
   hooks: {
     validateInput: validateUserInput,
-    afterOperation: syncMemberIdentity,
     // Accounts that own memberships, bookings, payments or coaching history are archived
     // (member account closed, coach retired), never deleted out from under that history.
     async validateDelete({ item, context, addValidationError }) {
@@ -1813,11 +2342,7 @@ var User = (0, import_core2.list)({
       initialColumns: ["name", "email", "organization", "role", "membership"]
     },
     itemView: {
-      defaultFieldMode: ({ session, item }) => {
-        if (session?.data.role?.canEditOtherPeople) return "edit";
-        if (session?.itemId === item?.id) return "edit";
-        return "read";
-      }
+      defaultFieldMode: (args) => personFieldMode(args, args.item?.id ? String(args.item.id) : null)
     }
   },
   fields: {
@@ -1831,15 +2356,18 @@ var User = (0, import_core2.list)({
       ui: { description: "Tenant organization for this account" }
     }),
     name: (0, import_fields3.text)({
+      access: { update: noLinkedMember },
       validation: {
         isRequired: true
       }
     }),
-    // The login identity: owners change it through their profile (with password proof);
-    // generic edits are limited to global administrators and stay synchronized to Member.
+    // The login identity. Generic updates are refused for everyone, including tenant
+    // all-record operators: only the signed-in holder changes it (current password, then a link
+    // sent to the new mailbox confirms it — requestEmailChange/confirmEmailChange). The change
+    // stays synchronized to Member.
     email: (0, import_fields3.text)({
       isIndexed: "unique",
-      access: { update: permissions.canManageAllRecords },
+      access: { update: import_access3.denyAll },
       hooks: {
         resolveInput: ({ resolvedData }) => resolvedData.email === void 0 ? void 0 : normalizeAuthIdentity(resolvedData.email)
       },
@@ -1847,12 +2375,12 @@ var User = (0, import_core2.list)({
         isRequired: true
       }
     }),
-    // Customers change their password with current-password proof (changeMemberPassword) or a
-    // one-use reset link; staff recover members by issuing such a link, never by choosing it.
+    // Only the holder changes a password: with current-password proof (changeMemberPassword) or
+    // their own reset link. Generic updates are refused for everyone, staff included.
     password: (0, import_fields3.password)({
       access: {
         read: import_access3.denyAll,
-        update: ({ session, item }) => permissions.canManageAllRecords({ session }) || session?.itemId === item.id && permissions.canAccessDashboard({ session })
+        update: import_access3.denyAll
       },
       validation: {
         isRequired: true,
@@ -1901,14 +2429,33 @@ var User = (0, import_core2.list)({
       }
     }),
     phone: (0, import_fields3.text)({
+      access: { update: noLinkedMember },
       ui: {
         description: "Member phone number"
       }
     }),
+    // Legacy free-text emergency contact. Sensitive: never written generically (the member
+    // profile's emergency fields carry this now) and cleared with other health/emergency data.
     emergencyContact: (0, import_fields3.text)({
+      access: { read: ({ session, item }) => Boolean(session?.itemId && (session.itemId === item.id || session.data?.role?.canManageAllRecords)), create: import_access3.denyAll, update: import_access3.denyAll },
       ui: {
-        description: "Emergency contact name and phone"
+        description: "Emergency contact name and phone (legacy)",
+        createView: { fieldMode: "hidden" },
+        itemView: { fieldMode: "read" }
       }
+    }),
+    // A requested sign-in email change waiting for its link to be opened from the new mailbox.
+    pendingEmail: (0, import_fields3.text)({
+      access: { read: ({ session, item }) => Boolean(session?.itemId && session.itemId === item.id), create: import_access3.denyAll, update: import_access3.denyAll },
+      ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "read" }, listView: { fieldMode: "hidden" } }
+    }),
+    pendingEmailTokenHash: (0, import_fields3.text)({
+      access: { read: import_access3.denyAll, create: import_access3.denyAll, update: import_access3.denyAll },
+      ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "hidden" }, listView: { fieldMode: "hidden" } }
+    }),
+    pendingEmailRequestedAt: (0, import_fields3.timestamp)({
+      access: { read: import_access3.denyAll, create: import_access3.denyAll, update: import_access3.denyAll },
+      ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "hidden" }, listView: { fieldMode: "hidden" } }
     }),
     onboardingStatus: (0, import_fields3.select)({
       access: {
@@ -1936,6 +2483,10 @@ var User = (0, import_core2.list)({
 var import_core3 = require("@keystone-6/core");
 var import_access5 = require("@keystone-6/core/access");
 var import_fields4 = require("@keystone-6/core/fields");
+init_prisma_result();
+function holdsFullCapability(role) {
+  return role?.canManageAllRecords === true && role?.canManageRoles === true;
+}
 function manageableRoleFilter({ session }) {
   const organizationId = session?.data?.organization?.id;
   const currentRoleId = session?.data?.role?.id;
@@ -1947,11 +2498,30 @@ function manageableRoleFilter({ session }) {
     ]
   };
 }
+function updatableRoleFilter({ session }) {
+  const organizationId = session?.data?.organization?.id;
+  const currentRoleId = session?.data?.role?.id;
+  if (!organizationId || !currentRoleId) return false;
+  if (!holdsFullCapability(session?.data?.role)) return manageableRoleFilter({ session });
+  return { organization: { id: { equals: organizationId } } };
+}
+function ownRoleCompletionError(item, resolvedData) {
+  if (!holdsFullCapability(item)) return "You cannot modify the role assigned to your own account";
+  const allowed2 = new Set(roleCapabilityFields.filter((field) => field !== "isInstructor"));
+  for (const [key, value] of Object.entries(resolvedData ?? {})) {
+    if (value === void 0 || key === "updatedAt") continue;
+    if (!allowed2.has(key) || value !== true) {
+      return "Your own role can only gain capabilities; ask another role manager for any other change";
+    }
+  }
+  return null;
+}
 async function validateRoleInput(args) {
   const session = args.session ?? args.context?.session;
   await validateTenantOwnership([])(args);
   if (session?.data?.role?.id && args.item?.id === session.data.role.id) {
-    args.addValidationError("You cannot modify the role assigned to your own account");
+    const error = args.operation === "update" ? ownRoleCompletionError(args.item, args.resolvedData) : "You cannot modify the role assigned to your own account";
+    if (error) args.addValidationError(error);
     return;
   }
   if (session) {
@@ -1963,7 +2533,14 @@ async function validateRoleInput(args) {
 }
 var Role = (0, import_core3.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
-  hooks: { validateInput: validateRoleInput },
+  hooks: {
+    validateInput: validateRoleInput,
+    // A person without a role loses every permission at once; reassign them first.
+    async validateDelete({ item, context, addValidationError }) {
+      const people = await guardKeystonePrismaResults(context.prisma).user.count({ where: { roleId: item.id } });
+      if (people) addValidationError(`${people} ${people === 1 ? "person still has" : "people still have"} this role. Give them another role before deleting it.`);
+    }
+  },
   access: {
     operation: {
       ...(0, import_access5.allOperations)(permissions.canManageRoles),
@@ -1971,7 +2548,7 @@ var Role = (0, import_core3.list)({
     },
     filter: {
       query: rules.canReadOwnRole,
-      update: manageableRoleFilter,
+      update: updatableRoleFilter,
       delete: manageableRoleFilter
     }
   },
@@ -2029,16 +2606,28 @@ var import_core4 = require("@keystone-6/core");
 var import_access7 = require("@keystone-6/core/access");
 var import_fields5 = require("@keystone-6/core/fields");
 init_prisma_result();
+init_classCapacity();
 function sensitiveMemberRead({ session, item }) {
   return Boolean(session?.itemId && session?.data?.organization?.id === item?.organizationId && (session.data?.role?.canManageAllRecords || session.data?.role?.canManagePeople || item?.userId === session.itemId));
 }
-async function syncAccountContact({ operation, item, originalItem, context }) {
+async function syncAccountContact({ operation, item, context }) {
   if (operation !== "update" || !item?.userId) return;
-  const changed = {};
-  if (item.name !== originalItem?.name) changed.name = item.name;
-  if (item.phone !== originalItem?.phone) changed.phone = item.phone || "";
-  if (!Object.keys(changed).length) return;
-  await guardKeystonePrismaResults(context.prisma).user.updateMany({ where: { id: item.userId, organizationId: item.organizationId }, data: changed });
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  try {
+    await prisma.$transaction(async (tx) => {
+      await lockTransactionKey(tx, `identity:${item.userId}`);
+      const [member, user] = await Promise.all([
+        tx.member.findUnique({ where: { id: item.id }, select: { name: true, phone: true } }),
+        tx.user.findFirst({ where: { id: item.userId, organizationId: item.organizationId }, select: { id: true, name: true, phone: true } })
+      ]);
+      if (!member || !user) return;
+      if (user.name !== member.name || (user.phone || "") !== (member.phone || "")) {
+        await tx.user.update({ where: { id: user.id }, data: { name: member.name, phone: member.phone || "" } });
+      }
+    });
+  } catch {
+    throw new Error("The member's details were saved, but copying the name and phone to their sign-in account failed. Save again to retry the copy.");
+  }
 }
 var Member = (0, import_core4.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, userId") },
@@ -2074,11 +2663,7 @@ var Member = (0, import_core4.list)({
       initialColumns: ["name", "email", "membershipTier", "status", "joinDate"]
     },
     itemView: {
-      defaultFieldMode: ({ session, item }) => {
-        if (session?.data.role?.canEditOtherPeople) return "edit";
-        if (session?.data.member?.id === item?.id) return "edit";
-        return "read";
-      }
+      defaultFieldMode: (args) => personFieldMode(args, args.item?.userId)
     }
   },
   fields: {
@@ -2130,14 +2715,16 @@ var Member = (0, import_core4.list)({
         description: "Current membership plan"
       }
     }),
+    // Emergency contact is sensitive and erasable: it changes only through the member's own
+    // profile service (current version + participation lock), never through generic edits.
     emergencyContactName: (0, import_fields5.text)({
-      access: { read: sensitiveMemberRead },
+      access: { read: sensitiveMemberRead, create: import_access7.denyAll, update: import_access7.denyAll },
       ui: {
         description: "Emergency contact full name"
       }
     }),
     emergencyContactPhone: (0, import_fields5.text)({
-      access: { read: sensitiveMemberRead },
+      access: { read: sensitiveMemberRead, create: import_access7.denyAll, update: import_access7.denyAll },
       ui: {
         description: "Emergency contact phone number"
       }
@@ -2400,6 +2987,8 @@ function snapshotMembershipAgreement(tier, billingCycle, currencyCode, options =
     billingCycle,
     currencyCode,
     amount: tierAmountMinor(tier, billingCycle),
+    // The exact provider price/product the member accepted; later catalog edits don't change it.
+    ...options.providerPriceId ? { providerPriceId: options.providerPriceId, providerProductId: options.providerProductId || null } : {},
     monthlyPriceMinor: tierAmountMinor(tier, "monthly"),
     annualPriceMinor: tierAmountMinor(tier, "annual"),
     classCreditsPerMonth: tier.classCreditsPerMonth,
@@ -2413,6 +3002,45 @@ function snapshotMembershipAgreement(tier, billingCycle, currencyCode, options =
     maxClassBookings: tier.maxClassBookings ?? 0,
     personalTrainingSessions: tier.personalTrainingSessions ?? 0
   };
+}
+function acceptedProviderPrice(agreement, fallbacks) {
+  const amount = Number.isSafeInteger(agreement?.amount) ? agreement.amount : null;
+  const text47 = (value) => typeof value === "string" && value ? value : null;
+  if (text47(agreement?.providerPriceId)) return { priceId: agreement.providerPriceId, productId: text47(agreement.providerProductId), amount, basis: "agreement" };
+  if (text47(fallbacks.checkoutPriceId)) return { priceId: fallbacks.checkoutPriceId, productId: text47(fallbacks.checkoutProductId), amount, basis: "checkout" };
+  if (text47(fallbacks.tierPriceId)) return { priceId: fallbacks.tierPriceId, productId: null, amount, basis: "catalog" };
+  return null;
+}
+var providerId = (value) => typeof value === "string" ? value : value?.id || null;
+var cycleInterval = (billingCycle) => billingCycle === "annual" ? "year" : "month";
+function priceProblem(price, quantity, accepted, billingCycle) {
+  if (price?.id !== accepted.priceId) return `bills price ${price?.id || "none"} instead of the accepted ${accepted.priceId}`;
+  if (accepted.productId && providerId(price?.product) && providerId(price.product) !== accepted.productId) return "bills a different product";
+  if ((quantity ?? 1) !== 1) return `bills quantity ${quantity}`;
+  if (String(price?.currency || "").toUpperCase() !== "USD") return "bills a currency other than USD";
+  if (price?.recurring && (price.recurring.interval !== cycleInterval(billingCycle) || (price.recurring.interval_count ?? 1) !== 1)) return `bills every ${price.recurring.interval_count ?? 1} ${price.recurring.interval} instead of the accepted ${billingCycle} cycle`;
+  if (accepted.amount !== null && Number.isSafeInteger(price?.unit_amount) && price.unit_amount !== accepted.amount) return "bills a different amount than the accepted agreement";
+  return null;
+}
+function subscriptionItemsProblem(subscription, accepted, billingCycle) {
+  if (!accepted) return "no accepted provider price is recorded for this membership";
+  const items = subscription?.items?.data || [];
+  if (items.length !== 1) return `has ${items.length} billed items instead of one`;
+  return priceProblem(items[0].price, items[0].quantity, accepted, billingCycle);
+}
+function invoiceServiceProblem(invoice, accepted, billingCycle) {
+  if (!accepted) return "no accepted provider price is recorded for this membership";
+  const lines = (invoice?.lines?.data || []).filter((line2) => line2.type === "subscription" && !line2.proration);
+  if (lines.length !== 1) return `has ${lines.length} recurring service lines instead of one`;
+  const line = lines[0];
+  const problem = priceProblem(line.price, line.quantity, accepted, billingCycle);
+  if (problem) return problem;
+  if (!Number.isSafeInteger(line.amount) || line.amount <= 0) return "has no positive amount for its service line";
+  const start = line.period?.start, end = line.period?.end;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) return "has an invalid service period";
+  const days = (end - start) / 86400;
+  if (billingCycle === "annual" ? days < 364 || days > 367 : days < 27 || days > 32) return `covers ${Math.round(days)} days, not one ${billingCycle === "annual" ? "year" : "month"}`;
+  return null;
 }
 function assertCheckoutCorrelation(local, session, organizationId) {
   if (!local || local.organization?.id !== organizationId) throw new Error("Local payment session not found in organization");
@@ -2446,11 +3074,11 @@ function range(open, close) {
 function parseDayHours(value) {
   try {
     if (typeof value === "string") {
-      const text45 = value.trim().toLowerCase();
-      if (!text45) return null;
-      if (text45 === "closed") return "closed";
-      if (text45 === "24/7" || text45 === "24 hours" || text45 === "open 24 hours") return "all";
-      return text45.split(/\s*[,;]\s*/).filter(Boolean).map((part) => {
+      const text47 = value.trim().toLowerCase();
+      if (!text47) return null;
+      if (text47 === "closed") return "closed";
+      if (text47 === "24/7" || text47 === "24 hours" || text47 === "open 24 hours") return "all";
+      return text47.split(/\s*[,;]\s*/).filter(Boolean).map((part) => {
         const [open, close, extra] = part.split(/\s*[-–—]\s*/);
         if (!open || !close || extra !== void 0) throw new Error("Hours need one opening and closing time");
         return range(open, close);
@@ -2561,6 +3189,26 @@ async function assertFacilityAccessHours(tx, organizationId, membership, at) {
   if (!includes(membershipAccessWindow(agreement), localClock(at, timezone).minute)) throw new Error("This admission is outside the membership access hours");
 }
 
+// lib/class-credits.ts
+var UNLIMITED_CLASS_CREDITS = -1;
+function isUnlimitedCredits(value) {
+  return value === UNLIMITED_CLASS_CREDITS;
+}
+function formatCreditValue(value) {
+  if (value === null || value === void 0) return null;
+  return isUnlimitedCredits(value) ? "Unlimited" : String(value);
+}
+
+// lib/list-labels.ts
+function creditsLabel(value) {
+  return typeof value === "number" ? formatCreditValue(value) : null;
+}
+function specialtiesLabel(value) {
+  if (!Array.isArray(value)) return null;
+  const names = value.filter((entry) => typeof entry === "string" && entry.trim() !== "");
+  return names.length ? names.join(", ") : null;
+}
+
 // features/keystone/models/MembershipTier.ts
 init_prisma_result();
 var validateMembershipTierTenant = validateTenantOwnership([]);
@@ -2612,7 +3260,7 @@ async function validateMembershipTierInput(args) {
     try {
       membershipAccessWindow({ accessHours: value("accessHours"), accessHoursJson: value("accessHoursJson") });
     } catch {
-      args.addValidationError("Access hours must be 24/7, Staffed hours, Limited (6:00 AM \u2013 10:00 PM), Closed, or one range such as 5:00 AM \u2013 11:00 PM");
+      args.addValidationError("Access hours must be one of: 24/7, Staffed hours, Limited, Closed, or one range such as 5:00 AM \u2013 11:00 PM");
     }
   }
   const features = value("features");
@@ -2656,7 +3304,7 @@ var MembershipTier = (0, import_core5.list)({
   },
   ui: {
     listView: {
-      initialColumns: ["name", "monthlyPrice", "annualPrice", "classCreditsPerMonth"]
+      initialColumns: ["name", "monthlyPrice", "annualPrice", "classCreditsLabel"]
     }
   },
   fields: {
@@ -2698,10 +3346,19 @@ var MembershipTier = (0, import_core5.list)({
         description: "Number of class credits per month (-1 for unlimited)"
       }
     }),
+    // List column: the stored -1 sentinel reads as "Unlimited", never "-1".
+    classCreditsLabel: (0, import_fields6.virtual)({
+      field: import_core5.graphql.field({
+        type: import_core5.graphql.String,
+        resolve: (item) => creditsLabel(item.classCreditsPerMonth)
+      }),
+      label: "Classes per month",
+      ui: { itemView: { fieldMode: "hidden" }, createView: { fieldMode: "hidden" } }
+    }),
     accessHours: (0, import_fields6.text)({
       defaultValue: "limited",
       ui: {
-        description: "Enforced at facility check-in: 24/7, Staffed hours, Limited (6:00 AM \u2013 10:00 PM), Closed, or one range such as 5:00 AM \u2013 11:00 PM"
+        description: "Enforced at facility check-in. Enter exactly one of: 24/7, Staffed hours, Limited (the saved limited range, 6:00 AM \u2013 10:00 PM unless one is configured), Closed, or one range such as 5:00 AM \u2013 11:00 PM"
       }
     }),
     guestPasses: (0, import_fields6.integer)({
@@ -2817,30 +3474,83 @@ var import_core6 = require("@keystone-6/core");
 var import_access11 = require("@keystone-6/core/access");
 var import_fields7 = require("@keystone-6/core/fields");
 
+// features/keystone/lib/lifecycles.ts
+var m = (table) => Object.fromEntries(Object.entries(table).map(([from, to]) => [from, new Set(to)]));
+var MEMBERSHIP_MACHINE = m({
+  active: ["frozen", "cancelled", "expired", "past-due"],
+  frozen: ["active", "cancelled", "expired", "past-due"],
+  "past-due": ["active", "frozen", "cancelled", "expired"],
+  expired: ["active", "frozen", "past-due", "cancelled"],
+  cancelled: []
+});
+var SUBSCRIPTION_MACHINE = m({
+  active: ["paused", "past_due", "cancelled"],
+  paused: ["active", "past_due", "cancelled"],
+  past_due: ["active", "paused", "cancelled"],
+  cancelled: []
+});
+var BOOKING_MACHINE = m({
+  confirmed: ["cancelled"],
+  waitlist: ["confirmed", "cancelled"],
+  cancelled: []
+});
+var MEMBER_ACCOUNT_MACHINE = m({
+  active: ["suspended", "cancelled"],
+  suspended: ["active", "cancelled"],
+  cancelled: []
+});
+var GIFT_CARD_MACHINE = m({
+  active: ["redeemed", "voided"],
+  redeemed: [],
+  voided: []
+});
+var TRAINING_LEAD_MACHINE = m({
+  new: ["contacted", "closed"],
+  contacted: ["trial_booked", "converted", "closed"],
+  trial_booked: ["trial_attended", "contacted", "closed"],
+  trial_attended: ["converted", "contacted", "closed"],
+  converted: [],
+  closed: []
+});
+var COACHING_MACHINE = m({
+  assigned: ["submitted", "cancelled"],
+  submitted: ["reviewed"],
+  reviewed: [],
+  cancelled: []
+});
+var TRAINING_PACKAGE_MACHINE = m({
+  active: ["refunded"],
+  refunded: []
+});
+var PAYMENT_SESSION_MACHINE = m({
+  pending: ["processing", "requires_action", "completed", "failed", "expired", "cancelled"],
+  processing: ["requires_action", "completed", "failed", "expired", "cancelled"],
+  requires_action: ["processing", "completed", "failed", "expired", "cancelled"],
+  failed: ["processing", "requires_action", "expired"],
+  completed: [],
+  expired: [],
+  cancelled: []
+});
+function canTransition(machine, from, to) {
+  if (from === to) return true;
+  return Boolean(machine[from]?.has(to));
+}
+function assertTransition(machine, label, from, to) {
+  if (!Object.hasOwn(machine, from)) throw new Error(`Unknown ${label} status: ${from}`);
+  if (!Object.hasOwn(machine, to)) throw new Error(`Unknown ${label} status: ${to}`);
+  if (!canTransition(machine, from, to)) throw new Error(`Invalid ${label} status transition: ${from} -> ${to}`);
+}
+function settleTransition(machine, from, to) {
+  if (!from || !Object.hasOwn(machine, from)) return to;
+  return canTransition(machine, from, to) ? to : from;
+}
+
 // features/keystone/mutations/gymLifecyclePolicy.ts
-var MEMBERSHIP_TRANSITIONS = {
-  active: /* @__PURE__ */ new Set(["frozen", "cancelled", "expired", "past-due"]),
-  frozen: /* @__PURE__ */ new Set(["active", "cancelled", "expired", "past-due"]),
-  "past-due": /* @__PURE__ */ new Set(["active", "frozen", "cancelled", "expired"]),
-  cancelled: /* @__PURE__ */ new Set(),
-  expired: /* @__PURE__ */ new Set()
-};
-var BOOKING_TRANSITIONS = {
-  confirmed: /* @__PURE__ */ new Set(["cancelled"]),
-  waitlist: /* @__PURE__ */ new Set(["confirmed", "cancelled"]),
-  cancelled: /* @__PURE__ */ new Set()
-};
 function assertMembershipStatusTransition(previous, next) {
-  if (previous === next) return;
-  if (!MEMBERSHIP_TRANSITIONS[previous]?.has(next)) {
-    throw new Error(`Invalid membership status transition: ${previous} -> ${next}`);
-  }
+  assertTransition(MEMBERSHIP_MACHINE, "membership", previous, next);
 }
 function assertBookingStatusTransition(previous, next) {
-  if (previous === next) return;
-  if (!BOOKING_TRANSITIONS[previous]?.has(next)) {
-    throw new Error(`Invalid booking status transition: ${previous} -> ${next}`);
-  }
+  assertTransition(BOOKING_MACHINE, "booking", previous, next);
 }
 function normalizeAttendanceOutcome(value) {
   if (value === "attended" || value === "late" || value === "no-show") return value;
@@ -2918,6 +3628,7 @@ var Membership = (0, import_core6.list)({
     member: (0, import_fields7.relationship)({
       ref: "User.membership",
       access: { update: import_access11.denyAll },
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select"
       }
@@ -2971,8 +3682,19 @@ var Membership = (0, import_core6.list)({
       access: { update: import_access11.denyAll },
       defaultValue: 0,
       ui: {
-        description: "Remaining class credits for current billing period"
+        description: "Remaining class credits for current billing period (-1 for unlimited)",
+        // The readable "Class credits left" field is shown instead of the raw sentinel.
+        itemView: { fieldMode: "hidden" }
       }
+    }),
+    // Readable balance for lists and the item page: the -1 sentinel reads as "Unlimited".
+    classCreditsLeft: (0, import_fields7.virtual)({
+      field: import_core6.graphql.field({
+        type: import_core6.graphql.String,
+        resolve: (item) => creditsLabel(item.classCreditsRemaining)
+      }),
+      label: "Class credits left",
+      ui: { createView: { fieldMode: "hidden" } }
     }),
     freezeStartDate: (0, import_fields7.timestamp)({
       access: { update: import_access11.denyAll },
@@ -3051,7 +3773,7 @@ var GYM_TRANSITIONS = {
   succeeded: /* @__PURE__ */ new Set(["succeeded", "refunded"]),
   refunded: /* @__PURE__ */ new Set(["refunded"])
 };
-var MEMBERSHIP_TRANSITIONS2 = {
+var MEMBERSHIP_TRANSITIONS = {
   pending: /* @__PURE__ */ new Set(["pending", "completed", "failed"]),
   failed: /* @__PURE__ */ new Set(["failed", "completed"]),
   completed: /* @__PURE__ */ new Set(["completed", "disputed", "refunded"]),
@@ -3124,7 +3846,7 @@ function validateMembershipPaymentUpdate(current, resolvedData) {
     "MembershipPayment",
     current.status,
     resolvedData.status,
-    MEMBERSHIP_TRANSITIONS2
+    MEMBERSHIP_TRANSITIONS
   );
   if (MEMBERSHIP_SETTLED.has(current.status)) {
     validateImmutableEvidence(
@@ -3203,6 +3925,7 @@ var MembershipPayment = (0, import_core7.list)({
     }),
     member: (0, import_fields8.relationship)({
       ref: "User.payments",
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select"
       }
@@ -3381,6 +4104,7 @@ var Subscription = (0, import_core8.list)({
     }),
     member: (0, import_fields9.relationship)({
       ref: "Member.subscriptions",
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
         description: "Member who owns this subscription"
@@ -3527,6 +4251,7 @@ var GymPayment = (0, import_core9.list)({
     }),
     member: (0, import_fields10.relationship)({
       ref: "Member.payments",
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
         description: "Member who made the payment"
@@ -3767,6 +4492,7 @@ var PaymentMethod = (0, import_core10.list)({
 var import_core11 = require("@keystone-6/core");
 var import_access21 = require("@keystone-6/core/access");
 var import_fields12 = require("@keystone-6/core/fields");
+init_prisma_result();
 var PaymentProvider = (0, import_core11.list)({
   db: {
     extendPrismaSchema(schema) {
@@ -3776,7 +4502,19 @@ var PaymentProvider = (0, import_core11.list)({
       );
     }
   },
-  hooks: { validateInput: validateTenantOwnership([]) },
+  hooks: {
+    validateInput: validateTenantOwnership([]),
+    // Payments, checkouts and webhook events are reconciled and refunded through their provider.
+    async validateDelete({ item, context, addValidationError }) {
+      const prisma = guardKeystonePrismaResults(context.prisma);
+      const [payments, sessions, events] = await Promise.all([
+        prisma.gymPayment.count({ where: { paymentProviderId: item.id } }),
+        prisma.paymentSession.count({ where: { paymentProviderId: item.id } }),
+        prisma.paymentEvent.count({ where: { paymentProviderId: item.id } })
+      ]);
+      if (payments || sessions || events) addValidationError("This payment provider has payments, checkouts or webhook events that are refunded and reconciled through it. Turn off Installed instead of deleting it.");
+    }
+  },
   access: {
     operation: {
       query: permissions.canManageAllRecords,
@@ -3901,7 +4639,7 @@ var PaymentSession = (0, import_core12.list)({
       graphql: { isNonNull: { read: true } },
       db: { extendPrismaSchema: requiredRelationshipDb("organization") }
     }),
-    user: (0, import_fields13.relationship)({ ref: "User.paymentSessions" }),
+    user: (0, import_fields13.relationship)({ ref: "User.paymentSessions", db: { extendPrismaSchema: restrictDeleteDb } }),
     membershipTier: (0, import_fields13.relationship)({ ref: "MembershipTier.paymentSessions" }),
     paymentProvider: (0, import_fields13.relationship)({ ref: "PaymentProvider.sessions" }),
     status: (0, import_fields13.select)({
@@ -3922,7 +4660,8 @@ var PaymentSession = (0, import_core12.list)({
       type: "string",
       options: [
         { label: "Monthly", value: "monthly" },
-        { label: "Annual", value: "annual" }
+        { label: "Annual", value: "annual" },
+        { label: "Drop-in class", value: "drop-in" }
       ],
       validation: { isRequired: true }
     }),
@@ -4063,6 +4802,7 @@ var CheckIn = (0, import_core14.list)({
     }),
     member: (0, import_fields15.relationship)({
       ref: "Member.checkIns",
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
         description: "Member checking in"
@@ -4184,12 +4924,15 @@ var Location = (0, import_core15.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
   hooks: {
     async validateInput(args) {
-      await validateTenantOwnership([])(args);
-      if (args.operation === "update" && args.resolvedData.isActive === false && args.item?.isActive) {
-        const upcoming = await upcomingServicesAtLocation(args.context, args.item.organizationId, args.item.id);
-        if (upcoming.classes || upcoming.appointments) {
-          args.addValidationError(`Move or cancel the ${upcoming.classes} upcoming class sessions and ${upcoming.appointments} appointments at this location before closing it`);
-        }
+      let failed = false;
+      const addValidationError = (message) => {
+        failed = true;
+        args.addValidationError(message);
+      };
+      await validateTenantOwnership([])({ ...args, addValidationError });
+      if (!failed && args.operation === "update" && args.resolvedData.isActive === false && args.item?.isActive) {
+        const problem = await retireUnderSchedulingLock(args.context, "location", args.item);
+        if (problem) addValidationError(problem);
       }
     },
     async validateDelete({ item, context, addValidationError }) {
@@ -4232,6 +4975,10 @@ var Location = (0, import_core15.list)({
         description: "Location name (e.g., Downtown Gym, West Side Branch)"
       }
     }),
+    photo: (0, import_fields16.image)({
+      storage: "my_images",
+      ui: { description: "Shown on the storefront home and facilities pages" }
+    }),
     address: (0, import_fields16.text)({
       ui: {
         displayMode: "textarea",
@@ -4273,7 +5020,7 @@ var import_core16 = require("@keystone-6/core");
 var import_access31 = require("@keystone-6/core/access");
 var import_fields17 = require("@keystone-6/core/fields");
 
-// features/keystone/utils/gymLogo.ts
+// features/keystone/utils/storeLogo.ts
 var ALLOWED_ELEMENTS = /* @__PURE__ */ new Set([
   "svg",
   "g",
@@ -4333,11 +5080,9 @@ var ALLOWED_ATTRIBUTES = /* @__PURE__ */ new Set([
 ]);
 var ATTRIBUTE_PATTERN = /\s+([A-Za-z_:][\w:.-]*)\s*=\s*("[^"]*"|'[^']*')/g;
 var TAG_PATTERN = /<\/?\s*([A-Za-z][\w:-]*)([^<>]*)>/g;
-var MAX_LOGO_LENGTH = 5e4;
-function sanitizeGymLogoSvg(value) {
-  if (typeof value !== "string") return "";
-  const source = value.trim();
-  if (!source.startsWith("<svg") || !source.endsWith("</svg>") || source.length > MAX_LOGO_LENGTH) {
+function sanitizeStoreLogoSvg(svg) {
+  const source = svg.trim();
+  if (!source.startsWith("<svg") || !source.endsWith("</svg>") || source.length > 1e5) {
     return "";
   }
   if (/<!|<\?|\b(?:javascript|data|vbscript):|\bon[a-z]+\s*=|\b(?:href|src|style)\s*=/i.test(source)) {
@@ -4358,19 +5103,20 @@ function sanitizeGymLogoSvg(value) {
     while (attributeMatch = ATTRIBUTE_PATTERN.exec(attributes)) {
       consumed += attributeMatch[0];
       const attribute = attributeMatch[1].toLowerCase();
-      const attributeValue = attributeMatch[2].slice(1, -1);
+      const value = attributeMatch[2].slice(1, -1);
       if (!ALLOWED_ATTRIBUTES.has(attribute)) return "";
-      if (attribute === "id" && !/^[A-Za-z_][\w:.-]*$/.test(attributeValue)) return "";
-      if (/url\(/i.test(attributeValue) && !/^url\(#[A-Za-z_][\w:.-]*\)$/.test(attributeValue)) return "";
+      if (attribute === "id" && !/^[A-Za-z_][\w:.-]*$/.test(value)) return "";
+      if (/url\(/i.test(value) && !/^url\(#[A-Za-z_][\w:.-]*\)$/.test(value)) return "";
     }
-    if (attributes.replace(consumed, "").replace(/\//g, "").trim()) return "";
+    const remainder = attributes.replace(consumed, "").replace(/\//g, "").trim();
+    if (remainder) return "";
   }
   TAG_PATTERN.lastIndex = 0;
   if (tagCount === 0 || source.replace(TAG_PATTERN, "").trim()) return "";
   return source;
 }
 
-// features/platform/store-settings/lib/untitled-logo-registry.ts
+// features/platform/store-settings/lib/icon-registry.ts
 var LOGO_ICONS = [
   {
     id: "3portals",
@@ -4647,6 +5393,9 @@ function normalizeGymLogoColor(value) {
   if (!Number.isFinite(numeric)) return DEFAULT_GYM_LOGO_COLOR;
   return String((numeric % 360 + 360) % 360);
 }
+var NAMED_COLORS = Object.fromEntries(
+  "aliceblue:f0f8ff antiquewhite:faebd7 aqua:00ffff aquamarine:7fffd4 azure:f0ffff beige:f5f5dc bisque:ffe4c4 black:000000 blanchedalmond:ffebcd blue:0000ff blueviolet:8a2be2 brown:a52a2a burlywood:deb887 cadetblue:5f9ea0 chartreuse:7fff00 chocolate:d2691e coral:ff7f50 cornflowerblue:6495ed cornsilk:fff8dc crimson:dc143c cyan:00ffff darkblue:00008b darkcyan:008b8b darkgoldenrod:b8860b darkgray:a9a9a9 darkgreen:006400 darkgrey:a9a9a9 darkkhaki:bdb76b darkmagenta:8b008b darkolivegreen:556b2f darkorange:ff8c00 darkorchid:9932cc darkred:8b0000 darksalmon:e9967a darkseagreen:8fbc8f darkslateblue:483d8b darkslategray:2f4f4f darkslategrey:2f4f4f darkturquoise:00ced1 darkviolet:9400d3 deeppink:ff1493 deepskyblue:00bfff dimgray:696969 dimgrey:696969 dodgerblue:1e90ff firebrick:b22222 floralwhite:fffaf0 forestgreen:228b22 fuchsia:ff00ff gainsboro:dcdcdc ghostwhite:f8f8ff gold:ffd700 goldenrod:daa520 gray:808080 green:008000 greenyellow:adff2f grey:808080 honeydew:f0fff0 hotpink:ff69b4 indianred:cd5c5c indigo:4b0082 ivory:fffff0 khaki:f0e68c lavender:e6e6fa lavenderblush:fff0f5 lawngreen:7cfc00 lemonchiffon:fffacd lightblue:add8e6 lightcoral:f08080 lightcyan:e0ffff lightgoldenrodyellow:fafad2 lightgray:d3d3d3 lightgreen:90ee90 lightgrey:d3d3d3 lightpink:ffb6c1 lightsalmon:ffa07a lightseagreen:20b2aa lightskyblue:87cefa lightslategray:778899 lightslategrey:778899 lightsteelblue:b0c4de lightyellow:ffffe0 lime:00ff00 limegreen:32cd32 linen:faf0e6 magenta:ff00ff maroon:800000 mediumaquamarine:66cdaa mediumblue:0000cd mediumorchid:ba55d3 mediumpurple:9370db mediumseagreen:3cb371 mediumslateblue:7b68ee mediumspringgreen:00fa9a mediumturquoise:48d1cc mediumvioletred:c71585 midnightblue:191970 mintcream:f5fffa mistyrose:ffe4e1 moccasin:ffe4b5 navajowhite:ffdead navy:000080 oldlace:fdf5e6 olive:808000 olivedrab:6b8e23 orange:ffa500 orangered:ff4500 orchid:da70d6 palegoldenrod:eee8aa palegreen:98fb98 paleturquoise:afeeee palevioletred:db7093 papayawhip:ffefd5 peachpuff:ffdab9 peru:cd853f pink:ffc0cb plum:dda0dd powderblue:b0e0e6 purple:800080 rebeccapurple:663399 red:ff0000 rosybrown:bc8f8f royalblue:4169e1 saddlebrown:8b4513 salmon:fa8072 sandybrown:f4a460 seagreen:2e8b57 seashell:fff5ee sienna:a0522d silver:c0c0c0 skyblue:87ceeb slateblue:6a5acd slategray:708090 slategrey:708090 snow:fffafa springgreen:00ff7f steelblue:4682b4 tan:d2b48c teal:008080 thistle:d8bfd8 tomato:ff6347 turquoise:40e0d0 violet:ee82ee wheat:f5deb3 white:ffffff whitesmoke:f5f5f5 yellow:ffff00 yellowgreen:9acd32".split(" ").map((entry) => entry.split(":"))
+);
 
 // features/keystone/models/GymSettings.ts
 var GymSettings = (0, import_core16.list)({
@@ -4699,7 +5448,7 @@ var GymSettings = (0, import_core16.list)({
         resolveInput: ({ resolvedData, fieldKey }) => {
           const value = resolvedData[fieldKey];
           if (value === void 0 || value === null || value === "") return value;
-          return sanitizeGymLogoSvg(value);
+          return sanitizeStoreLogoSvg(value);
         },
         validate: ({ inputData, resolvedData, fieldKey, addValidationError }) => {
           const submitted = inputData?.[fieldKey];
@@ -4754,6 +5503,20 @@ var GymSettings = (0, import_core16.list)({
     }),
     currencyCode: (0, import_fields17.text)({
       defaultValue: "USD"
+    }),
+    // One paid class without a membership (Mindbody "drop-in" pricing option), in minor units.
+    // 0 turns online drop-ins off; the storefront then points visitors to the front desk.
+    dropInPrice: (0, import_fields17.integer)({
+      defaultValue: 2500,
+      validation: { isRequired: true, min: 0, max: 1e5 },
+      ui: { description: "Drop-in class price in cents; 0 turns online drop-ins off" }
+    }),
+    // Members who cancel a confirmed class this close to the start forfeit its credit (Mindbody late-cancel window).
+    // A late-cancelled paid drop-in is not refunded. Staff cancellations are always treated as waived. 0 turns it off.
+    lateCancelHours: (0, import_fields17.integer)({
+      defaultValue: 12,
+      validation: { isRequired: true, min: 0, max: 72 },
+      ui: { description: "Late-cancel window in hours before class; 0 turns it off" }
     }),
     locale: (0, import_fields17.text)({
       defaultValue: "en-US"
@@ -4848,6 +5611,7 @@ var WorkoutLog = (0, import_core17.list)({
     }),
     member: (0, import_fields18.relationship)({
       ref: "Member.workoutLogs",
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
         description: "Member who performed this workout"
@@ -4976,9 +5740,17 @@ var WorkoutSet = (0, import_core18.list)({
 var import_core19 = require("@keystone-6/core");
 var import_fields20 = require("@keystone-6/core/fields");
 var import_fields21 = require("@keystone-6/core/fields");
+init_prisma_result();
 var Exercise = (0, import_core19.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
-  hooks: { validateInput: validateTenantOwnership([]) },
+  hooks: {
+    validateInput: validateTenantOwnership([]),
+    // Logged sets keep the exercise they name.
+    async validateDelete({ item, context, addValidationError }) {
+      const sets = await guardKeystonePrismaResults(context.prisma).workoutSet.count({ where: { exerciseId: item.id } });
+      if (sets) addValidationError(`${sets} logged workout ${sets === 1 ? "set names" : "sets name"} this exercise, so it stays for that history.`);
+    }
+  },
   access: {
     operation: {
       query: isSignedIn,
@@ -5094,6 +5866,7 @@ var Waitlist = (0, import_core20.list)({
     }),
     member: (0, import_fields22.relationship)({
       ref: "Member.waitlistEntries",
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
         description: "Member on the waitlist"
@@ -5268,6 +6041,7 @@ var AttendanceRecord = (0, import_core21.list)({
     }),
     member: (0, import_fields23.relationship)({
       ref: "Member.attendanceRecords",
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
         description: "Member whose attendance is being tracked"
@@ -5364,9 +6138,17 @@ var import_access41 = require("@keystone-6/core/access");
 var import_fields24 = require("@keystone-6/core/fields");
 var import_fields_document2 = require("@keystone-6/fields-document");
 var import_fields25 = require("@keystone-6/core/fields");
+init_prisma_result();
 var ClassType = (0, import_core22.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, name") },
-  hooks: { validateInput: validateTenantOwnership([]) },
+  hooks: {
+    validateInput: validateTenantOwnership([]),
+    // Every schedule needs a class type (saveClassSchedule refuses one without), so a type in use stays.
+    async validateDelete({ item, context, addValidationError }) {
+      const schedules = await guardKeystonePrismaResults(context.prisma).classSchedule.count({ where: { classTypeId: item.id } });
+      if (schedules) addValidationError(`${schedules} class ${schedules === 1 ? "schedule uses" : "schedules use"} this class type. Move ${schedules === 1 ? "it" : "them"} to another class type before deleting it.`);
+    }
+  },
   access: {
     operation: {
       query: isSignedIn,
@@ -5434,6 +6216,10 @@ var ClassType = (0, import_core22.list)({
         { label: "None", value: "none" }
       ],
       defaultValue: []
+    }),
+    photo: (0, import_fields24.image)({
+      storage: "my_images",
+      ui: { description: "Shown on the class card and the class page" }
     }),
     caloriesBurn: (0, import_fields24.integer)({
       validation: { min: 0 },
@@ -5719,6 +6505,7 @@ var ClassBooking = (0, import_core24.list)({
     member: (0, import_fields27.relationship)({
       ref: "Member.bookings",
       access: { update: import_access45.denyAll },
+      db: { extendPrismaSchema: restrictDeleteDb },
       ui: {
         displayMode: "select",
         description: "The member who made the booking"
@@ -5779,6 +6566,11 @@ var ClassBooking = (0, import_core24.list)({
       validation: { isRequired: true },
       defaultValue: { kind: "now" }
     }),
+    lateCancelled: (0, import_fields27.checkbox)({
+      defaultValue: false,
+      access: { update: import_access45.denyAll },
+      ui: { description: "The member cancelled inside the club's late-cancel window; the class credit was not returned" }
+    }),
     cancelledAt: (0, import_fields27.timestamp)({
       access: { update: import_access45.denyAll },
       ui: {
@@ -5798,6 +6590,69 @@ var import_fields_document3 = require("@keystone-6/fields-document");
 // features/keystone/mutations/gymSettingsLifecycle.ts
 var import_node_fs = require("node:fs");
 var import_node_path = require("node:path");
+
+// lib/time-zone-label.ts
+var KNOWN = {
+  "America/Los_Angeles": { long: "Pacific Time", short: "PT" },
+  "America/Vancouver": { long: "Pacific Time", short: "PT" },
+  "America/Tijuana": { long: "Pacific Time", short: "PT" },
+  "America/Denver": { long: "Mountain Time", short: "MT" },
+  "America/Boise": { long: "Mountain Time", short: "MT" },
+  "America/Edmonton": { long: "Mountain Time", short: "MT" },
+  "America/Phoenix": { long: "Mountain Standard Time", short: "MST" },
+  "America/Chicago": { long: "Central Time", short: "CT" },
+  "America/Winnipeg": { long: "Central Time", short: "CT" },
+  "America/Mexico_City": { long: "Central Time", short: "CT" },
+  "America/New_York": { long: "Eastern Time", short: "ET" },
+  "America/Detroit": { long: "Eastern Time", short: "ET" },
+  "America/Toronto": { long: "Eastern Time", short: "ET" },
+  "America/Indiana/Indianapolis": { long: "Eastern Time", short: "ET" },
+  "America/Halifax": { long: "Atlantic Time", short: "AT" },
+  "America/Anchorage": { long: "Alaska Time", short: "AKT" },
+  "Pacific/Honolulu": { long: "Hawaii Time", short: "HT" },
+  "Europe/London": { long: "UK Time" },
+  "UTC": { long: "Coordinated Universal Time", short: "UTC" },
+  "Etc/UTC": { long: "Coordinated Universal Time", short: "UTC" },
+  "GMT": { long: "Greenwich Mean Time", short: "GMT" },
+  "Etc/GMT": { long: "Greenwich Mean Time", short: "GMT" }
+};
+function intlName(timeZone, style, locale, date) {
+  try {
+    return new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: style }).formatToParts(date).find((part) => part.type === "timeZoneName")?.value;
+  } catch {
+    return void 0;
+  }
+}
+function timeZoneCity(timeZone) {
+  const last = timeZone.split("/").pop() || timeZone;
+  return last.replace(/_/g, " ");
+}
+var isAbbreviation = (value) => Boolean(value && /^[A-Z]{2,5}$/.test(value));
+var isOffsetOnly = (value) => !value || /^(GMT|UTC)([+-−]\d|$)/.test(value);
+function timeZoneNames(timeZone, locale = "en-US", date = /* @__PURE__ */ new Date()) {
+  const zone = typeof timeZone === "string" ? timeZone.trim() : "";
+  if (!zone) return null;
+  const known = KNOWN[zone];
+  if (known) return known;
+  const long = intlName(zone, "longGeneric", locale, date);
+  if (!long || isOffsetOnly(long)) {
+    const offset = intlName(zone, "shortGeneric", locale, date) || long;
+    return offset ? { long: `${timeZoneCity(zone)} time`, short: offset } : null;
+  }
+  const short = intlName(zone, "shortGeneric", locale, date);
+  return { long, short: isAbbreviation(short) ? short : void 0 };
+}
+function timeZoneLabel(timeZone, options = {}) {
+  const zone = typeof timeZone === "string" ? timeZone.trim() : "";
+  if (!zone) return "";
+  const names = timeZoneNames(zone, options.locale, options.date);
+  if (!names) return `${timeZoneCity(zone)} time`;
+  if (options.city) {
+    const city = timeZoneCity(zone);
+    return names.long.toLowerCase().includes(city.toLowerCase()) || /^(UTC|GMT)$/i.test(city) ? names.long : `${names.long} \xB7 ${city}`;
+  }
+  return names.short ? `${names.long} (${names.short})` : names.long;
+}
 
 // lib/timezone.ts
 function normalizeTimeZone(value, fallback = "UTC") {
@@ -5878,8 +6733,26 @@ function exactLocalTimeToUtc(parts, timeZone) {
     const round = localDateParts(candidate, zone);
     return round.year === parts.year && round.month === parts.month && round.day === parts.day && round.hour === parts.hour && round.minute === parts.minute && round.second === second;
   }).sort((a, b) => a.getTime() - b.getTime());
-  if (!matches.length) throw new NonexistentLocalTimeError(`That time does not exist in ${zone} because of a daylight-saving change. Choose another time.`);
+  if (!matches.length) throw new NonexistentLocalTimeError(`That time does not exist in ${timeZoneLabel(zone)} because of a daylight-saving change. Choose another time.`);
   return matches[0];
+}
+function localDateStart(dateKey, timeZone) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateKey));
+  if (!match) throw new NonexistentLocalTimeError("Choose a valid date");
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  for (let minutes = 0; minutes < 24 * 60; minutes += 1) {
+    try {
+      return exactLocalTimeToUtc({ year, month, day, hour: Math.floor(minutes / 60), minute: minutes % 60 }, timeZone);
+    } catch (error) {
+      if (!(error instanceof NonexistentLocalTimeError) || minutes === 0 && /valid date and time/.test(error.message)) throw new NonexistentLocalTimeError("Choose a valid date");
+    }
+  }
+  throw new NonexistentLocalTimeError("Choose a valid date");
+}
+function nextDateKey(dateKey) {
+  const date = /* @__PURE__ */ new Date(`${dateKey}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }
 function zonedStartOfDay(date, timeZone) {
   const local = localDateParts(date, timeZone);
@@ -5923,72 +6796,8 @@ function futureLocalOccurrence(now, timeZone, dayOffset, hour, minute2) {
   }
 }
 
-// features/keystone/lib/participation-terms.ts
-init_operational_policy();
-var PARTICIPATION_TERMS_PATH = "/waiver";
-var PARTICIPATION_TERMS_PLACEHOLDER = "Please replace this with your gym\u2019s terms of service.";
-function isParticipationTermsPlaceholder(text45) {
-  const normalize = (value) => value.replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim().toLowerCase();
-  return normalize(text45) === normalize(PARTICIPATION_TERMS_PLACEHOLDER);
-}
-var PARTICIPATION_TERMS_MAX_LENGTH = 5e4;
-async function publishParticipationTerms(tx, organizationId, text45, publishedBy) {
-  await lockParticipationPolicy(tx, organizationId);
-  const body = text45.trim();
-  const enforce = Boolean(body) && !isParticipationTermsPlaceholder(body);
-  const latest = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
-  if (latest && latest.documentReference === PARTICIPATION_TERMS_PATH && latest.documentText === body && latest.enforceWaiver === enforce) return latest;
-  if (!latest && !body) return null;
-  const published = await tx.participationPolicy.count({ where: { organizationId } });
-  return tx.participationPolicy.create({
-    data: {
-      organizationId,
-      version: `v${published + 1}`,
-      documentReference: PARTICIPATION_TERMS_PATH,
-      documentText: body,
-      // The gym's own published terms must be accepted. Clearing them, or leaving the
-      // onboarding placeholder, publishes a version with nothing to accept.
-      enforceWaiver: enforce,
-      adultOnly: latest?.adultOnly ?? false,
-      healthPurpose: latest?.healthPurpose ?? "",
-      retentionDays: latest?.retentionDays ?? 365,
-      publishedBy
-    }
-  });
-}
-async function currentParticipationTerms(prisma, organizationId) {
-  if (!organizationId) return null;
-  const latest = await prisma.participationPolicy.findFirst({
-    where: { organizationId },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: { id: true, version: true, documentText: true, enforceWaiver: true }
-  });
-  if (!latest?.documentText || isParticipationTermsPlaceholder(latest.documentText)) return null;
-  return { policyId: latest.id, version: latest.version, text: latest.documentText, acceptanceRequired: Boolean(latest.enforceWaiver) };
-}
-async function participationPolicyForEditor(prisma, organizationId) {
-  const latest = await prisma.participationPolicy.findFirst({
-    where: { organizationId },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    select: { id: true, version: true, documentReference: true, documentText: true, enforceWaiver: true, adultOnly: true, healthPurpose: true, retentionDays: true, createdAt: true }
-  });
-  if (!latest) return null;
-  return {
-    policyId: latest.id,
-    version: latest.version,
-    source: latest.documentReference === PARTICIPATION_TERMS_PATH ? "pasted" : "document",
-    documentReference: latest.documentReference,
-    text: latest.documentText || "",
-    placeholder: isParticipationTermsPlaceholder(String(latest.documentText || "")),
-    acceptanceRequired: Boolean(latest.enforceWaiver),
-    adultOnly: Boolean(latest.adultOnly),
-    healthPurpose: latest.healthPurpose || "",
-    retentionDays: latest.retentionDays,
-    publishedAt: latest.createdAt instanceof Date ? latest.createdAt.toISOString() : String(latest.createdAt)
-  };
-}
-
 // features/keystone/mutations/gymSettingsLifecycle.ts
+init_participation_terms();
 init_prisma_result();
 init_operational_policy();
 init_classCapacity();
@@ -6157,7 +6966,7 @@ function normalizeGymSettingsInput(input) {
   if ("logoIcon" in input && input.logoIcon != null) {
     if (typeof input.logoIcon !== "string") throw new Error("logoIcon must be a string");
     const submitted = input.logoIcon.trim();
-    const sanitized = sanitizeGymLogoSvg(submitted);
+    const sanitized = sanitizeStoreLogoSvg(submitted);
     if (submitted && !sanitized) throw new Error("logoIcon must be a valid, safe SVG document");
     output.logoIcon = sanitized;
   }
@@ -6183,6 +6992,17 @@ function normalizeGymSettingsInput(input) {
       if (!Number.isFinite(rating) || rating < 0 || rating > 5) throw new Error("rating must be between 0 and 5");
       output.rating = rating.toFixed(1);
     }
+  }
+  if ("dropInPrice" in input && input.dropInPrice != null) {
+    const cents = Number(input.dropInPrice);
+    if (!Number.isInteger(cents) || cents < 0 || cents > 1e5) throw new Error("Drop-in price must be between $0 and $1,000");
+    if (cents > 0 && cents < 50) throw new Error("Drop-in price must be at least $0.50, or $0 to stop selling drop-ins online");
+    output.dropInPrice = cents;
+  }
+  if ("lateCancelHours" in input && input.lateCancelHours != null) {
+    const hours = Number(input.lateCancelHours);
+    if (!Number.isInteger(hours) || hours < 0 || hours > 72) throw new Error("Late-cancel window must be a whole number of hours from 0 to 72");
+    output.lateCancelHours = hours;
   }
   if ("reviewCount" in input && input.reviewCount != null) {
     const count = Number(input.reviewCount);
@@ -6212,6 +7032,8 @@ var EDITABLE_FIELDS = [
   "phone",
   "email",
   "currencyCode",
+  "dropInPrice",
+  "lateCancelHours",
   "locale",
   "timezone",
   "countryCode",
@@ -6264,24 +7086,33 @@ async function upsertGymSettings(root, { data, expectedUpdatedAt }, context) {
     if (existing[0] && expectedUpdatedAt && new Date(String(expectedUpdatedAt)).getTime() !== new Date(existing[0].updatedAt).getTime()) {
       throw new Error("Settings changed since you opened this page. Reload to see the latest values, then save your change again.");
     }
-    if (!existing[0] && (!normalized.name || !normalized.heroImageUrl)) {
-      throw new Error("Initial gym settings require a business name and canonical hero image");
+    if (!existing[0] && !normalized.name) {
+      throw new Error("Initial gym settings require a business name");
     }
     return existing[0] ? transactionContext.sudo().db.GymSettings.updateOne({ where: { id: existing[0].id }, data: normalized }) : transactionContext.sudo().db.GymSettings.createOne({ data: { ...normalized, organization: { connect: { id: actor2.organizationId } } } });
   });
   return saved;
 }
-async function publishGymParticipationTerms(_root, { text: text45, expectedPolicyId }, context) {
-  const actor2 = settingsActor(context);
-  if (typeof text45 !== "string") throw new Error("Participation terms must be text");
-  const body = text45.trim();
+async function publishGymParticipationTerms(_root, { text: text47, expectedPolicyId }, context) {
+  const session = context.session;
+  const organizationId = getTenantId(session);
+  if (!session?.itemId || !organizationId) throw new Error("Authentication required");
+  if (typeof text47 !== "string") throw new Error("Participation terms must be text");
+  const body = text47.trim();
   if (body.length > PARTICIPATION_TERMS_MAX_LENGTH) throw new Error(`Participation terms must be ${PARTICIPATION_TERMS_MAX_LENGTH.toLocaleString("en-US")} characters or fewer`);
-  return publishTermsForOrganization(context, actor2.organizationId, actor2.userId, body, expectedPolicyId ?? null);
+  return publishTermsForOrganization(context, organizationId, String(session.itemId), body, expectedPolicyId ?? null, { requirePolicyAuthority: true });
 }
-async function publishTermsForOrganization(context, organizationId, userId, body, expectedPolicyId) {
+async function assertCurrentPolicyPublisher(tx, userId, organizationId) {
+  const user = await tx.user.findUnique({ where: { id: userId }, select: { organizationId: true, role: { select: { organizationId: true, canManageAllRecords: true, canAccessDashboard: true } } } });
+  if (!user || user.organizationId !== organizationId || user.role?.organizationId !== organizationId || !user.role?.canAccessDashboard || !user.role?.canManageAllRecords) {
+    throw new Error("Publishing participation terms needs operations manager access");
+  }
+}
+async function publishTermsForOrganization(context, organizationId, userId, body, expectedPolicyId, options = {}) {
   return context.transaction(async (transactionContext) => {
     const tx = guardKeystonePrismaResults(transactionContext.prisma);
     await lockParticipationPolicy(tx, organizationId);
+    if (options.requirePolicyAuthority) await assertCurrentPolicyPublisher(tx, userId, organizationId);
     const current = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } });
     if (expectedPolicyId !== void 0 && (current?.id ?? null) !== expectedPolicyId) {
       throw new Error("The participation policy changed since you opened this page. Reload, review the current version, then publish again.");
@@ -6315,10 +7146,15 @@ var Instructor = (0, import_core25.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, userId") },
   hooks: {
     async validateInput(args) {
+      let failed = false;
+      const addValidationError = (message) => {
+        failed = true;
+        args.addValidationError(message);
+      };
       await validateTenantOwnership([
         { field: "user", list: "user" }
-      ])(args);
-      const { resolvedData, addValidationError } = args;
+      ])({ ...args, addValidationError });
+      const { resolvedData } = args;
       const linkedUserId = resolvedData.user?.connect?.id;
       if (args.operation === "create" && linkedUserId) {
         const linked = await args.context.sudo().query.User.findOne({ where: { id: linkedUserId }, query: "id role { isInstructor }" });
@@ -6326,17 +7162,16 @@ var Instructor = (0, import_core25.list)({
       }
       const certifications = certificationProblem(resolvedData.certifications);
       if (resolvedData.certifications !== void 0 && certifications) addValidationError(certifications);
-      if (args.operation === "update" && resolvedData.isActive === false && args.item?.isActive) {
-        const upcoming = await upcomingServicesForInstructor(args.context, args.item.organizationId, args.item.id);
-        if (upcoming.classes || upcoming.appointments) {
-          addValidationError(`Reassign or cancel this coach's ${upcoming.classes} upcoming class sessions and ${upcoming.appointments} appointments before retiring them`);
+      if (resolvedData.photo !== void 0) {
+        try {
+          resolvedData.photo = normalizeOnboardingMediaPath(resolvedData.photo);
+        } catch (error) {
+          addValidationError(error instanceof Error ? error.message : String(error));
         }
       }
-      if (resolvedData.photo === void 0) return;
-      try {
-        resolvedData.photo = normalizeOnboardingMediaPath(resolvedData.photo);
-      } catch (error) {
-        addValidationError(error instanceof Error ? error.message : String(error));
+      if (!failed && args.operation === "update" && resolvedData.isActive === false && args.item?.isActive) {
+        const problem = await retireUnderSchedulingLock(args.context, "instructor", args.item);
+        if (problem) addValidationError(problem);
       }
     },
     async validateDelete({ item, context, addValidationError }) {
@@ -6363,8 +7198,11 @@ var Instructor = (0, import_core25.list)({
     }
   },
   ui: {
+    // Coach profiles are created from Instructors → Add coach, which offers only eligible
+    // instructor-role accounts; the generic create form's account picker is not offered.
+    hideCreate: true,
     listView: {
-      initialColumns: ["user", "specialties", "isActive"]
+      initialColumns: ["user", "specialtiesLabel", "isActive"]
     },
     // A scalar label: the shared dashboard core selects labels as scalars (`label: <field>`).
     labelField: "displayName"
@@ -6383,7 +7221,8 @@ var Instructor = (0, import_core25.list)({
       access: { read: permissions.canManageAllRecords, update: import_access47.denyAll },
       isFilterable: permissions.canManageAllRecords,
       isOrderable: permissions.canManageAllRecords,
-      // Linked once at creation; placeholder coach accounts are claimed through Coach accounts.
+      // Linked once at creation. Onboarding placeholder accounts keep their recorded provenance;
+      // handing one to the real coach is on hold pending the family credential security review.
       ui: {
         displayMode: "select",
         description: "The user account for this instructor",
@@ -6407,6 +7246,10 @@ var Instructor = (0, import_core25.list)({
       ui: {
         description: 'Descriptive names ("ACE") or structured entries. An entry with "required": true needs name, evidenceReference, verifiedAt and expiresAt, and blocks coaching once expired or "revoked": true.'
       }
+    }),
+    portrait: (0, import_fields28.image)({
+      storage: "my_images",
+      ui: { description: "Coach portrait shown on the storefront; used before the onboarding photo" }
     }),
     photo: (0, import_fields28.text)({
       access: { create: permissions.canManageOnboarding, update: import_access47.denyAll },
@@ -6442,6 +7285,15 @@ var Instructor = (0, import_core25.list)({
       ref: "TrainerAppointment.instructor",
       many: true,
       access: { create: import_access47.denyAll, update: import_access47.denyAll }
+    }),
+    // List column: specialties read as "Spin, Zumba", not as a JSON array.
+    specialtiesLabel: (0, import_fields28.virtual)({
+      field: import_core25.graphql.field({
+        type: import_core25.graphql.String,
+        resolve: (item) => specialtiesLabel(item.specialties)
+      }),
+      label: "Specialties",
+      ui: { itemView: { fieldMode: "hidden" }, createView: { fieldMode: "hidden" } }
     }),
     displayName: (0, import_fields28.virtual)({
       access: { read: isSignedIn },
@@ -6571,7 +7423,27 @@ var ClassInstance = (0, import_core26.list)({
     location: (0, import_fields29.relationship)({ ref: "Location" }),
     resource: (0, import_fields29.relationship)({ ref: "GymResource" }),
     endsAt: (0, import_fields29.timestamp)(),
-    changeHistory: (0, import_fields29.json)({ defaultValue: [] }),
+    // Controlled amendments (who, before, after), written only by the scheduling service.
+    changeHistory: (0, import_fields29.json)({
+      defaultValue: [],
+      access: { read: permissions.canManageAllRecords, create: import_access49.denyAll, update: import_access49.denyAll },
+      ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "read" } }
+    }),
+    // What changed after booking opened (time, coach, location, room) and when, without who
+    // changed it, so a member can see that the session they booked was amended.
+    amendments: (0, import_fields29.virtual)({
+      field: import_core26.graphql.field({
+        type: import_core26.graphql.JSON,
+        resolve(item) {
+          const labels = { date: "time", instructorId: "coach", locationId: "location", resourceId: "room" };
+          return (Array.isArray(item.changeHistory) ? item.changeHistory : []).map((entry) => ({
+            at: typeof entry?.at === "string" ? entry.at : null,
+            changed: Object.keys(labels).filter((key) => entry?.before?.[key] !== entry?.after?.[key]).map((key) => labels[key])
+          }));
+        }
+      }),
+      ui: { itemView: { fieldMode: "hidden" }, listView: { fieldMode: "hidden" } }
+    }),
     occurrenceKey: (0, import_fields29.text)({ isIndexed: "unique", db: { isNullable: true } }),
     // Reference to the recurring schedule
     classSchedule: (0, import_fields29.relationship)({
@@ -6913,7 +7785,23 @@ var TrainerAppointment = (0, import_core29.list)({
 // features/keystone/models/OnboardingRun.ts
 var import_core30 = require("@keystone-6/core");
 var import_access55 = require("@keystone-6/core/access");
+var import_fields34 = require("@keystone-6/core/fields");
+
+// features/keystone/models/trackingBasis.ts
 var import_fields33 = require("@keystone-6/core/fields");
+var trackingBasisField = (0, import_fields33.select)({
+  type: "string",
+  options: [
+    { label: "Recorded when the row was created", value: "recorded" },
+    { label: "Unknown: the row predates tracking", value: "added_by_migration" }
+  ],
+  defaultValue: "recorded",
+  validation: { isRequired: true },
+  access: { read: () => true, create: () => false, update: () => false },
+  ui: { createView: { fieldMode: "hidden" }, itemView: { fieldMode: "read" } }
+});
+
+// features/keystone/models/OnboardingRun.ts
 var OnboardingRun = (0, import_core30.list)({
   access: {
     operation: { query: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll, delete: import_access55.denyAll }
@@ -6927,13 +7815,13 @@ var OnboardingRun = (0, import_core30.list)({
     }
   },
   fields: {
-    organization: (0, import_fields33.relationship)({
+    organization: (0, import_fields34.relationship)({
       ref: "Organization.onboardingRuns",
       access: { update: import_access55.denyAll },
       graphql: { isNonNull: { read: true } },
       db: { extendPrismaSchema: requiredRelationshipDb("organization") }
     }),
-    status: (0, import_fields33.select)({
+    status: (0, import_fields34.select)({
       type: "string",
       options: [
         { label: "Running", value: "running" },
@@ -6944,23 +7832,24 @@ var OnboardingRun = (0, import_core30.list)({
       validation: { isRequired: true },
       access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll }
     }),
-    attempts: (0, import_fields33.integer)({ defaultValue: 0, access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
-    lastError: (0, import_fields33.text)({ defaultValue: "", access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
-    startedAt: (0, import_fields33.timestamp)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
-    completedAt: (0, import_fields33.timestamp)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
-    leaseUntil: (0, import_fields33.timestamp)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
-    leaseToken: (0, import_fields33.text)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
-    // Starter records this run created or adopted, their seeded values, placeholder coach
-    // accounts and the requested configuration: the provenance retries and claims rely on.
-    manifest: (0, import_fields33.json)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
-    ...trackingFields
+    attempts: (0, import_fields34.integer)({ defaultValue: 0, access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
+    lastError: (0, import_fields34.text)({ defaultValue: "", access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
+    startedAt: (0, import_fields34.timestamp)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
+    completedAt: (0, import_fields34.timestamp)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
+    leaseUntil: (0, import_fields34.timestamp)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
+    leaseToken: (0, import_fields34.text)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
+    // Starter records this run created or adopted, their seeded values, the placeholder coach
+    // accounts it created and the requested configuration: the provenance retries rely on.
+    manifest: (0, import_fields34.json)({ access: { read: import_access55.denyAll, create: import_access55.denyAll, update: import_access55.denyAll } }),
+    ...trackingFields,
+    trackingBasis: trackingBasisField
   }
 });
 
 // features/keystone/models/GymRefundAttempt.ts
 var import_core31 = require("@keystone-6/core");
 var import_access56 = require("@keystone-6/core/access");
-var import_fields34 = require("@keystone-6/core/fields");
+var import_fields35 = require("@keystone-6/core/fields");
 var GymRefundAttempt = (0, import_core31.list)({
   access: { operation: { query: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll, delete: import_access56.denyAll } },
   db: {
@@ -6969,27 +7858,28 @@ var GymRefundAttempt = (0, import_core31.list)({
     }
   },
   fields: {
-    organization: (0, import_fields34.relationship)({ ref: "Organization.refundAttempts", access: { update: import_access56.denyAll }, db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
-    payment: (0, import_fields34.relationship)({ ref: "GymPayment.refundAttempts", access: { update: import_access56.denyAll }, db: { extendPrismaSchema: requiredRelationshipDb("payment") } }),
-    requestKey: (0, import_fields34.text)({ validation: { isRequired: true }, access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
-    claimToken: (0, import_fields34.text)({ defaultValue: "", access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
-    amount: (0, import_fields34.integer)({ validation: { isRequired: true }, access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
-    startingRefundAmount: (0, import_fields34.integer)({ defaultValue: 0, validation: { isRequired: true }, access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
-    status: (0, import_fields34.select)({ type: "string", options: [{ label: "Processing", value: "processing" }, { label: "Succeeded", value: "succeeded" }, { label: "Failed", value: "failed" }], defaultValue: "processing", access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
-    providerRefundId: (0, import_fields34.text)({ defaultValue: "", access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    organization: (0, import_fields35.relationship)({ ref: "Organization.refundAttempts", access: { update: import_access56.denyAll }, db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
+    payment: (0, import_fields35.relationship)({ ref: "GymPayment.refundAttempts", access: { update: import_access56.denyAll }, db: { extendPrismaSchema: requiredRelationshipDb("payment") } }),
+    requestKey: (0, import_fields35.text)({ validation: { isRequired: true }, access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    claimToken: (0, import_fields35.text)({ defaultValue: "", access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    amount: (0, import_fields35.integer)({ validation: { isRequired: true }, access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    startingRefundAmount: (0, import_fields35.integer)({ defaultValue: 0, validation: { isRequired: true }, access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    status: (0, import_fields35.select)({ type: "string", options: [{ label: "Processing", value: "processing" }, { label: "Succeeded", value: "succeeded" }, { label: "Failed", value: "failed" }], defaultValue: "processing", access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    providerRefundId: (0, import_fields35.text)({ defaultValue: "", access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
     // Frozen request/provider identity lives with its refund attempt, not in diagnostics.
-    reservation: (0, import_fields34.json)({ access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
-    lastError: (0, import_fields34.text)({ defaultValue: "", access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
-    requestedAt: (0, import_fields34.timestamp)({ access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
-    completedAt: (0, import_fields34.timestamp)({ access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
-    ...trackingFields
+    reservation: (0, import_fields35.json)({ access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    lastError: (0, import_fields35.text)({ defaultValue: "", access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    requestedAt: (0, import_fields35.timestamp)({ access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    completedAt: (0, import_fields35.timestamp)({ access: { read: import_access56.denyAll, create: import_access56.denyAll, update: import_access56.denyAll } }),
+    ...trackingFields,
+    trackingBasis: trackingBasisField
   }
 });
 
 // features/keystone/models/MembershipBillingAttempt.ts
 var import_core32 = require("@keystone-6/core");
 var import_access57 = require("@keystone-6/core/access");
-var import_fields35 = require("@keystone-6/core/fields");
+var import_fields36 = require("@keystone-6/core/fields");
 var MembershipBillingAttempt = (0, import_core32.list)({
   access: { operation: { query: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll, delete: import_access57.denyAll } },
   db: {
@@ -7001,20 +7891,21 @@ var MembershipBillingAttempt = (0, import_core32.list)({
     }
   },
   fields: {
-    organization: (0, import_fields35.relationship)({
+    organization: (0, import_fields36.relationship)({
       ref: "Organization.membershipBillingAttempts",
       access: { update: import_access57.denyAll },
       db: { extendPrismaSchema: requiredRelationshipDb("organization") }
     }),
-    membership: (0, import_fields35.relationship)({
+    membership: (0, import_fields36.relationship)({
       ref: "Membership.billingAttempts",
       access: { update: import_access57.denyAll },
       db: { extendPrismaSchema: requiredRelationshipDb("membership") }
     }),
-    operation: (0, import_fields35.select)({
+    operation: (0, import_fields36.select)({
       type: "string",
       options: [
         { label: "Cancel", value: "cancel" },
+        { label: "Cancel now", value: "cancel-now" },
         { label: "Freeze", value: "freeze" },
         { label: "Unfreeze", value: "unfreeze" },
         { label: "Tier change", value: "tier-change" }
@@ -7022,24 +7913,24 @@ var MembershipBillingAttempt = (0, import_core32.list)({
       validation: { isRequired: true },
       access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll }
     }),
-    idempotencyKey: (0, import_fields35.text)({
+    idempotencyKey: (0, import_fields36.text)({
       validation: { isRequired: true },
       access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll }
     }),
-    requestHash: (0, import_fields35.text)({
+    requestHash: (0, import_fields36.text)({
       validation: { isRequired: true },
       access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll }
     }),
-    claimToken: (0, import_fields35.text)({
+    claimToken: (0, import_fields36.text)({
       validation: { isRequired: true },
       access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll }
     }),
-    generation: (0, import_fields35.integer)({
+    generation: (0, import_fields36.integer)({
       defaultValue: 0,
       validation: { isRequired: true },
       access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll }
     }),
-    status: (0, import_fields35.select)({
+    status: (0, import_fields36.select)({
       type: "string",
       options: [
         { label: "Processing", value: "processing" },
@@ -7050,25 +7941,26 @@ var MembershipBillingAttempt = (0, import_core32.list)({
       validation: { isRequired: true },
       access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll }
     }),
-    leaseUntil: (0, import_fields35.timestamp)({ access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll } }),
-    lastError: (0, import_fields35.text)({
+    leaseUntil: (0, import_fields36.timestamp)({ access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll } }),
+    lastError: (0, import_fields36.text)({
       defaultValue: "",
       access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll }
     }),
-    requestedAt: (0, import_fields35.timestamp)({
+    requestedAt: (0, import_fields36.timestamp)({
       defaultValue: { kind: "now" },
       validation: { isRequired: true },
       access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll }
     }),
-    completedAt: (0, import_fields35.timestamp)({ access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll } }),
-    ...trackingFields
+    completedAt: (0, import_fields36.timestamp)({ access: { read: import_access57.denyAll, create: import_access57.denyAll, update: import_access57.denyAll } }),
+    ...trackingFields,
+    trackingBasis: trackingBasisField
   }
 });
 
 // features/keystone/models/AuthRateLimitBucket.ts
 var import_core33 = require("@keystone-6/core");
 var import_access58 = require("@keystone-6/core/access");
-var import_fields36 = require("@keystone-6/core/fields");
+var import_fields37 = require("@keystone-6/core/fields");
 var AuthRateLimitBucket = (0, import_core33.list)({
   access: { operation: { query: import_access58.denyAll, create: import_access58.denyAll, update: import_access58.denyAll, delete: import_access58.denyAll } },
   db: {
@@ -7077,104 +7969,106 @@ var AuthRateLimitBucket = (0, import_core33.list)({
     }
   },
   fields: {
-    key: (0, import_fields36.text)({ validation: { isRequired: true }, access: { read: import_access58.denyAll, create: import_access58.denyAll, update: import_access58.denyAll } }),
-    count: (0, import_fields36.integer)({ defaultValue: 0, access: { read: import_access58.denyAll, create: import_access58.denyAll, update: import_access58.denyAll } }),
-    resetAt: (0, import_fields36.timestamp)({ access: { read: import_access58.denyAll, create: import_access58.denyAll, update: import_access58.denyAll } }),
+    key: (0, import_fields37.text)({ validation: { isRequired: true }, access: { read: import_access58.denyAll, create: import_access58.denyAll, update: import_access58.denyAll } }),
+    count: (0, import_fields37.integer)({ defaultValue: 0, access: { read: import_access58.denyAll, create: import_access58.denyAll, update: import_access58.denyAll } }),
+    resetAt: (0, import_fields37.timestamp)({ access: { read: import_access58.denyAll, create: import_access58.denyAll, update: import_access58.denyAll } }),
     ...trackingFields
   }
 });
 
 // features/keystone/models/Operations.ts
 var import_core34 = require("@keystone-6/core");
-var import_fields37 = require("@keystone-6/core/fields");
+var import_fields38 = require("@keystone-6/core/fields");
 var access = {
   operation: { query: permissions.canManageAllRecords, create: () => false, update: () => false, delete: () => false },
   filter: { query: tenantFilter }
 };
-var organization = () => (0, import_fields37.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } });
+var organization = () => (0, import_fields38.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } });
 var OperationalNotice = (0, import_core34.list)({ access, fields: {
   organization: organization(),
-  member: (0, import_fields37.relationship)({ ref: "Member" }),
-  key: (0, import_fields37.text)({ isIndexed: "unique" }),
-  kind: (0, import_fields37.text)(),
-  message: (0, import_fields37.text)(),
-  status: (0, import_fields37.text)({ defaultValue: "pending" }),
-  attempts: (0, import_fields37.integer)({ defaultValue: 0 }),
-  lastError: (0, import_fields37.text)(),
-  resolvedAt: (0, import_fields37.timestamp)(),
-  history: (0, import_fields37.json)({ defaultValue: [] }),
+  member: (0, import_fields38.relationship)({ ref: "Member" }),
+  key: (0, import_fields38.text)({ isIndexed: "unique" }),
+  kind: (0, import_fields38.text)(),
+  message: (0, import_fields38.text)(),
+  status: (0, import_fields38.text)({ defaultValue: "pending" }),
+  attempts: (0, import_fields38.integer)({ defaultValue: 0 }),
+  lastError: (0, import_fields38.text)(),
+  resolvedAt: (0, import_fields38.timestamp)(),
+  history: (0, import_fields38.json)({ defaultValue: [] }),
   ...trackingFields
 } });
 var ParticipationPolicy = (0, import_core34.list)({ access, fields: {
   organization: organization(),
-  version: (0, import_fields37.text)(),
-  documentReference: (0, import_fields37.text)(),
+  version: (0, import_fields38.text)(),
+  documentReference: (0, import_fields38.text)(),
   // Snapshot of owner-pasted terms for this version; empty for external-document policies.
-  documentText: (0, import_fields37.text)({ ui: { displayMode: "textarea" } }),
-  enforceWaiver: (0, import_fields37.checkbox)({ defaultValue: true }),
-  adultOnly: (0, import_fields37.checkbox)({ defaultValue: true }),
-  healthPurpose: (0, import_fields37.text)(),
-  retentionDays: (0, import_fields37.integer)({ defaultValue: 365 }),
-  publishedBy: (0, import_fields37.text)(),
+  documentText: (0, import_fields38.text)({ ui: { displayMode: "textarea" } }),
+  enforceWaiver: (0, import_fields38.checkbox)({ defaultValue: true }),
+  adultOnly: (0, import_fields38.checkbox)({ defaultValue: true }),
+  healthPurpose: (0, import_fields38.text)(),
+  retentionDays: (0, import_fields38.integer)({ defaultValue: 365 }),
+  publishedBy: (0, import_fields38.text)(),
   ...trackingFields
 } });
 var ParticipationEvidence = (0, import_core34.list)({ access, fields: {
   organization: organization(),
-  member: (0, import_fields37.relationship)({ ref: "Member" }),
-  policy: (0, import_fields37.relationship)({ ref: "ParticipationPolicy" }),
-  key: (0, import_fields37.text)({ isIndexed: "unique" }),
-  requestHash: (0, import_fields37.text)(),
-  documentReference: (0, import_fields37.text)(),
-  verifiedBy: (0, import_fields37.text)(),
-  acceptedAt: (0, import_fields37.timestamp)(),
-  expiresAt: (0, import_fields37.timestamp)(),
-  revokedAt: (0, import_fields37.timestamp)(),
-  revocationReason: (0, import_fields37.text)(),
-  healthConsent: (0, import_fields37.checkbox)({ defaultValue: false }),
+  member: (0, import_fields38.relationship)({ ref: "Member", db: { extendPrismaSchema: restrictDeleteDb } }),
+  policy: (0, import_fields38.relationship)({ ref: "ParticipationPolicy" }),
+  key: (0, import_fields38.text)({ isIndexed: "unique" }),
+  requestHash: (0, import_fields38.text)(),
+  documentReference: (0, import_fields38.text)(),
+  verifiedBy: (0, import_fields38.text)(),
+  acceptedAt: (0, import_fields38.timestamp)(),
+  expiresAt: (0, import_fields38.timestamp)(),
+  revokedAt: (0, import_fields38.timestamp)(),
+  revocationReason: (0, import_fields38.text)(),
+  healthConsent: (0, import_fields38.checkbox)({ defaultValue: false }),
+  // "acceptance" (terms accepted or verified) or "health_consent" (optional health-storage permission only).
+  kind: (0, import_fields38.text)({ defaultValue: "acceptance", validation: { isRequired: true } }),
   ...trackingFields
 } });
 var OperationsCase = (0, import_core34.list)({ access, fields: {
   organization: organization(),
-  member: (0, import_fields37.relationship)({ ref: "Member" }),
-  key: (0, import_fields37.text)({ isIndexed: "unique" }),
-  requestHash: (0, import_fields37.text)(),
-  kind: (0, import_fields37.text)(),
-  reference: (0, import_fields37.text)(),
-  locationId: (0, import_fields37.text)(),
-  summary: (0, import_fields37.text)(),
-  status: (0, import_fields37.text)({ defaultValue: "open" }),
-  assignedTo: (0, import_fields37.text)(),
-  history: (0, import_fields37.json)({ defaultValue: [] }),
-  openedBy: (0, import_fields37.text)(),
-  closedAt: (0, import_fields37.timestamp)(),
+  member: (0, import_fields38.relationship)({ ref: "Member", db: { extendPrismaSchema: restrictDeleteDb } }),
+  key: (0, import_fields38.text)({ isIndexed: "unique" }),
+  requestHash: (0, import_fields38.text)(),
+  kind: (0, import_fields38.text)(),
+  reference: (0, import_fields38.text)(),
+  locationId: (0, import_fields38.text)(),
+  summary: (0, import_fields38.text)(),
+  status: (0, import_fields38.text)({ defaultValue: "open" }),
+  assignedTo: (0, import_fields38.text)(),
+  history: (0, import_fields38.json)({ defaultValue: [] }),
+  openedBy: (0, import_fields38.text)(),
+  closedAt: (0, import_fields38.timestamp)(),
   ...trackingFields
 } });
 var IntegrationCredential = (0, import_core34.list)({ access, fields: {
   organization: organization(),
-  label: (0, import_fields37.text)(),
-  digest: (0, import_fields37.text)({ isIndexed: "unique", access: { read: () => false } }),
-  scopes: (0, import_fields37.json)({ defaultValue: [] }),
-  partner: (0, import_fields37.text)(),
-  revokedAt: (0, import_fields37.timestamp)(),
-  expiresAt: (0, import_fields37.timestamp)(),
-  createdBy: (0, import_fields37.text)(),
+  label: (0, import_fields38.text)(),
+  digest: (0, import_fields38.text)({ isIndexed: "unique", access: { read: () => false } }),
+  scopes: (0, import_fields38.json)({ defaultValue: [] }),
+  partner: (0, import_fields38.text)(),
+  revokedAt: (0, import_fields38.timestamp)(),
+  expiresAt: (0, import_fields38.timestamp)(),
+  createdBy: (0, import_fields38.text)(),
   ...trackingFields
 } });
 
 // features/keystone/models/MembershipCreditGrant.ts
 var import_core35 = require("@keystone-6/core");
 var import_access60 = require("@keystone-6/core/access");
-var import_fields38 = require("@keystone-6/core/fields");
+var import_fields39 = require("@keystone-6/core/fields");
 var MembershipCreditGrant = (0, import_core35.list)({
   access: { operation: { query: permissions.canManageAllRecords, create: import_access60.denyAll, update: import_access60.denyAll, delete: import_access60.denyAll }, filter: { query: tenantFilter } },
   fields: {
-    organization: (0, import_fields38.relationship)({ ref: "Organization" }),
-    key: (0, import_fields38.text)({ isIndexed: "unique", validation: { isRequired: true } }),
-    membership: (0, import_fields38.relationship)({ ref: "Membership" }),
-    periodStart: (0, import_fields38.timestamp)({ validation: { isRequired: true } }),
-    periodEnd: (0, import_fields38.timestamp)({ validation: { isRequired: true } }),
-    allowance: (0, import_fields38.integer)({ validation: { isRequired: true } }),
-    remaining: (0, import_fields38.integer)({ validation: { isRequired: true } }),
+    organization: (0, import_fields39.relationship)({ ref: "Organization" }),
+    key: (0, import_fields39.text)({ isIndexed: "unique", validation: { isRequired: true } }),
+    membership: (0, import_fields39.relationship)({ ref: "Membership" }),
+    periodStart: (0, import_fields39.timestamp)({ validation: { isRequired: true } }),
+    periodEnd: (0, import_fields39.timestamp)({ validation: { isRequired: true } }),
+    allowance: (0, import_fields39.integer)({ validation: { isRequired: true } }),
+    remaining: (0, import_fields39.integer)({ validation: { isRequired: true } }),
     ...trackingFields
   }
 });
@@ -7182,16 +8076,16 @@ var MembershipCreditGrant = (0, import_core35.list)({
 // features/keystone/models/MembershipCreditEntry.ts
 var import_core36 = require("@keystone-6/core");
 var import_access62 = require("@keystone-6/core/access");
-var import_fields39 = require("@keystone-6/core/fields");
+var import_fields40 = require("@keystone-6/core/fields");
 var MembershipCreditEntry = (0, import_core36.list)({
   access: { operation: { query: permissions.canManageAllRecords, create: import_access62.denyAll, update: import_access62.denyAll, delete: import_access62.denyAll }, filter: { query: tenantFilter } },
   fields: {
-    organization: (0, import_fields39.relationship)({ ref: "Organization" }),
-    key: (0, import_fields39.text)({ isIndexed: "unique", validation: { isRequired: true } }),
-    grant: (0, import_fields39.relationship)({ ref: "MembershipCreditGrant" }),
-    booking: (0, import_fields39.relationship)({ ref: "ClassBooking" }),
-    delta: (0, import_fields39.integer)({ validation: { isRequired: true } }),
-    kind: (0, import_fields39.text)({ validation: { isRequired: true } }),
+    organization: (0, import_fields40.relationship)({ ref: "Organization" }),
+    key: (0, import_fields40.text)({ isIndexed: "unique", validation: { isRequired: true } }),
+    grant: (0, import_fields40.relationship)({ ref: "MembershipCreditGrant" }),
+    booking: (0, import_fields40.relationship)({ ref: "ClassBooking" }),
+    delta: (0, import_fields40.integer)({ validation: { isRequired: true } }),
+    kind: (0, import_fields40.text)({ validation: { isRequired: true } }),
     ...trackingFields
   }
 });
@@ -7199,7 +8093,7 @@ var MembershipCreditEntry = (0, import_core36.list)({
 // features/keystone/models/TrainingPackage.ts
 var import_core37 = require("@keystone-6/core");
 var import_access64 = require("@keystone-6/core/access");
-var import_fields40 = require("@keystone-6/core/fields");
+var import_fields41 = require("@keystone-6/core/fields");
 var TrainingPackage = (0, import_core37.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, purchaseReference") },
   access: {
@@ -7207,24 +8101,24 @@ var TrainingPackage = (0, import_core37.list)({
     filter: { query: ({ session }) => tenantFilter({ session }, canManageTenant({ session }, "canManageAppointments") ? void 0 : { member: { user: { id: { equals: session?.itemId } } } }) }
   },
   fields: {
-    organization: (0, import_fields40.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
-    member: (0, import_fields40.relationship)({ ref: "Member", db: { extendPrismaSchema: requiredRelationshipDb("member") } }),
-    location: (0, import_fields40.relationship)({ ref: "Location", db: { extendPrismaSchema: requiredRelationshipDb("location") } }),
-    serviceName: (0, import_fields40.text)({ validation: { isRequired: true } }),
-    durationMinutes: (0, import_fields40.integer)({ validation: { isRequired: true, min: 15, max: 480 } }),
-    totalCredits: (0, import_fields40.integer)({ validation: { isRequired: true, min: 1, max: 1e3 } }),
-    creditsRemaining: (0, import_fields40.integer)({ validation: { isRequired: true, min: 0 } }),
-    amount: (0, import_fields40.integer)({ validation: { isRequired: true, min: 1 } }),
-    currencyCode: (0, import_fields40.text)({ defaultValue: "USD" }),
-    purchaseReference: (0, import_fields40.text)({ validation: { isRequired: true } }),
-    purchasedAt: (0, import_fields40.timestamp)({ validation: { isRequired: true } }),
-    expiresAt: (0, import_fields40.timestamp)({ validation: { isRequired: true } }),
-    recordedBy: (0, import_fields40.relationship)({ ref: "User" }),
-    status: (0, import_fields40.select)({ options: ["active", "refunded"], defaultValue: "active", validation: { isRequired: true } }),
-    refundAmount: (0, import_fields40.integer)({ defaultValue: 0 }),
-    refundReference: (0, import_fields40.text)(),
-    refundedAt: (0, import_fields40.timestamp)(),
-    terms: (0, import_fields40.json)({ defaultValue: {} }),
+    organization: (0, import_fields41.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
+    member: (0, import_fields41.relationship)({ ref: "Member", db: { extendPrismaSchema: requiredRelationshipDb("member") } }),
+    location: (0, import_fields41.relationship)({ ref: "Location", db: { extendPrismaSchema: requiredRelationshipDb("location") } }),
+    serviceName: (0, import_fields41.text)({ validation: { isRequired: true } }),
+    durationMinutes: (0, import_fields41.integer)({ validation: { isRequired: true, min: 15, max: 480 } }),
+    totalCredits: (0, import_fields41.integer)({ validation: { isRequired: true, min: 1, max: 1e3 } }),
+    creditsRemaining: (0, import_fields41.integer)({ validation: { isRequired: true, min: 0 } }),
+    amount: (0, import_fields41.integer)({ validation: { isRequired: true, min: 1 } }),
+    currencyCode: (0, import_fields41.text)({ defaultValue: "USD" }),
+    purchaseReference: (0, import_fields41.text)({ validation: { isRequired: true } }),
+    purchasedAt: (0, import_fields41.timestamp)({ validation: { isRequired: true } }),
+    expiresAt: (0, import_fields41.timestamp)({ validation: { isRequired: true } }),
+    recordedBy: (0, import_fields41.relationship)({ ref: "User" }),
+    status: (0, import_fields41.select)({ options: ["active", "refunded"], defaultValue: "active", validation: { isRequired: true } }),
+    refundAmount: (0, import_fields41.integer)({ defaultValue: 0 }),
+    refundReference: (0, import_fields41.text)(),
+    refundedAt: (0, import_fields41.timestamp)(),
+    terms: (0, import_fields41.json)({ defaultValue: {} }),
     ...trackingFields
   }
 });
@@ -7232,7 +8126,7 @@ var TrainingPackage = (0, import_core37.list)({
 // features/keystone/models/TrainingCreditEntry.ts
 var import_core38 = require("@keystone-6/core");
 var import_access66 = require("@keystone-6/core/access");
-var import_fields41 = require("@keystone-6/core/fields");
+var import_fields42 = require("@keystone-6/core/fields");
 var TrainingCreditEntry = (0, import_core38.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, eventKey") },
   access: {
@@ -7240,15 +8134,15 @@ var TrainingCreditEntry = (0, import_core38.list)({
     filter: { query: ({ session }) => tenantFilter({ session }, canManageTenant({ session }, "canManageAppointments") ? void 0 : { trainingPackage: { member: { user: { id: { equals: session?.itemId } } } } }) }
   },
   fields: {
-    organization: (0, import_fields41.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
-    trainingPackage: (0, import_fields41.relationship)({ ref: "TrainingPackage", db: { extendPrismaSchema: requiredRelationshipDb("trainingPackage") } }),
-    appointment: (0, import_fields41.relationship)({ ref: "TrainerAppointment" }),
-    eventKey: (0, import_fields41.text)({ validation: { isRequired: true } }),
-    kind: (0, import_fields41.select)({ options: ["issued", "reserved", "restored", "refunded", "refund_reserved", "refund_released"], validation: { isRequired: true } }),
-    quantity: (0, import_fields41.integer)({ validation: { isRequired: true } }),
-    balanceAfter: (0, import_fields41.integer)({ validation: { isRequired: true, min: 0 } }),
-    actor: (0, import_fields41.relationship)({ ref: "User" }),
-    reason: (0, import_fields41.text)(),
+    organization: (0, import_fields42.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
+    trainingPackage: (0, import_fields42.relationship)({ ref: "TrainingPackage", db: { extendPrismaSchema: requiredRelationshipDb("trainingPackage") } }),
+    appointment: (0, import_fields42.relationship)({ ref: "TrainerAppointment" }),
+    eventKey: (0, import_fields42.text)({ validation: { isRequired: true } }),
+    kind: (0, import_fields42.select)({ options: ["issued", "reserved", "restored", "refunded", "refund_reserved", "refund_released"], validation: { isRequired: true } }),
+    quantity: (0, import_fields42.integer)({ validation: { isRequired: true } }),
+    balanceAfter: (0, import_fields42.integer)({ validation: { isRequired: true, min: 0 } }),
+    actor: (0, import_fields42.relationship)({ ref: "User" }),
+    reason: (0, import_fields42.text)(),
     ...trackingFields
   }
 });
@@ -7256,7 +8150,7 @@ var TrainingCreditEntry = (0, import_core38.list)({
 // features/keystone/models/CoachingAssignment.ts
 var import_core39 = require("@keystone-6/core");
 var import_access68 = require("@keystone-6/core/access");
-var import_fields42 = require("@keystone-6/core/fields");
+var import_fields43 = require("@keystone-6/core/fields");
 var CoachingAssignment = (0, import_core39.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, requestKey") },
   access: {
@@ -7264,19 +8158,19 @@ var CoachingAssignment = (0, import_core39.list)({
     filter: { query: ({ session }) => tenantFilter({ session }, canManageTenant({ session }, "canManagePrograms") ? void 0 : { OR: [{ member: { user: { id: { equals: session?.itemId } } } }, { instructor: { user: { id: { equals: session?.itemId } } } }] }) }
   },
   fields: {
-    organization: (0, import_fields42.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
-    member: (0, import_fields42.relationship)({ ref: "Member", db: { extendPrismaSchema: requiredRelationshipDb("member") } }),
-    instructor: (0, import_fields42.relationship)({ ref: "Instructor", db: { extendPrismaSchema: requiredRelationshipDb("instructor") } }),
-    title: (0, import_fields42.text)({ validation: { isRequired: true } }),
-    instructions: (0, import_fields42.text)({ validation: { isRequired: true } }),
-    dueAt: (0, import_fields42.timestamp)({ validation: { isRequired: true } }),
-    status: (0, import_fields42.select)({ options: ["assigned", "submitted", "reviewed", "cancelled"], defaultValue: "assigned" }),
-    memberEvidence: (0, import_fields42.text)(),
-    submittedAt: (0, import_fields42.timestamp)(),
-    review: (0, import_fields42.text)(),
-    reviewedAt: (0, import_fields42.timestamp)(),
-    workoutLog: (0, import_fields42.relationship)({ ref: "WorkoutLog" }),
-    requestKey: (0, import_fields42.text)({ validation: { isRequired: true } }),
+    organization: (0, import_fields43.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
+    member: (0, import_fields43.relationship)({ ref: "Member", db: { extendPrismaSchema: requiredRelationshipDb("member") } }),
+    instructor: (0, import_fields43.relationship)({ ref: "Instructor", db: { extendPrismaSchema: requiredRelationshipDb("instructor") } }),
+    title: (0, import_fields43.text)({ validation: { isRequired: true } }),
+    instructions: (0, import_fields43.text)({ validation: { isRequired: true } }),
+    dueAt: (0, import_fields43.timestamp)({ validation: { isRequired: true } }),
+    status: (0, import_fields43.select)({ options: ["assigned", "submitted", "reviewed", "cancelled"], defaultValue: "assigned" }),
+    memberEvidence: (0, import_fields43.text)(),
+    submittedAt: (0, import_fields43.timestamp)(),
+    review: (0, import_fields43.text)(),
+    reviewedAt: (0, import_fields43.timestamp)(),
+    workoutLog: (0, import_fields43.relationship)({ ref: "WorkoutLog" }),
+    requestKey: (0, import_fields43.text)({ validation: { isRequired: true } }),
     ...trackingFields
   }
 });
@@ -7284,7 +8178,7 @@ var CoachingAssignment = (0, import_core39.list)({
 // features/keystone/models/TrainingLead.ts
 var import_core40 = require("@keystone-6/core");
 var import_access70 = require("@keystone-6/core/access");
-var import_fields43 = require("@keystone-6/core/fields");
+var import_fields44 = require("@keystone-6/core/fields");
 var TrainingLead = (0, import_core40.list)({
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, email") },
   access: {
@@ -7292,16 +8186,16 @@ var TrainingLead = (0, import_core40.list)({
     filter: { query: tenantFilter }
   },
   fields: {
-    organization: (0, import_fields43.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
-    name: (0, import_fields43.text)({ validation: { isRequired: true } }),
-    email: (0, import_fields43.text)({ validation: { isRequired: true } }),
-    source: (0, import_fields43.text)(),
-    owner: (0, import_fields43.relationship)({ ref: "User" }),
-    status: (0, import_fields43.select)({ options: ["new", "contacted", "trial_booked", "trial_attended", "converted", "closed"], defaultValue: "new" }),
-    trialAt: (0, import_fields43.timestamp)(),
-    nextActionAt: (0, import_fields43.timestamp)(),
-    member: (0, import_fields43.relationship)({ ref: "Member" }),
-    history: (0, import_fields43.json)({ defaultValue: [] }),
+    organization: (0, import_fields44.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
+    name: (0, import_fields44.text)({ validation: { isRequired: true } }),
+    email: (0, import_fields44.text)({ validation: { isRequired: true } }),
+    source: (0, import_fields44.text)(),
+    owner: (0, import_fields44.relationship)({ ref: "User" }),
+    status: (0, import_fields44.select)({ options: ["new", "contacted", "trial_booked", "trial_attended", "converted", "closed"], defaultValue: "new" }),
+    trialAt: (0, import_fields44.timestamp)(),
+    nextActionAt: (0, import_fields44.timestamp)(),
+    member: (0, import_fields44.relationship)({ ref: "Member" }),
+    history: (0, import_fields44.json)({ defaultValue: [] }),
     ...trackingFields
   }
 });
@@ -7309,7 +8203,7 @@ var TrainingLead = (0, import_core40.list)({
 // features/keystone/models/ContactMessage.ts
 var import_core41 = require("@keystone-6/core");
 var import_access71 = require("@keystone-6/core/access");
-var import_fields44 = require("@keystone-6/core/fields");
+var import_fields45 = require("@keystone-6/core/fields");
 var canManageMessages = (args) => canManageTenant(args, "canManageCommunications");
 var readOnly = { create: import_access71.denyAll, update: import_access71.denyAll };
 var ContactMessage = (0, import_core41.list)({
@@ -7326,21 +8220,21 @@ var ContactMessage = (0, import_core41.list)({
     }
   },
   fields: {
-    organization: (0, import_fields44.relationship)({
+    organization: (0, import_fields45.relationship)({
       ref: "Organization",
       access: readOnly,
       graphql: { isNonNull: { read: true } },
       db: { extendPrismaSchema: requiredRelationshipDb("organization") }
     }),
-    subject: (0, import_fields44.text)({ access: readOnly, ui: { itemView: { fieldMode: "read" } } }),
-    reference: (0, import_fields44.text)({ access: readOnly, isIndexed: true, ui: { itemView: { fieldMode: "read" } } }),
-    name: (0, import_fields44.text)({ access: readOnly, validation: { isRequired: true }, ui: { itemView: { fieldMode: "read" } } }),
-    email: (0, import_fields44.text)({ access: readOnly, validation: { isRequired: true }, ui: { description: "Reply from the club's own email to this address, then set Status to Replied. Gym does not send replies.", itemView: { fieldMode: "read" } } }),
-    phone: (0, import_fields44.text)({ access: readOnly, ui: { itemView: { fieldMode: "read" } } }),
-    topic: (0, import_fields44.text)({ access: readOnly, ui: { itemView: { fieldMode: "read" } } }),
-    message: (0, import_fields44.text)({ access: readOnly, validation: { isRequired: true }, ui: { displayMode: "textarea", itemView: { fieldMode: "read" } } }),
-    sourcePath: (0, import_fields44.text)({ access: readOnly, ui: { description: "Storefront page the message was sent from", itemView: { fieldMode: "read" } } }),
-    status: (0, import_fields44.select)({
+    subject: (0, import_fields45.text)({ access: readOnly, ui: { itemView: { fieldMode: "read" } } }),
+    reference: (0, import_fields45.text)({ access: readOnly, isIndexed: true, ui: { itemView: { fieldMode: "read" } } }),
+    name: (0, import_fields45.text)({ access: readOnly, validation: { isRequired: true }, ui: { itemView: { fieldMode: "read" } } }),
+    email: (0, import_fields45.text)({ access: readOnly, validation: { isRequired: true }, ui: { description: "Reply from the club's own email to this address, then set Status to Replied. Gym does not send replies.", itemView: { fieldMode: "read" } } }),
+    phone: (0, import_fields45.text)({ access: readOnly, ui: { itemView: { fieldMode: "read" } } }),
+    topic: (0, import_fields45.text)({ access: readOnly, ui: { itemView: { fieldMode: "read" } } }),
+    message: (0, import_fields45.text)({ access: readOnly, validation: { isRequired: true }, ui: { displayMode: "textarea", itemView: { fieldMode: "read" } } }),
+    sourcePath: (0, import_fields45.text)({ access: readOnly, ui: { description: "Storefront page the message was sent from", itemView: { fieldMode: "read" } } }),
+    status: (0, import_fields45.select)({
       type: "string",
       options: [
         { label: "New", value: "new" },
@@ -7350,78 +8244,119 @@ var ContactMessage = (0, import_core41.list)({
       ],
       defaultValue: "new",
       validation: { isRequired: true },
-      ui: { displayMode: "segmented-control", description: "Replied: staff answered by email, phone or in person. Account and sign-in requests are reset at the front desk after a photo ID check (Members \u2192 Set temporary password)." }
+      ui: { displayMode: "segmented-control", description: "Replied: staff answered by email, phone or in person. Staff can't reset passwords; point sign-in requests to Forgot password on the storefront." }
     }),
-    staffNotes: (0, import_fields44.text)({ ui: { displayMode: "textarea", description: "Internal notes; never shown to the sender" } }),
+    staffNotes: (0, import_fields45.text)({ ui: { displayMode: "textarea", description: "Internal notes; never shown to the sender" } }),
+    ...trackingFields
+  }
+});
+
+// features/keystone/models/GiftCard.ts
+var import_core42 = require("@keystone-6/core");
+var import_access72 = require("@keystone-6/core/access");
+var import_fields46 = require("@keystone-6/core/fields");
+var GiftCard = (0, import_core42.list)({
+  access: {
+    operation: { query: (args) => canManageTenant(args, "canManageRetail"), create: import_access72.denyAll, update: import_access72.denyAll, delete: import_access72.denyAll },
+    filter: { query: tenantFilter }
+  },
+  ui: { hideCreate: true, hideDelete: true, listView: { initialColumns: ["code", "status", "initialValue", "balance", "recipientName", "expiresAt"] } },
+  fields: {
+    organization: (0, import_fields46.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
+    code: (0, import_fields46.text)({ isIndexed: "unique", validation: { isRequired: true } }),
+    status: (0, import_fields46.select)({
+      type: "string",
+      options: [
+        { label: "Active", value: "active" },
+        { label: "Used up", value: "redeemed" },
+        { label: "Refunded", value: "voided" }
+      ],
+      defaultValue: "active",
+      validation: { isRequired: true }
+    }),
+    initialValue: (0, import_fields46.integer)({ validation: { isRequired: true, min: 0 } }),
+    balance: (0, import_fields46.integer)({ validation: { isRequired: true, min: 0 } }),
+    purchaserName: (0, import_fields46.text)(),
+    purchaserEmail: (0, import_fields46.text)(),
+    recipientName: (0, import_fields46.text)(),
+    recipientEmail: (0, import_fields46.text)(),
+    message: (0, import_fields46.text)({ ui: { displayMode: "textarea" } }),
+    paymentSession: (0, import_fields46.relationship)({ ref: "PaymentSession" }),
+    stripePaymentIntentId: (0, import_fields46.text)(),
+    expiresAt: (0, import_fields46.timestamp)(),
+    activatedAt: (0, import_fields46.timestamp)(),
+    emailedAt: (0, import_fields46.timestamp)(),
+    refundedAt: (0, import_fields46.timestamp)(),
+    ledger: (0, import_fields46.json)({ defaultValue: [] }),
     ...trackingFields
   }
 });
 
 // features/keystone/models/MemberImportRecord.ts
-var import_core42 = require("@keystone-6/core");
-var import_access72 = require("@keystone-6/core/access");
-var import_fields45 = require("@keystone-6/core/fields");
-var MemberImportRecord = (0, import_core42.list)({
-  access: { operation: { query: permissions.canManagePeople, create: import_access72.denyAll, update: import_access72.denyAll, delete: import_access72.denyAll }, filter: { query: tenantFilter } },
+var import_core43 = require("@keystone-6/core");
+var import_access73 = require("@keystone-6/core/access");
+var import_fields47 = require("@keystone-6/core/fields");
+var MemberImportRecord = (0, import_core43.list)({
+  access: { operation: { query: permissions.canManagePeople, create: import_access73.denyAll, update: import_access73.denyAll, delete: import_access73.denyAll }, filter: { query: tenantFilter } },
   hooks: { validateInput: validateTenantOwnership([{ field: "member", list: "member" }]) },
   fields: {
-    organization: (0, import_fields45.relationship)({ ref: "Organization", access: { update: import_access72.denyAll }, db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
-    key: (0, import_fields45.text)({ isIndexed: "unique", validation: { isRequired: true } }),
-    source: (0, import_fields45.text)({ validation: { isRequired: true } }),
-    externalId: (0, import_fields45.text)({ validation: { isRequired: true } }),
-    payloadHash: (0, import_fields45.text)({ validation: { isRequired: true } }),
-    status: (0, import_fields45.select)({ options: ["processing", "completed", "failed"], defaultValue: "processing" }),
-    member: (0, import_fields45.relationship)({ ref: "Member" }),
-    lastError: (0, import_fields45.text)(),
-    completedAt: (0, import_fields45.timestamp)(),
+    organization: (0, import_fields47.relationship)({ ref: "Organization", access: { update: import_access73.denyAll }, db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
+    key: (0, import_fields47.text)({ isIndexed: "unique", validation: { isRequired: true } }),
+    source: (0, import_fields47.text)({ validation: { isRequired: true } }),
+    externalId: (0, import_fields47.text)({ validation: { isRequired: true } }),
+    payloadHash: (0, import_fields47.text)({ validation: { isRequired: true } }),
+    status: (0, import_fields47.select)({ options: ["processing", "completed", "failed"], defaultValue: "processing" }),
+    member: (0, import_fields47.relationship)({ ref: "Member" }),
+    lastError: (0, import_fields47.text)(),
+    completedAt: (0, import_fields47.timestamp)(),
     ...trackingFields
   }
 });
 
 // features/keystone/models/RetailModels.ts
-var import_core43 = require("@keystone-6/core");
-var import_access74 = require("@keystone-6/core/access");
-var import_fields46 = require("@keystone-6/core/fields");
-var access2 = { operation: { query: (args) => canManageTenant(args, "canManageRetail"), create: import_access74.denyAll, update: import_access74.denyAll, delete: import_access74.denyAll }, filter: { query: tenantFilter } };
-var organization2 = () => (0, import_fields46.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } });
-var location = () => (0, import_fields46.relationship)({ ref: "Location", db: { extendPrismaSchema: requiredRelationshipDb("location") } });
-var RetailItem = (0, import_core43.list)({
+var import_core44 = require("@keystone-6/core");
+var import_access75 = require("@keystone-6/core/access");
+var import_fields48 = require("@keystone-6/core/fields");
+var access2 = { operation: { query: (args) => canManageTenant(args, "canManageRetail"), create: import_access75.denyAll, update: import_access75.denyAll, delete: import_access75.denyAll }, filter: { query: tenantFilter } };
+var organization2 = () => (0, import_fields48.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } });
+var location = () => (0, import_fields48.relationship)({ ref: "Location", db: { extendPrismaSchema: requiredRelationshipDb("location") } });
+var RetailItem = (0, import_core44.list)({
   access: access2,
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, locationId, sku") },
-  fields: { organization: organization2(), location: location(), sku: (0, import_fields46.text)({ validation: { isRequired: true } }), name: (0, import_fields46.text)({ validation: { isRequired: true } }), unitAmount: (0, import_fields46.integer)({ validation: { isRequired: true, min: 0 } }), currencyCode: (0, import_fields46.text)({ defaultValue: "USD" }), stockOnHand: (0, import_fields46.integer)({ defaultValue: 0, validation: { min: 0 } }), isActive: (0, import_fields46.checkbox)({ defaultValue: true }), ...trackingFields }
+  fields: { organization: organization2(), location: location(), sku: (0, import_fields48.text)({ validation: { isRequired: true } }), name: (0, import_fields48.text)({ validation: { isRequired: true } }), unitAmount: (0, import_fields48.integer)({ validation: { isRequired: true, min: 0 } }), currencyCode: (0, import_fields48.text)({ defaultValue: "USD" }), stockOnHand: (0, import_fields48.integer)({ defaultValue: 0, validation: { min: 0 } }), isActive: (0, import_fields48.checkbox)({ defaultValue: true }), ...trackingFields }
 });
-var RetailSale = (0, import_core43.list)({
+var RetailSale = (0, import_core44.list)({
   access: access2,
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, requestKey") },
-  fields: { organization: organization2(), location: location(), requestKey: (0, import_fields46.text)({ validation: { isRequired: true } }), requestHash: (0, import_fields46.text)({ validation: { isRequired: true } }), lines: (0, import_fields46.json)({ defaultValue: [] }), totalAmount: (0, import_fields46.integer)({ validation: { isRequired: true, min: 0 } }), currencyCode: (0, import_fields46.text)({ defaultValue: "USD" }), tender: (0, import_fields46.text)({ validation: { isRequired: true } }), paymentReference: (0, import_fields46.text)(), soldAt: (0, import_fields46.timestamp)({ validation: { isRequired: true } }), recordedBy: (0, import_fields46.relationship)({ ref: "User" }), ...trackingFields }
+  fields: { organization: organization2(), location: location(), requestKey: (0, import_fields48.text)({ validation: { isRequired: true } }), requestHash: (0, import_fields48.text)({ validation: { isRequired: true } }), lines: (0, import_fields48.json)({ defaultValue: [] }), totalAmount: (0, import_fields48.integer)({ validation: { isRequired: true, min: 0 } }), currencyCode: (0, import_fields48.text)({ defaultValue: "USD" }), tender: (0, import_fields48.text)({ validation: { isRequired: true } }), paymentReference: (0, import_fields48.text)(), soldAt: (0, import_fields48.timestamp)({ validation: { isRequired: true } }), recordedBy: (0, import_fields48.relationship)({ ref: "User" }), ...trackingFields }
 });
-var RetailReturn = (0, import_core43.list)({
+var RetailReturn = (0, import_core44.list)({
   access: access2,
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, requestKey") },
-  fields: { organization: organization2(), location: location(), sale: (0, import_fields46.relationship)({ ref: "RetailSale", db: { extendPrismaSchema: requiredRelationshipDb("sale") } }), requestKey: (0, import_fields46.text)({ validation: { isRequired: true } }), requestHash: (0, import_fields46.text)({ validation: { isRequired: true } }), lines: (0, import_fields46.json)({ defaultValue: [] }), refundAmount: (0, import_fields46.integer)({ validation: { isRequired: true, min: 0 } }), refundReference: (0, import_fields46.text)(), tender: (0, import_fields46.text)({ validation: { isRequired: true } }), reason: (0, import_fields46.text)({ validation: { isRequired: true } }), returnedAt: (0, import_fields46.timestamp)({ validation: { isRequired: true } }), recordedBy: (0, import_fields46.relationship)({ ref: "User" }), ...trackingFields }
+  fields: { organization: organization2(), location: location(), sale: (0, import_fields48.relationship)({ ref: "RetailSale", db: { extendPrismaSchema: requiredRelationshipDb("sale") } }), requestKey: (0, import_fields48.text)({ validation: { isRequired: true } }), requestHash: (0, import_fields48.text)({ validation: { isRequired: true } }), lines: (0, import_fields48.json)({ defaultValue: [] }), refundAmount: (0, import_fields48.integer)({ validation: { isRequired: true, min: 0 } }), refundReference: (0, import_fields48.text)(), tender: (0, import_fields48.text)({ validation: { isRequired: true } }), reason: (0, import_fields48.text)({ validation: { isRequired: true } }), returnedAt: (0, import_fields48.timestamp)({ validation: { isRequired: true } }), recordedBy: (0, import_fields48.relationship)({ ref: "User" }), ...trackingFields }
 });
-var RetailStockEntry = (0, import_core43.list)({
+var RetailStockEntry = (0, import_core44.list)({
   access: access2,
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, eventKey") },
-  fields: { organization: organization2(), location: location(), item: (0, import_fields46.relationship)({ ref: "RetailItem", db: { extendPrismaSchema: requiredRelationshipDb("item") } }), eventKey: (0, import_fields46.text)({ validation: { isRequired: true } }), requestHash: (0, import_fields46.text)(), quantity: (0, import_fields46.integer)({ validation: { isRequired: true } }), balanceAfter: (0, import_fields46.integer)({ validation: { isRequired: true, min: 0 } }), reason: (0, import_fields46.text)({ validation: { isRequired: true } }), recordedBy: (0, import_fields46.relationship)({ ref: "User" }), ...trackingFields }
+  fields: { organization: organization2(), location: location(), item: (0, import_fields48.relationship)({ ref: "RetailItem", db: { extendPrismaSchema: requiredRelationshipDb("item") } }), eventKey: (0, import_fields48.text)({ validation: { isRequired: true } }), requestHash: (0, import_fields48.text)(), quantity: (0, import_fields48.integer)({ validation: { isRequired: true } }), balanceAfter: (0, import_fields48.integer)({ validation: { isRequired: true, min: 0 } }), reason: (0, import_fields48.text)({ validation: { isRequired: true } }), recordedBy: (0, import_fields48.relationship)({ ref: "User" }), ...trackingFields }
 });
-var RetailClose = (0, import_core43.list)({
+var RetailClose = (0, import_core44.list)({
   access: access2,
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, requestKey") },
-  fields: { organization: organization2(), location: location(), requestKey: (0, import_fields46.text)({ validation: { isRequired: true } }), requestHash: (0, import_fields46.text)({ validation: { isRequired: true } }), periodStart: (0, import_fields46.timestamp)({ validation: { isRequired: true } }), periodEnd: (0, import_fields46.timestamp)({ validation: { isRequired: true } }), openingAmount: (0, import_fields46.integer)({ validation: { min: 0 } }), expectedAmount: (0, import_fields46.integer)({ validation: { isRequired: true } }), countedAmount: (0, import_fields46.integer)({ validation: { isRequired: true, min: 0 } }), varianceAmount: (0, import_fields46.integer)({ validation: { isRequired: true } }), reason: (0, import_fields46.text)(), evidence: (0, import_fields46.json)({ defaultValue: {} }), recordedBy: (0, import_fields46.relationship)({ ref: "User" }), ...trackingFields }
+  fields: { organization: organization2(), location: location(), requestKey: (0, import_fields48.text)({ validation: { isRequired: true } }), requestHash: (0, import_fields48.text)({ validation: { isRequired: true } }), periodStart: (0, import_fields48.timestamp)({ validation: { isRequired: true } }), periodEnd: (0, import_fields48.timestamp)({ validation: { isRequired: true } }), openingAmount: (0, import_fields48.integer)({ validation: { min: 0 } }), expectedAmount: (0, import_fields48.integer)({ validation: { isRequired: true } }), countedAmount: (0, import_fields48.integer)({ validation: { isRequired: true, min: 0 } }), varianceAmount: (0, import_fields48.integer)({ validation: { isRequired: true } }), reason: (0, import_fields48.text)(), evidence: (0, import_fields48.json)({ defaultValue: {} }), recordedBy: (0, import_fields48.relationship)({ ref: "User" }), ...trackingFields }
 });
 
 // features/keystone/models/CounterPaymentAttempt.ts
-var import_core44 = require("@keystone-6/core");
-var import_access75 = require("@keystone-6/core/access");
-var import_fields47 = require("@keystone-6/core/fields");
-var CounterPaymentAttempt = (0, import_core44.list)({
-  access: { operation: { query: import_access75.denyAll, create: import_access75.denyAll, update: import_access75.denyAll, delete: import_access75.denyAll } },
+var import_core45 = require("@keystone-6/core");
+var import_access76 = require("@keystone-6/core/access");
+var import_fields49 = require("@keystone-6/core/fields");
+var CounterPaymentAttempt = (0, import_core45.list)({
+  access: { operation: { query: import_access76.denyAll, create: import_access76.denyAll, update: import_access76.denyAll, delete: import_access76.denyAll } },
   db: { extendPrismaSchema: compoundUniqueDb("organizationId, requestKey") },
   fields: {
-    organization: (0, import_fields47.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
-    location: (0, import_fields47.relationship)({ ref: "Location", db: { extendPrismaSchema: requiredRelationshipDb("location") } }),
-    purpose: (0, import_fields47.select)({
+    organization: (0, import_fields49.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
+    location: (0, import_fields49.relationship)({ ref: "Location", db: { extendPrismaSchema: requiredRelationshipDb("location") } }),
+    purpose: (0, import_fields49.select)({
       type: "string",
       options: [
         { label: "Retail sale", value: "retail_sale" },
@@ -7432,15 +8367,16 @@ var CounterPaymentAttempt = (0, import_core44.list)({
       ],
       validation: { isRequired: true }
     }),
-    requestKey: (0, import_fields47.text)({ validation: { isRequired: true } }),
-    requestHash: (0, import_fields47.text)({ validation: { isRequired: true } }),
-    status: (0, import_fields47.select)({
+    requestKey: (0, import_fields49.text)({ validation: { isRequired: true } }),
+    requestHash: (0, import_fields49.text)({ validation: { isRequired: true } }),
+    status: (0, import_fields49.select)({
       type: "string",
       options: [
         { label: "Reserved", value: "reserved" },
         { label: "Awaiting card payment", value: "open" },
         { label: "Fulfilled", value: "fulfilled" },
         { label: "Paid, needs staff action", value: "exception" },
+        { label: "Paid, being refunded", value: "compensating" },
         { label: "Released", value: "released" },
         { label: "Refund in progress", value: "refund_pending" },
         { label: "Refunded", value: "refunded" },
@@ -7449,21 +8385,58 @@ var CounterPaymentAttempt = (0, import_core44.list)({
       defaultValue: "reserved",
       validation: { isRequired: true }
     }),
-    amount: (0, import_fields47.integer)({ validation: { isRequired: true, min: 0 } }),
-    currencyCode: (0, import_fields47.text)({ defaultValue: "USD" }),
+    amount: (0, import_fields49.integer)({ validation: { isRequired: true, min: 0 } }),
+    currencyCode: (0, import_fields49.text)({ defaultValue: "USD" }),
     // Accepted lines/terms, captured when the attempt is reserved and never re-derived.
-    quote: (0, import_fields47.json)({ defaultValue: {} }),
-    providerId: (0, import_fields47.text)({ defaultValue: "" }),
-    providerKey: (0, import_fields47.text)({ defaultValue: "" }),
-    providerCheckoutId: (0, import_fields47.text)({ defaultValue: "" }),
-    providerPaymentId: (0, import_fields47.text)({ defaultValue: "" }),
-    providerRefundId: (0, import_fields47.text)({ defaultValue: "" }),
-    claimToken: (0, import_fields47.text)({ defaultValue: "" }),
-    result: (0, import_fields47.json)({ defaultValue: {} }),
-    lastError: (0, import_fields47.text)({ defaultValue: "" }),
-    expiresAt: (0, import_fields47.timestamp)(),
-    resolvedAt: (0, import_fields47.timestamp)(),
-    recordedBy: (0, import_fields47.relationship)({ ref: "User" }),
+    quote: (0, import_fields49.json)({ defaultValue: {} }),
+    providerId: (0, import_fields49.text)({ defaultValue: "" }),
+    providerKey: (0, import_fields49.text)({ defaultValue: "" }),
+    providerCheckoutId: (0, import_fields49.text)({ defaultValue: "" }),
+    providerPaymentId: (0, import_fields49.text)({ defaultValue: "" }),
+    providerRefundId: (0, import_fields49.text)({ defaultValue: "" }),
+    claimToken: (0, import_fields49.text)({ defaultValue: "" }),
+    result: (0, import_fields49.json)({ defaultValue: {} }),
+    lastError: (0, import_fields49.text)({ defaultValue: "" }),
+    expiresAt: (0, import_fields49.timestamp)(),
+    resolvedAt: (0, import_fields49.timestamp)(),
+    recordedBy: (0, import_fields49.relationship)({ ref: "User" }),
+    ...trackingFields
+  }
+});
+
+// features/keystone/models/StaffIntent.ts
+var import_core46 = require("@keystone-6/core");
+var import_access77 = require("@keystone-6/core/access");
+var import_fields50 = require("@keystone-6/core/fields");
+var StaffIntent = (0, import_core46.list)({
+  access: { operation: { query: import_access77.denyAll, create: import_access77.denyAll, update: import_access77.denyAll, delete: import_access77.denyAll } },
+  db: { extendPrismaSchema: compoundUniqueDb("organizationId, requestKey") },
+  ui: { isHidden: true },
+  fields: {
+    organization: (0, import_fields50.relationship)({ ref: "Organization", db: { extendPrismaSchema: requiredRelationshipDb("organization") } }),
+    actor: (0, import_fields50.relationship)({ ref: "User" }),
+    workspace: (0, import_fields50.text)({ validation: { isRequired: true } }),
+    operation: (0, import_fields50.text)({ validation: { isRequired: true } }),
+    scope: (0, import_fields50.text)(),
+    requestKey: (0, import_fields50.text)({ validation: { isRequired: true } }),
+    requestHash: (0, import_fields50.text)({ validation: { isRequired: true } }),
+    // Submitted form values, exactly as sent; private to the actor and cleared on resolution.
+    form: (0, import_fields50.json)({ defaultValue: {} }),
+    status: (0, import_fields50.select)({
+      type: "string",
+      options: [
+        { label: "Not confirmed", value: "pending" },
+        { label: "Confirmed", value: "succeeded" },
+        { label: "Discarded", value: "abandoned" }
+      ],
+      defaultValue: "pending",
+      validation: { isRequired: true }
+    }),
+    // What the operation returned when it was confirmed (ids only), for an exact replay.
+    result: (0, import_fields50.json)({ defaultValue: {} }),
+    lastError: (0, import_fields50.text)(),
+    expiresAt: (0, import_fields50.timestamp)(),
+    resolvedAt: (0, import_fields50.timestamp)(),
     ...trackingFields
   }
 });
@@ -7476,12 +8449,14 @@ var models = {
   RetailStockEntry,
   RetailClose,
   CounterPaymentAttempt,
+  StaffIntent,
   MemberImportRecord,
   TrainingPackage,
   TrainingCreditEntry,
   CoachingAssignment,
   TrainingLead,
   ContactMessage,
+  GiftCard,
   MembershipCreditGrant,
   MembershipCreditEntry,
   OperationalNotice,
@@ -7605,7 +8580,7 @@ async function getBillingStats(_root, _args, context) {
   };
 }
 var BILLING_QUEUE_PAGE = 20;
-var BILLING_TIER_LIMIT = 500;
+var BILLING_TIER_PAGE = 100;
 async function getBillingWorkspace(root, args, context) {
   if (!context.session?.data?.role?.canManageAllRecords) throw new Error("Operator access required");
   const organizationId = getTenantId(context.session);
@@ -7613,7 +8588,7 @@ async function getBillingWorkspace(root, args, context) {
   const tenant = { organization: { id: { equals: organizationId } } };
   const sudo = context.sudo();
   const q = typeof args?.q === "string" ? args.q.trim().slice(0, 100) : "";
-  const offset = (value) => Number.isSafeInteger(value) ? Math.min(Math.max(0, value), 1e4) : 0;
+  const offset = (value) => Number.isSafeInteger(value) ? Math.min(Math.max(0, value), 1e6) : 0;
   const person = (path) => q ? [{ OR: [
     path({ name: { contains: q, mode: "insensitive" } }),
     path({ email: { contains: q, mode: "insensitive" } })
@@ -7624,36 +8599,41 @@ async function getBillingWorkspace(root, args, context) {
     refunds: { AND: [tenant, { status: { equals: "succeeded" } }, ...person((match) => ({ member: match }))] },
     failed: { AND: [tenant, { status: { equals: "failed" } }, ...person((match) => ({ membership: { member: match } }))] }
   };
-  const skip = { plans: offset(args?.planSkip), recovery: offset(args?.recoverySkip), refunds: offset(args?.refundSkip), failed: offset(args?.failedSkip) };
-  const [
-    stats,
-    recentPayments,
-    recentSubscriptions,
-    managedMemberships,
-    availableTiers,
-    tierCount,
-    billingRecoveryMembers,
-    refundablePayments,
-    failedPayments,
-    planTotal,
-    recoveryTotal,
-    refundTotal,
-    failedTotal
-  ] = await Promise.all([
-    getBillingStats(root, args, context),
-    sudo.query.MembershipPayment.findMany({ where: tenant, take: 10, orderBy: [{ paymentDate: "desc" }], query: "id amount currencyCode refundAmount status paymentDate paymentType member { id name }" }),
-    sudo.query.Subscription.findMany({ where: tenant, take: 10, orderBy: [{ startDate: "desc" }], query: "id status startDate member { id name } membershipTier { name }" }),
-    sudo.query.Membership.findMany({ where: where.plans, skip: skip.plans, take: BILLING_QUEUE_PAGE, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], query: "id status billingCycle stripeSubscriptionId tier { id name } member { id name email }" }),
-    sudo.query.MembershipTier.findMany({ where: tenant, take: BILLING_TIER_LIMIT, orderBy: [{ name: "asc" }, { id: "asc" }], query: "id name" }),
-    sudo.query.MembershipTier.count({ where: tenant }),
-    sudo.query.Membership.findMany({ where: where.recovery, skip: skip.recovery, take: BILLING_QUEUE_PAGE, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], query: "id status nextBillingDate stripeSubscriptionId tier { id name } member { id name email }" }),
-    sudo.query.GymPayment.findMany({ where: where.refunds, skip: skip.refunds, take: BILLING_QUEUE_PAGE, orderBy: [{ paymentDate: "desc" }, { id: "asc" }], query: "id amount currencyCode refundAmount paymentDate receiptNumber description member { id name email }" }),
-    sudo.query.MembershipPayment.findMany({ where: where.failed, skip: skip.failed, take: BILLING_QUEUE_PAGE, orderBy: [{ paymentDate: "desc" }, { id: "asc" }], query: "id amount currencyCode paymentDate description membership { id member { id name email } }" }),
+  const [planTotal, recoveryTotal, refundTotal, failedTotal] = await Promise.all([
     sudo.query.Membership.count({ where: where.plans }),
     sudo.query.Membership.count({ where: where.recovery }),
     sudo.query.GymPayment.count({ where: where.refunds }),
     sudo.query.MembershipPayment.count({ where: where.failed })
   ]);
+  const clamp = (requested, total) => Math.min(offset(requested), total > 0 ? Math.floor((total - 1) / BILLING_QUEUE_PAGE) * BILLING_QUEUE_PAGE : 0);
+  const skip = { plans: clamp(args?.planSkip, planTotal), recovery: clamp(args?.recoverySkip, recoveryTotal), refunds: clamp(args?.refundSkip, refundTotal), failed: clamp(args?.failedSkip, failedTotal) };
+  const tierQuery = typeof args?.tierQuery === "string" ? args.tierQuery.trim().slice(0, 100) : "";
+  const tierWhere = { AND: [tenant, ...tierQuery ? [{ name: { contains: tierQuery, mode: "insensitive" } }] : []] };
+  const tierSkip = offset(args?.tierSkip);
+  const pinnedTierId = typeof args?.pinnedTierId === "string" && args.pinnedTierId ? args.pinnedTierId.slice(0, 100) : null;
+  const [
+    stats,
+    recentPayments,
+    recentSubscriptions,
+    managedMemberships,
+    tierRows,
+    pinnedTiers,
+    billingRecoveryMembers,
+    refundablePayments,
+    failedPayments
+  ] = await Promise.all([
+    getBillingStats(root, args, context),
+    sudo.query.MembershipPayment.findMany({ where: tenant, take: 10, orderBy: [{ paymentDate: "desc" }], query: "id amount currencyCode refundAmount status paymentDate paymentType member { id name }" }),
+    sudo.query.Subscription.findMany({ where: tenant, take: 10, orderBy: [{ startDate: "desc" }], query: "id status startDate member { id name } membershipTier { name }" }),
+    sudo.query.Membership.findMany({ where: where.plans, skip: skip.plans, take: BILLING_QUEUE_PAGE, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], query: "id status billingCycle autoRenew nextBillingDate stripeSubscriptionId tier { id name } member { id name email }" }),
+    sudo.query.MembershipTier.findMany({ where: tierWhere, skip: tierSkip, take: BILLING_TIER_PAGE + 1, orderBy: [{ name: "asc" }, { id: "asc" }], query: "id name" }),
+    pinnedTierId ? sudo.query.MembershipTier.findMany({ where: { AND: [tenant, { id: { equals: pinnedTierId } }] }, take: 1, query: "id name" }) : Promise.resolve([]),
+    sudo.query.Membership.findMany({ where: where.recovery, skip: skip.recovery, take: BILLING_QUEUE_PAGE, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], query: "id status nextBillingDate stripeSubscriptionId tier { id name } member { id name email }" }),
+    sudo.query.GymPayment.findMany({ where: where.refunds, skip: skip.refunds, take: BILLING_QUEUE_PAGE, orderBy: [{ paymentDate: "desc" }, { id: "asc" }], query: "id amount currencyCode refundAmount paymentDate receiptNumber description member { id name email }" }),
+    sudo.query.MembershipPayment.findMany({ where: where.failed, skip: skip.failed, take: BILLING_QUEUE_PAGE, orderBy: [{ paymentDate: "desc" }, { id: "asc" }], query: "id amount currencyCode paymentDate description membership { id member { id name email } }" })
+  ]);
+  const availableTiers = tierRows.slice(0, BILLING_TIER_PAGE);
+  for (const tier of pinnedTiers) if (!availableTiers.some((row) => row.id === tier.id)) availableTiers.unshift(tier);
   return {
     stats,
     timeZone: stats.timeZone,
@@ -7662,7 +8642,7 @@ async function getBillingWorkspace(root, args, context) {
     recentSubscriptions,
     managedMemberships,
     availableTiers,
-    tiersTruncated: tierCount > BILLING_TIER_LIMIT,
+    tierSearch: { query: tierQuery, skip: tierSkip, hasMore: tierRows.length > BILLING_TIER_PAGE, pageSize: BILLING_TIER_PAGE },
     billingRecoveryMembers,
     refundablePayments,
     failedPayments,
@@ -7688,14 +8668,14 @@ function qrSecret() {
   }
   return secret;
 }
-function generateQRSignature(memberId, organizationId, timestamp32) {
-  const data = `${organizationId}:${memberId}:${timestamp32}`;
+function generateQRSignature(memberId, organizationId, timestamp34) {
+  const data = `${organizationId}:${memberId}:${timestamp34}`;
   return import_crypto.default.createHmac("sha256", qrSecret()).update(data).digest("hex");
 }
 function createQRCodeData(memberId, organizationId) {
-  const timestamp32 = Date.now();
-  const signature2 = generateQRSignature(memberId, organizationId, timestamp32);
-  return { memberId, organizationId, timestamp: timestamp32, signature: signature2 };
+  const timestamp34 = Date.now();
+  const signature = generateQRSignature(memberId, organizationId, timestamp34);
+  return { memberId, organizationId, timestamp: timestamp34, signature };
 }
 function encodeQRData(data) {
   return Buffer.from(JSON.stringify(data)).toString("base64url");
@@ -7738,37 +8718,7 @@ async function generateQRCodeDataURL(memberId, organizationId) {
 // features/keystone/queries/memberExperience.ts
 init_prisma_result();
 init_operational_policy();
-
-// features/keystone/lib/password-proof.ts
-async function verifyCurrentPassword(context, userId, password2) {
-  if (typeof password2 !== "string" || !password2) throw new Error("Enter your current password");
-  if (!await consumeAuthAttempt(context.prisma, `password-proof:${userId}`, 10, 15 * 60 * 1e3)) {
-    throw new Error("Too many password attempts. Wait 15 minutes and try again");
-  }
-  const user = await context.sudo().query.User.findOne({ where: { id: userId }, query: "id email" });
-  if (!user?.email) throw new Error("Account not found");
-  const result = await context.sudo().graphql.raw({
-    query: `mutation VerifyCurrentPassword($email: String!, $password: String!) {
-      authenticateUserWithPassword(email: $email, password: $password) {
-        ... on UserAuthenticationWithPasswordSuccess { item { id } }
-        ... on UserAuthenticationWithPasswordFailure { message }
-      }
-    }`,
-    variables: { email: user.email, password: password2 }
-  });
-  if (result.errors?.length || result.data?.authenticateUserWithPassword?.item?.id !== userId) {
-    throw new Error("Your current password is incorrect");
-  }
-}
-async function changeMemberPassword(_root, { currentPassword, newPassword, confirmPassword }, context) {
-  const userId = context.session?.itemId;
-  if (!userId) throw new Error("Authentication required");
-  if (typeof newPassword !== "string" || newPassword.length < 12 || newPassword.length > 128) throw new Error("Use a new password of 12 to 128 characters");
-  if (newPassword !== confirmPassword) throw new Error("The new passwords don't match");
-  await verifyCurrentPassword(context, userId, currentPassword);
-  await context.sudo().db.User.updateOne({ where: { id: userId }, data: { password: newPassword } });
-  return true;
-}
+init_participation_evidence();
 
 // features/member/lib/check-in-eligibility.ts
 function memberCheckInUnavailableReason(memberStatus, membershipStatus) {
@@ -7864,14 +8814,12 @@ async function updateMemberProfile(_root, { data }, context) {
   const has = (key) => data[key] !== void 0 && data[key] !== null;
   const values = {};
   if (has("name")) values.name = String(data.name).trim();
-  if (has("email")) values.email = String(data.email).trim().toLowerCase();
   if (has("phone")) values.phone = String(data.phone).trim();
   if (has("dateOfBirth")) values.dateOfBirth = String(data.dateOfBirth).trim();
   if (has("emergencyContactName")) values.emergencyContactName = String(data.emergencyContactName).trim();
   if (has("emergencyContactPhone")) values.emergencyContactPhone = String(data.emergencyContactPhone).trim();
   if (has("healthNotes")) values.healthNotes = normalizeHealthNotes(data.healthNotes);
   if (values.name !== void 0 && (!values.name || values.name.length > MAX_PROFILE_NAME_LENGTH)) throw new Error("Name is required and must be 120 characters or fewer");
-  if (values.email !== void 0 && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email) || values.email.length > 254)) throw new Error("Enter a valid email address");
   if (values.phone !== void 0 && values.phone.length > MAX_PROFILE_PHONE_LENGTH) throw new Error("Phone number is too long");
   if (values.dateOfBirth !== void 0 && values.dateOfBirth.length > MAX_PROFILE_DATE_LENGTH) throw new Error("Date of birth is too long");
   if (values.emergencyContactName !== void 0 && values.emergencyContactName.length > MAX_PROFILE_NAME_LENGTH) throw new Error("Emergency contact name is too long");
@@ -7880,9 +8828,14 @@ async function updateMemberProfile(_root, { data }, context) {
     const parsed = new Date(values.dateOfBirth);
     if (Number.isNaN(parsed.getTime()) || parsed > /* @__PURE__ */ new Date()) throw new Error("Date of birth must be a valid past date");
   }
-  const emailChanged = values.email !== void 0 && values.email !== String(current.email || "").toLowerCase();
-  if (emailChanged) await verifyCurrentPassword(context, userId, data.currentPassword);
+  if (has("email") && String(data.email).trim().toLowerCase() !== String(current.email || "").toLowerCase()) {
+    throw new Error("Change your sign-in email with Change email; the new address is confirmed from its own inbox");
+  }
+  const sensitive = ["healthNotes", "emergencyContactName", "emergencyContactPhone"].some((key) => values[key] !== void 0);
   const expectedVersion = has("expectedUpdatedAt") ? new Date(String(data.expectedUpdatedAt)) : null;
+  if (sensitive && (!expectedVersion || !Number.isFinite(expectedVersion.getTime()))) {
+    throw new Error("Reload your profile, then make your change again; health and emergency details need the version you opened");
+  }
   await context.transaction(async (transactionContext) => {
     const prisma = guardKeystonePrismaResults(transactionContext.prisma);
     await lockParticipationPolicy(prisma, organizationId);
@@ -7894,19 +8847,11 @@ async function updateMemberProfile(_root, { data }, context) {
     const notes = values.healthNotes;
     if (notes && (notes.notes || notes.conditions?.length || notes.injuries?.length)) {
       const policy = await prisma.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
-      const consent = policy && await prisma.participationEvidence.findFirst({ where: {
-        organizationId,
-        memberId: member.id,
-        policyId: policy.id,
-        healthConsent: true,
-        revokedAt: null,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: /* @__PURE__ */ new Date() } }]
-      } });
+      const consent = policy && disclosedHealthPurpose(policy) && await prisma.participationEvidence.findFirst({ where: effectiveHealthConsentWhere(organizationId, member.id, policy.id, /* @__PURE__ */ new Date()) });
       if (!consent) throw new Error("Review the studio policy and record health-data consent in Participation and privacy before saving optional health information");
     }
     const memberData = {};
     if (values.name !== void 0) memberData.name = values.name;
-    if (values.email !== void 0) memberData.email = values.email;
     if (values.phone !== void 0) memberData.phone = values.phone || null;
     if (values.dateOfBirth !== void 0) memberData.dateOfBirth = values.dateOfBirth ? new Date(values.dateOfBirth) : null;
     if (values.emergencyContactName !== void 0) memberData.emergencyContactName = values.emergencyContactName;
@@ -7915,7 +8860,6 @@ async function updateMemberProfile(_root, { data }, context) {
     if (Object.keys(memberData).length) await prisma.member.update({ where: { id: member.id }, data: memberData });
     const userData = {};
     if (values.name !== void 0) userData.name = values.name;
-    if (values.email !== void 0) userData.email = values.email;
     if (values.phone !== void 0) userData.phone = values.phone || "";
     if (Object.keys(userData).length) {
       await transactionContext.sudo().query.User.updateOne({ where: { id: userId }, data: userData, query: "id" });
@@ -7935,6 +8879,126 @@ async function getMemberCheckInCode(_root, _args, context) {
     expiresIn: 30,
     error: null
   };
+}
+var UPCOMING_STATUSES = /* @__PURE__ */ new Set(["confirmed", "waitlist"]);
+async function getMyUpcomingBookingPage(_root, { status, skip = 0, take = 20, before }, context) {
+  const { userId, organizationId } = actor(context);
+  if (!UPCOMING_STATUSES.has(status)) throw new Error("Choose confirmed or waitlist bookings");
+  if (!Number.isInteger(skip) || skip < 0 || skip > 1e5 || !Number.isInteger(take) || take < 1 || take > 50) throw new Error("Invalid page");
+  const until = before ? new Date(before) : null;
+  if (until && !Number.isFinite(until.getTime())) throw new Error("Invalid date");
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const where = {
+    organizationId,
+    status,
+    member: { userId, organizationId },
+    classInstance: { isCancelled: false, date: { gte: /* @__PURE__ */ new Date(), ...until ? { lt: until } : {} } }
+  };
+  const [total, rows] = await Promise.all([
+    prisma.classBooking.count({ where }),
+    prisma.classBooking.findMany({ where, orderBy: [{ classInstance: { date: "asc" } }, { id: "asc" }], skip, take, select: { id: true } })
+  ]);
+  return { ids: rows.map((row) => row.id), total };
+}
+
+// features/keystone/lib/password-proof.ts
+async function verifyCurrentPassword(context, userId, password2) {
+  if (typeof password2 !== "string" || !password2) throw new Error("Enter your current password");
+  if (!await consumeAuthAttempt(context.prisma, budgetKey("password-proof", userId), 10, 15 * 60 * 1e3)) {
+    throw new Error("Too many password attempts. Wait 15 minutes and try again");
+  }
+  const user = await context.sudo().query.User.findOne({ where: { id: userId }, query: "id email" });
+  if (!user?.email) throw new Error("Account not found");
+  const result = await context.sudo().graphql.raw({
+    query: `mutation VerifyCurrentPassword($email: String!, $password: String!) {
+      authenticateUserWithPassword(email: $email, password: $password) {
+        ... on UserAuthenticationWithPasswordSuccess { item { id } }
+        ... on UserAuthenticationWithPasswordFailure { message }
+      }
+    }`,
+    variables: { email: user.email, password: password2 }
+  });
+  if (result.errors?.length || result.data?.authenticateUserWithPassword?.item?.id !== userId) {
+    throw new Error("Your current password is incorrect");
+  }
+}
+async function changeMemberPassword(_root, { currentPassword, newPassword, confirmPassword }, context) {
+  const userId = context.session?.itemId;
+  if (!userId) throw new Error("Authentication required");
+  if (typeof newPassword !== "string" || newPassword.length < 12 || newPassword.length > 128) throw new Error("Use a new password of 12 to 128 characters");
+  if (newPassword !== confirmPassword) throw new Error("The new passwords don't match");
+  await verifyCurrentPassword(context, userId, currentPassword);
+  await context.sudo().db.User.updateOne({ where: { id: userId }, data: { password: newPassword } });
+  return true;
+}
+
+// features/keystone/mutations/accountIdentity.ts
+var import_node_crypto5 = __toESM(require("node:crypto"));
+init_mail();
+init_internal_origin();
+init_prisma_result();
+init_classCapacity();
+var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+var CONFIRMATION_MINUTES = 60;
+var tokenHash = (token) => import_node_crypto5.default.createHash("sha256").update(token).digest("hex");
+function signedInUser(context) {
+  const userId = context.session?.itemId;
+  if (!userId) throw new Error("Sign in to change your sign-in email");
+  return String(userId);
+}
+async function requestEmailChange(_root, { newEmail, currentPassword, surface }, context) {
+  const userId = signedInUser(context);
+  const email = normalizeAuthIdentity(newEmail);
+  if (!emailPattern.test(email) || email.length > 254 || email.endsWith(".invalid")) throw new Error("Enter a valid email address");
+  if (!mailDeliveryEnabled()) throw new Error("Changing your sign-in email needs email, which is turned off right now");
+  await verifyCurrentPassword(context, userId, currentPassword);
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const token = import_node_crypto5.default.randomBytes(32).toString("base64url");
+  await prisma.$transaction(async (tx) => {
+    await lockTransactionKey(tx, `identity:${userId}`);
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true, email: true, organizationId: true } });
+    if (!user) throw new Error("Account not found");
+    if (user.email === email) throw new Error("That's already your sign-in email");
+    const [owner, member] = await Promise.all([
+      tx.user.findFirst({ where: { email, NOT: { id: userId } }, select: { id: true } }),
+      tx.member.findFirst({ where: { email, NOT: { userId } }, select: { id: true } })
+    ]);
+    if (owner || member) throw new Error("That email can't be used for this account");
+    await tx.user.update({ where: { id: userId }, data: { pendingEmail: email, pendingEmailTokenHash: tokenHash(token), pendingEmailRequestedAt: /* @__PURE__ */ new Date() } });
+  });
+  const path = surface === "dashboard" ? "/dashboard/platform/account/confirm-email" : "/account/confirm-email";
+  const mail = await sendEmailChangeConfirmation(`${resolvePublicBaseUrl()}${path}?token=${encodeURIComponent(token)}`, email).catch(() => "failed");
+  return { pendingEmail: email, mail };
+}
+async function confirmEmailChange(_root, { token }, context) {
+  const userId = signedInUser(context);
+  if (typeof token !== "string" || !token || token.length > 200) throw new Error("This confirmation link is not valid");
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const changed = await prisma.$transaction(async (tx) => {
+    await lockTransactionKey(tx, `identity:${userId}`);
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { id: true, email: true, organizationId: true, pendingEmail: true, pendingEmailTokenHash: true, pendingEmailRequestedAt: true } });
+    const expected = Buffer.from(String(user?.pendingEmailTokenHash || ""));
+    const supplied = Buffer.from(tokenHash(token));
+    if (!user?.pendingEmail || expected.length !== supplied.length || !import_node_crypto5.default.timingSafeEqual(expected, supplied)) {
+      throw new Error("This confirmation link is not valid for the account you're signed in to");
+    }
+    if (!user.pendingEmailRequestedAt || Date.now() - new Date(user.pendingEmailRequestedAt).getTime() > CONFIRMATION_MINUTES * 6e4) {
+      await tx.user.update({ where: { id: userId }, data: { pendingEmail: null, pendingEmailTokenHash: null, pendingEmailRequestedAt: null } });
+      return { expired: true };
+    }
+    const email = user.pendingEmail;
+    const [owner, member] = await Promise.all([
+      tx.user.findFirst({ where: { email, NOT: { id: userId } }, select: { id: true } }),
+      tx.member.findFirst({ where: { email, NOT: { userId } }, select: { id: true } })
+    ]);
+    if (owner || member) throw new Error("That email is now used by another account; request a change to a different address");
+    await tx.user.update({ where: { id: userId }, data: { email, pendingEmail: null, pendingEmailTokenHash: null, pendingEmailRequestedAt: null } });
+    await tx.member.updateMany({ where: { userId, organizationId: user.organizationId }, data: { email } });
+    return { previous: user.email, email };
+  });
+  if ("expired" in changed) throw new Error("This confirmation link has expired. Request the change again");
+  if (mailDeliveryEnabled() && changed.previous) await sendEmailChangedNotice(changed.previous).catch(() => void 0);
+  return true;
 }
 
 // features/keystone/lib/scheduling-time.ts
@@ -7968,6 +9032,9 @@ function boundedDate(value, label) {
   if (Number.isNaN(date.getTime())) throw new Error(`${label} must be a valid date`);
   return date;
 }
+var EVENT_BATCH = 1e3;
+var EVENT_MAX = 2e4;
+var OPTION_LIMIT = 500;
 async function getSchedulingWorkspace(_root, { start, end, userId }, context) {
   const actor2 = schedulingActor(context);
   const startsAt = boundedDate(start, "start");
@@ -8001,20 +9068,30 @@ async function getSchedulingWorkspace(_root, { start, end, userId }, context) {
       { AND: [{ instructor: null }, { classSchedule: instructorFilter }] }
     ] });
   }
-  const [instances, schedules, instructors, classTypes, upcomingInstances, settings, organizations, locations, resources] = await Promise.all([
-    sudo.query.ClassInstance.findMany({
-      where: eventWhere,
-      take: 1e3,
-      orderBy: [{ date: "asc" }],
-      query: `
-        id date endsAt isCancelled maxCapacity bookingsCount: bookingsCount(where: { status: { equals: "confirmed" } }) location { id name } resource { id name }
-        classSchedule { id name startTime endTime maxCapacity instructor { user { name } } }
-        instructor { user { name } }
-      `
-    }),
+  const readEvents = async () => {
+    const rows = [];
+    for (let offset = 0; offset < EVENT_MAX; offset += EVENT_BATCH) {
+      const batch = await sudo.query.ClassInstance.findMany({
+        where: eventWhere,
+        skip: offset,
+        take: EVENT_BATCH,
+        orderBy: [{ date: "asc" }, { id: "asc" }],
+        query: `
+          id date endsAt isCancelled maxCapacity bookingsCount: bookingsCount(where: { status: { equals: "confirmed" } }) location { id name } resource { id name }
+          classSchedule { id name startTime endTime maxCapacity instructor { user { name } } }
+          instructor { user { name } }
+        `
+      });
+      rows.push(...batch);
+      if (batch.length < EVENT_BATCH) return { rows, complete: true };
+    }
+    return { rows, complete: false };
+  };
+  const [eventRead, schedules, instructors, classTypes, upcomingInstances, settings, organizations, locations, resources] = await Promise.all([
+    readEvents(),
     sudo.query.ClassSchedule.findMany({
       where: schedulesWhere,
-      take: 500,
+      take: OPTION_LIMIT + 1,
       orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
       query: `
         id name description dayOfWeek startTime endTime maxCapacity isActive location { id name } resource { id name }
@@ -8025,12 +9102,12 @@ async function getSchedulingWorkspace(_root, { start, end, userId }, context) {
     }),
     sudo.query.Instructor.findMany({
       where: instructorsWhere,
-      take: 500,
+      take: OPTION_LIMIT + 1,
       query: "id user { id name email }"
     }),
     sudo.query.ClassType.findMany({
       where: tenant,
-      take: 500,
+      take: OPTION_LIMIT + 1,
       orderBy: [{ name: "asc" }],
       query: "id name"
     }),
@@ -8054,9 +9131,11 @@ async function getSchedulingWorkspace(_root, { start, end, userId }, context) {
       take: 1,
       query: "timezone"
     }),
-    sudo.query.Location.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: 200, query: "id name" }),
-    sudo.query.GymResource.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: 500, query: "id name capacity location { id }" })
+    sudo.query.Location.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: OPTION_LIMIT + 1, orderBy: [{ name: "asc" }], query: "id name" }),
+    sudo.query.GymResource.findMany({ where: { AND: [tenant, { isActive: { equals: true } }] }, take: OPTION_LIMIT + 1, orderBy: [{ name: "asc" }], query: "id name capacity location { id }" })
   ]);
+  const instances = eventRead.rows;
+  const trim = (rows) => rows.slice(0, OPTION_LIMIT);
   const timeZone = resolveGymTimeZone(settings[0]?.timezone, organizations[0]?.timezone);
   const events = instances.map((instance) => {
     const schedule = instance.classSchedule || {};
@@ -8070,13 +9149,31 @@ async function getSchedulingWorkspace(_root, { start, end, userId }, context) {
       instructor: instance.instructor?.user?.name || schedule.instructor?.user?.name || "TBA",
       capacity: `${instance.bookingsCount || 0}/${instance.maxCapacity || schedule.maxCapacity || 0}`,
       type: schedule.name?.toLowerCase().includes("yoga") ? "yoga" : "class",
-      color: instance.isCancelled ? "zinc" : "violet",
+      color: instance.isCancelled ? "zinc" : "orange",
       isCancelled: instance.isCancelled,
       rosterHref: `/dashboard/platform/rosters/${instance.id}`,
       scheduleId: schedule.id
     };
   });
-  return { events, schedules, instructors, classTypes, upcomingInstances, timeZone, locations, resources };
+  return {
+    events,
+    eventsComplete: eventRead.complete,
+    schedules: trim(schedules),
+    instructors: trim(instructors),
+    classTypes: trim(classTypes),
+    upcomingInstances,
+    timeZone,
+    locations: trim(locations),
+    resources: trim(resources),
+    // Which option lists stop short; the full lists are in the catalogs.
+    truncated: {
+      schedules: schedules.length > OPTION_LIMIT,
+      instructors: instructors.length > OPTION_LIMIT,
+      classTypes: classTypes.length > OPTION_LIMIT,
+      locations: locations.length > OPTION_LIMIT,
+      resources: resources.length > OPTION_LIMIT
+    }
+  };
 }
 
 // features/keystone/access/currentRoleActor.ts
@@ -8148,10 +9245,10 @@ var ROSTER_DETAIL_PROJECTION = `
   location { id name address }
   classSchedule { id name dayOfWeek startTime endTime maxCapacity instructor { id user { name email } } location { id name address } }
   instructor { id user { name email } }
-  bookings(orderBy: [{ waitlistPosition: asc }, { bookedAt: asc }], take: 1000) {
-    id status eligibilityReviewReason bookedAt waitlistPosition memberName memberEmail memberPhone
-    member { id name email phone user { id } }
-  }
+`;
+var ROSTER_BOOKING_PROJECTION = `
+  id status eligibilityReviewReason bookedAt waitlistPosition memberName memberEmail memberPhone
+  member { id name email phone user { id } }
 `;
 var ROSTER_ATTENDANCE_PROJECTION = "id booking { id } attended lateArrival minutesLate noShowReason markedAt";
 function rosterInstructorAccountProjection(from) {
@@ -8217,19 +9314,17 @@ async function getInstructorAccount(_root, _args, context) {
   return instructors[0] ?? null;
 }
 var ROSTER_PAGE_SIZE = 25;
-var ROSTER_SCAN_LIMIT = 1e3;
+var ROSTER_SCAN_BATCH = 1e3;
+var ROSTER_SCAN_MAX = 5e4;
 var ROSTER_STATES = ["all", "upcoming", "full", "started", "cancelled"];
 var ROSTER_SORTS = ["soonest", "latest", "fullest"];
 function localDayBound(value, timeZone, endOfDay) {
-  const match = typeof value === "string" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
-  if (!match) return null;
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (value == null || value === "") return null;
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Use a date like 2027-03-14");
   try {
-    const start = exactLocalTimeToUtc({ year, month, day, hour: 0, minute: 0 }, timeZone);
-    return endOfDay ? new Date(start.getTime() + 24 * 60 * 60 * 1e3) : start;
+    return localDateStart(endOfDay ? nextDateKey(value) : value, timeZone);
   } catch {
-    const noon = exactLocalTimeToUtc({ year, month, day, hour: 12, minute: 0 }, timeZone);
-    return new Date(noon.getTime() + (endOfDay ? 12 : -12) * 60 * 60 * 1e3);
+    throw new Error("Choose a real calendar date");
   }
 }
 function sessionCapacity(session) {
@@ -8243,23 +9338,23 @@ async function getRosterSessions(_root, args, context) {
   const state = ROSTER_STATES.includes(args.state || "") ? args.state : "all";
   const sort = ROSTER_SORTS.includes(args.sort || "") ? args.sort : "soonest";
   const q = String(args.q || "").trim().slice(0, 100);
-  const skip = Number.isSafeInteger(args.skip) ? Math.min(Math.max(0, args.skip), 1e4) : 0;
+  const requestedSkip = Number.isSafeInteger(args.skip) ? Math.min(Math.max(0, args.skip), 1e6) : 0;
   const now = /* @__PURE__ */ new Date();
   const from = localDayBound(args.from, timeZone, false) || new Date(now.getTime() - 24 * 60 * 60 * 1e3);
   const to = localDayBound(args.to, timeZone, true);
   if (to && to <= from) throw new Error("The end date must be on or after the start date");
-  const text45 = (path) => path({ contains: q, mode: "insensitive" });
+  const text47 = (path) => path({ contains: q, mode: "insensitive" });
   const base = [
     { organization: { id: { equals: actor2.organizationId } } },
     { date: { gte: from.toISOString() } },
     ...to ? [{ date: { lt: to.toISOString() } }] : [],
     ...actor2.instructorOnly ? [assignmentFilter(actor2.userId)] : [],
     ...q ? [{ OR: [
-      text45((match) => ({ classSchedule: { name: match } })),
-      text45((match) => ({ instructor: { user: { name: match } } })),
-      text45((match) => ({ AND: [{ instructor: null }, { classSchedule: { instructor: { user: { name: match } } } }] })),
-      text45((match) => ({ location: { name: match } })),
-      text45((match) => ({ AND: [{ location: null }, { classSchedule: { location: { name: match } } }] }))
+      text47((match) => ({ classSchedule: { name: match } })),
+      text47((match) => ({ instructor: { user: { name: match } } })),
+      text47((match) => ({ AND: [{ instructor: null }, { classSchedule: { instructor: { user: { name: match } } } }] })),
+      text47((match) => ({ location: { name: match } })),
+      text47((match) => ({ AND: [{ location: null }, { classSchedule: { location: { name: match } } }] }))
     ] }] : []
   ];
   const nowIso = now.toISOString();
@@ -8277,50 +9372,58 @@ async function getRosterSessions(_root, args, context) {
     count(stateWhere.started),
     count(stateWhere.future)
   ]);
+  const isFull = (session) => sessionCapacity(session) > 0 && (session.bookingsCount ?? 0) >= sessionCapacity(session);
+  const fill = (session) => (session.bookingsCount ?? 0) / Math.max(sessionCapacity(session), 1);
+  const order = [{ date: sort === "latest" ? "desc" : "asc" }, { id: "asc" }];
+  const scanAll = async (extra) => {
+    const rows = [];
+    for (let offset = 0; offset < ROSTER_SCAN_MAX; offset += ROSTER_SCAN_BATCH) {
+      const batch = await sudo.query.ClassInstance.findMany({
+        where: { AND: [...base, ...extra] },
+        orderBy: order,
+        skip: offset,
+        take: ROSTER_SCAN_BATCH,
+        query: 'id date maxCapacity bookingsCount: bookingsCount(where: { status: { equals: "confirmed" } }) classSchedule { maxCapacity }'
+      });
+      rows.push(...batch);
+      if (batch.length < ROSTER_SCAN_BATCH) return { rows, complete: true };
+    }
+    return { rows, complete: false };
+  };
   const classify = state === "upcoming" || state === "full";
   const scanWhere = classify ? stateWhere.future : stateWhere[state];
-  const scanned = classify || sort === "fullest";
-  let sessions;
-  let total;
   let scanLimited = false;
   let fullCount = null;
-  if (scanned) {
-    const rows = await sudo.query.ClassInstance.findMany({
-      where: { AND: [...base, ...scanWhere] },
-      orderBy: [{ date: sort === "latest" ? "desc" : "asc" }, { id: "asc" }],
-      take: ROSTER_SCAN_LIMIT + 1,
-      query: ROSTER_SESSION_PROJECTION
-    });
-    scanLimited = rows.length > ROSTER_SCAN_LIMIT;
-    let matches = rows.slice(0, ROSTER_SCAN_LIMIT);
-    const isFull = (session) => sessionCapacity(session) > 0 && (session.bookingsCount ?? 0) >= sessionCapacity(session);
-    if (classify) {
-      fullCount = matches.filter(isFull).length;
-      matches = matches.filter((session) => state === "full" === isFull(session));
-    }
-    if (sort === "fullest") {
-      const fill = (session) => (session.bookingsCount ?? 0) / Math.max(sessionCapacity(session), 1);
-      matches = [...matches].sort((a, b) => fill(b) - fill(a) || String(a.date).localeCompare(String(b.date)));
-    }
+  const future = futureCount <= ROSTER_SCAN_MAX ? await scanAll(stateWhere.future) : { rows: [], complete: false };
+  if (future.complete) fullCount = future.rows.filter(isFull).length;
+  else scanLimited = true;
+  let total;
+  let matches = null;
+  if (classify || sort === "fullest") {
+    const scope = classify ? future : await scanAll(scanWhere);
+    if (!scope.complete) scanLimited = true;
+    matches = scope.rows;
+    if (classify) matches = matches.filter((session) => state === "full" === isFull(session));
+    if (sort === "fullest") matches = [...matches].sort((a, b) => fill(b) - fill(a) || String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
     total = matches.length;
-    sessions = matches.slice(skip, skip + ROSTER_PAGE_SIZE);
   } else {
     total = state === "all" ? allCount : state === "cancelled" ? cancelledCount : startedCount;
+  }
+  const skip = total > 0 ? Math.min(requestedSkip, Math.floor((total - 1) / ROSTER_PAGE_SIZE) * ROSTER_PAGE_SIZE) : 0;
+  const pageIds = matches ? matches.slice(skip, skip + ROSTER_PAGE_SIZE).map((session) => session.id) : null;
+  let sessions;
+  if (pageIds) {
+    const rows = pageIds.length ? await sudo.query.ClassInstance.findMany({ where: { id: { in: pageIds } }, take: pageIds.length, query: ROSTER_SESSION_PROJECTION }) : [];
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    sessions = pageIds.map((id) => byId.get(id)).filter(Boolean);
+  } else {
     sessions = await sudo.query.ClassInstance.findMany({
       where: { AND: [...base, ...scanWhere] },
-      orderBy: [{ date: sort === "latest" ? "desc" : "asc" }, { id: "asc" }],
+      orderBy: order,
       skip,
       take: ROSTER_PAGE_SIZE,
       query: ROSTER_SESSION_PROJECTION
     });
-  }
-  if (fullCount === null && futureCount <= ROSTER_SCAN_LIMIT) {
-    const future = await sudo.query.ClassInstance.findMany({
-      where: { AND: [...base, ...stateWhere.future] },
-      take: ROSTER_SCAN_LIMIT,
-      query: 'id maxCapacity bookingsCount: bookingsCount(where: { status: { equals: "confirmed" } }) classSchedule { maxCapacity }'
-    });
-    fullCount = future.filter((session) => sessionCapacity(session) > 0 && (session.bookingsCount ?? 0) >= sessionCapacity(session)).length;
   }
   return {
     sessions: sessions.map((session) => ({ ...withEffectiveLocation(session), ...presentation })),
@@ -8334,12 +9437,13 @@ async function getRosterSessions(_root, args, context) {
       all: allCount,
       cancelled: cancelledCount,
       started: startedCount,
-      full: futureCount > ROSTER_SCAN_LIMIT ? null : fullCount,
-      upcoming: futureCount > ROSTER_SCAN_LIMIT || fullCount === null ? null : futureCount - fullCount
+      full: fullCount,
+      upcoming: fullCount === null ? null : futureCount - fullCount
     }
   };
 }
-async function getRosterDetail(_root, { classInstanceId }, context) {
+var ROSTER_DETAIL_PAGE = 200;
+async function getRosterDetail(_root, { classInstanceId, confirmedSkip = 0, waitlistSkip = 0, otherSkip = 0 }, context) {
   const actor2 = rosterActor(context);
   await assertActiveInstructor(context, actor2);
   const where = {
@@ -8359,7 +9463,39 @@ async function getRosterDetail(_root, { classInstanceId }, context) {
   ]);
   const instance = instances[0];
   if (!instance) return null;
-  const bookings = instance.bookings ?? [];
+  const sudo = context.sudo();
+  const inSession = [{ classInstance: { id: { equals: instance.id } } }, { organization: { id: { equals: actor2.organizationId } } }];
+  const groups = {
+    confirmed: [{ status: { equals: "confirmed" } }],
+    waitlist: [{ status: { equals: "waitlist" } }],
+    other: [{ status: { notIn: ["confirmed", "waitlist"] } }]
+  };
+  const page = async (extra, requested) => {
+    const total = await sudo.query.ClassBooking.count({ where: { AND: [...inSession, ...extra] } });
+    const asked = Number.isSafeInteger(requested) ? Math.max(0, requested) : 0;
+    const skip = total > 0 ? Math.min(asked, Math.floor((total - 1) / ROSTER_DETAIL_PAGE) * ROSTER_DETAIL_PAGE) : 0;
+    const rows = await sudo.query.ClassBooking.findMany({
+      where: { AND: [...inSession, ...extra] },
+      orderBy: [{ waitlistPosition: "asc" }, { bookedAt: "asc" }, { id: "asc" }],
+      skip,
+      take: ROSTER_DETAIL_PAGE,
+      query: ROSTER_BOOKING_PROJECTION
+    });
+    return { rows, total, skip, pageSize: ROSTER_DETAIL_PAGE };
+  };
+  const confirmedAttendance = (extra) => sudo.query.AttendanceRecord.count({ where: { AND: [
+    { organization: { id: { equals: actor2.organizationId } } },
+    { booking: { AND: [{ classInstance: { id: { equals: instance.id } } }, { status: { equals: "confirmed" } }] } },
+    ...extra
+  ] } });
+  const [confirmed, waitlist, other, attendedCount, noShowCount] = await Promise.all([
+    page(groups.confirmed, confirmedSkip),
+    page(groups.waitlist, waitlistSkip),
+    page(groups.other, otherSkip),
+    confirmedAttendance([{ attended: { equals: true } }]),
+    confirmedAttendance([{ attended: { equals: false } }])
+  ]);
+  const bookings = [...confirmed.rows, ...waitlist.rows, ...other.rows];
   const bookingIds = bookings.map((booking) => booking.id).filter(Boolean);
   const attendanceByBookingId = /* @__PURE__ */ new Map();
   if (bookingIds.length) {
@@ -8370,20 +9506,31 @@ async function getRosterDetail(_root, { classInstanceId }, context) {
           { organization: { id: { equals: actor2.organizationId } } }
         ]
       },
-      take: Math.min(bookingIds.length, 1e3),
+      take: bookingIds.length,
       query: ROSTER_ATTENDANCE_PROJECTION
     });
-    for (const record of records) {
-      if (!attendanceByBookingId.has(record.booking?.id)) attendanceByBookingId.set(record.booking.id, record);
+    for (const record2 of records) {
+      if (!attendanceByBookingId.has(record2.booking?.id)) attendanceByBookingId.set(record2.booking.id, record2);
     }
   }
+  const withAttendance = (rows) => rows.map((booking) => ({ ...booking, attendance: attendanceByBookingId.get(booking.id) ?? null }));
   return {
     ...withEffectiveLocation(instance),
     ...presentation,
-    bookings: bookings.map((booking) => ({
-      ...booking,
-      attendance: attendanceByBookingId.get(booking.id) ?? null
-    }))
+    bookings: withAttendance(bookings),
+    bookingPages: {
+      confirmed: { ...confirmed, rows: withAttendance(confirmed.rows) },
+      waitlist: { ...waitlist, rows: withAttendance(waitlist.rows) },
+      other: { ...other, rows: withAttendance(other.rows) }
+    },
+    counts: {
+      confirmed: confirmed.total,
+      waitlist: waitlist.total,
+      other: other.total,
+      attended: attendedCount,
+      noShow: noShowCount,
+      unmarked: Math.max(confirmed.total - attendedCount - noShowCount, 0)
+    }
   };
 }
 
@@ -8418,7 +9565,7 @@ async function getFrontDeskWorkspace(_root, { query, visitQuery, visitLocationId
   const tenantWhere = { organization: { id: { equals: organizationId } } };
   const visitSearch = typeof visitQuery === "string" ? visitQuery.trim().slice(0, 100) : "";
   const visitSite = typeof visitLocationId === "string" && visitLocationId ? visitLocationId : null;
-  const skip = Number.isSafeInteger(visitSkip) ? Math.min(Math.max(0, visitSkip), 1e4) : 0;
+  const requestedSkip = Number.isSafeInteger(visitSkip) ? Math.min(Math.max(0, visitSkip), 1e6) : 0;
   const openWhere = { AND: [
     tenantWhere,
     { checkOutTime: { equals: null } },
@@ -8426,14 +9573,16 @@ async function getFrontDeskWorkspace(_root, { query, visitQuery, visitLocationId
     ...visitSite ? [{ location: { id: { equals: visitSite } } }] : []
   ] };
   const sudo = context.sudo();
-  const [members, checkIns, openVisitTotal, locations, gymSettings] = await Promise.all([
+  const openVisitTotal = await sudo.query.CheckIn.count({ where: openWhere });
+  const skip = openVisitTotal > 0 ? Math.min(requestedSkip, Math.floor((openVisitTotal - 1) / OPEN_VISIT_PAGE) * OPEN_VISIT_PAGE) : 0;
+  const [members, checkIns, locations, gymSettings] = await Promise.all([
     search ? sudo.query.Member.findMany({
       where: memberWhere,
       take: 10,
       orderBy: [{ joinDate: "desc" }],
       query: `
         id name status
-        user { membership { status creditPeriodStart creditPeriodEnd startDate nextBillingDate freezeStartDate freezeEndDate } }
+        user { membership { status autoRenew creditPeriodStart creditPeriodEnd startDate nextBillingDate freezeStartDate freezeEndDate } }
       `
     }) : Promise.resolve([]),
     sudo.query.CheckIn.findMany({
@@ -8443,7 +9592,6 @@ async function getFrontDeskWorkspace(_root, { query, visitQuery, visitLocationId
       orderBy: [{ checkInTime: visitOrder === "oldest" ? "asc" : "desc" }, { id: "asc" }],
       query: "id checkInTime method membershipValidated member { name } location { id name }"
     }),
-    sudo.query.CheckIn.count({ where: openWhere }),
     sudo.query.Location.findMany({
       where: { AND: [tenantWhere, { isActive: { equals: true } }] },
       take: 200,
@@ -8465,7 +9613,7 @@ async function getFrontDeskWorkspace(_root, { query, visitQuery, visitLocationId
       if (member.status !== "active") entitlementReason = `Member account is ${member.status || "unavailable"}`;
       else if (membership) {
         try {
-          assertMembershipServiceEligibility(membership, checkedAt);
+          assertMembershipServiceEligibility(membership, checkedAt, { renewalGrace: true });
           membershipEligible = true;
           entitlementReason = "";
         } catch (error) {
@@ -8660,6 +9808,33 @@ async function getReportsDashboard(_root, _args, context) {
   };
 }
 
+// features/keystone/mutations/trainerQualifications.ts
+function qualificationSummary(entry, at = /* @__PURE__ */ new Date()) {
+  if (typeof entry === "string") return entry.trim() ? { name: entry.trim().slice(0, 200), status: "listed" } : null;
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+  const item = entry;
+  const name = typeof item.name === "string" ? item.name.trim().slice(0, 200) : "";
+  if (!name) return null;
+  if (item.revoked === true) return { name, status: "revoked" };
+  const expiresAt = item.expiresAt ? new Date(String(item.expiresAt)) : null;
+  if (expiresAt && Number.isFinite(expiresAt.getTime()) && expiresAt <= at) return { name, status: "expired" };
+  const verifiedAt = item.verifiedAt ? new Date(String(item.verifiedAt)) : null;
+  if (item.required === true && !(verifiedAt && Number.isFinite(verifiedAt.getTime()) && verifiedAt <= at)) return { name, status: "unverified" };
+  return { name, status: "current" };
+}
+function publicQualificationNames(value, at = /* @__PURE__ */ new Date()) {
+  return (Array.isArray(value) ? value : []).map((entry) => qualificationSummary(entry, at)).filter((entry) => Boolean(entry) && (entry.status === "listed" || entry.status === "current")).map((entry) => entry.name).slice(0, 50);
+}
+function assertInstructorQualifications(instructor, at) {
+  const entries = Array.isArray(instructor.certifications) ? instructor.certifications : [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object" || entry.required !== true) continue;
+    const expiresAt = new Date(entry.expiresAt);
+    const verifiedAt = new Date(entry.verifiedAt);
+    if (!entry.name || !entry.evidenceReference || !Number.isFinite(expiresAt.getTime()) || expiresAt <= at || !Number.isFinite(verifiedAt.getTime()) || verifiedAt > at || entry.revoked === true) throw new Error("A required instructor qualification is expired, revoked or unverified");
+  }
+}
+
 // features/keystone/lib/stripe-environment-provider.ts
 function environmentProviderWhere(requireNewCharges) {
   const organizationId = process.env.STOREFRONT_ORGANIZATION_ID;
@@ -8682,6 +9857,7 @@ function newPaymentChargesEnabled() {
 }
 
 // features/keystone/queries/publicGym.ts
+init_participation_terms();
 init_prisma_result();
 var DEFAULT_INSTANCE_WINDOW_DAYS = 14;
 var MAX_INSTANCE_WINDOW_DAYS = 90;
@@ -8692,8 +9868,8 @@ function documentToPlainText(value) {
   if (typeof value === "string") return value.trim() || null;
   if (typeof value !== "object") return null;
   const document4 = value.document;
-  const text45 = document4?.flatMap((node) => node.children ?? []).map((child) => typeof child.text === "string" ? child.text : "").join(" ").replace(/\s+/g, " ").trim();
-  return text45 || null;
+  const text47 = document4?.flatMap((node) => node.children ?? []).map((child) => typeof child.text === "string" ? child.text : "").join(" ").replace(/\s+/g, " ").trim();
+  return text47 || null;
 }
 function normalizePublicLimit(value) {
   if (!Number.isFinite(value)) return DEFAULT_LIST_LIMIT;
@@ -8702,6 +9878,19 @@ function normalizePublicLimit(value) {
 function publicSkip(value) {
   return Number.isInteger(value) && value > 0 ? Math.min(value, 5e3) : 0;
 }
+async function afterCursor(context, listKey, organizationId, after, field) {
+  if (!after) return {};
+  const [anchor] = await publicContext(context).query[listKey].findMany({
+    where: publicTenantWhere(organizationId, { id: { equals: after } }),
+    take: 1,
+    query: field ? `id ${field}` : "id"
+  });
+  if (!anchor) return { id: { equals: "__no_public_cursor__" } };
+  if (!field) return { id: { gt: after } };
+  return { OR: [{ [field]: { gt: anchor[field] } }, { AND: [{ [field]: { equals: anchor[field] } }, { id: { gt: after } }] }] };
+}
+var containsText = (value) => ({ contains: value, mode: "insensitive" });
+var CLASS_LEVELS = ["beginner", "intermediate", "advanced", "all-levels"];
 function resolvePublicInstanceWindow(from, to, now = /* @__PURE__ */ new Date()) {
   const requestedStart = from ? new Date(from) : now;
   if (Number.isNaN(requestedStart.getTime())) throw new Error("Invalid public class start date.");
@@ -8715,6 +9904,10 @@ function resolvePublicInstanceWindow(from, to, now = /* @__PURE__ */ new Date())
     to: new Date(Math.min(requestedEnd.getTime(), maximumEnd.getTime())).toISOString()
   };
 }
+function uploadedImageUrl(value) {
+  const url = value?.url;
+  return typeof url === "string" && /^https:\/\//.test(url) ? url : null;
+}
 function normalizePublicMediaPath(value) {
   if (typeof value !== "string") return null;
   const path = value.trim();
@@ -8725,8 +9918,8 @@ function normalizePublicMediaPath(value) {
 }
 function publicText(value, limit) {
   if (typeof value !== "string") return null;
-  const text45 = value.trim();
-  return text45 ? text45.slice(0, limit) : null;
+  const text47 = value.trim();
+  return text47 ? text47.slice(0, limit) : null;
 }
 function publicInternalHref(value) {
   return publicCtaHref(value);
@@ -8752,8 +9945,8 @@ function publicContactTopics(value) {
     if (!item || typeof item !== "object") return [];
     const title = publicText(item.title, 100);
     const details = Array.isArray(item.details) ? item.details.slice(0, 12).flatMap((detail) => {
-      const text45 = publicText(detail, 300);
-      return text45 ? [text45] : [];
+      const text47 = publicText(detail, 300);
+      return text47 ? [text47] : [];
     }) : [];
     return title && details.length ? [{ title, details }] : [];
   });
@@ -8765,8 +9958,8 @@ function publicFacilityHighlights(value) {
     const title = publicText(item.title, 200);
     const description = publicText(item.description, 1e3);
     const features = Array.isArray(item.features) ? item.features.slice(0, 20).flatMap((feature) => {
-      const text45 = publicText(feature, 100);
-      return text45 ? [text45] : [];
+      const text47 = publicText(feature, 100);
+      return text47 ? [text47] : [];
     }) : [];
     return title && description ? [{ title, description, features }] : [];
   });
@@ -8775,7 +9968,7 @@ function projectPublicGymSettings(settings, organizationTimeZone) {
   if (!settings) return null;
   const name = publicText(settings.name, 200);
   if (!name) return null;
-  const logoIcon = sanitizeGymLogoSvg(settings.logoIcon);
+  const logoIcon = sanitizeStoreLogoSvg(settings.logoIcon);
   return {
     id: String(settings.id),
     name,
@@ -8788,6 +9981,8 @@ function projectPublicGymSettings(settings, organizationTimeZone) {
     phone: publicText(settings.phone, 50),
     email: publicText(settings.email, 320),
     currencyCode: publicText(settings.currencyCode, 3),
+    dropInPrice: Number.isInteger(settings.dropInPrice) && settings.dropInPrice >= 50 ? settings.dropInPrice : 0,
+    lateCancelHours: Number.isInteger(settings.lateCancelHours) && settings.lateCancelHours > 0 ? Math.min(settings.lateCancelHours, 72) : 0,
     locale: publicText(settings.locale, 20),
     timezone: resolveGymTimeZone(
       publicText(settings.timezone, 100),
@@ -8827,6 +10022,18 @@ async function publicOrganizationId(context) {
   if (!configuredId && organizations.length !== 1) return null;
   return organizations[0]?.id ?? null;
 }
+async function configuredStorefrontOrganization(context) {
+  const configuredId = process.env.STOREFRONT_ORGANIZATION_ID?.trim();
+  if (configuredId) {
+    const rows = await publicContext(context).query.Organization.findMany({ where: { id: { equals: configuredId } }, take: 1, query: "id status" });
+    return rows[0] ? { id: String(rows[0].id), salesOpen: rows[0].status === "active" } : null;
+  }
+  const active = await publicContext(context).query.Organization.findMany({ where: { status: { equals: "active" } }, take: 2, orderBy: [{ createdAt: "asc" }], query: "id" });
+  if (active.length === 1) return { id: String(active[0].id), salesOpen: true };
+  if (active.length > 1) return null;
+  const all = await publicContext(context).query.Organization.findMany({ take: 2, orderBy: [{ createdAt: "asc" }], query: "id" });
+  return all.length === 1 ? { id: String(all[0].id), salesOpen: false } : null;
+}
 function publicTenantWhere(organizationId, where = {}) {
   if (!organizationId) return { id: { equals: "__no_public_organization__" } };
   return {
@@ -8843,8 +10050,10 @@ function publicInstructor(instructor) {
     name: instructor.displayName || instructor.user?.name || "Coach",
     bio: documentToPlainText(instructor.bio),
     specialties: Array.isArray(instructor.specialties) ? instructor.specialties.map(String) : [],
-    certifications: Array.isArray(instructor.certifications) ? instructor.certifications.map(String) : [],
-    imagePath: normalizePublicMediaPath(instructor.photo)
+    // Names of listed and current qualifications only; evidence and verification stay private.
+    certifications: publicQualificationNames(instructor.certifications),
+    // The coach's uploaded portrait; no stand-in image ships with the app.
+    imagePath: uploadedImageUrl(instructor.portrait)
   };
 }
 function publicSchedule(schedule) {
@@ -8870,6 +10079,7 @@ function publicClassType(classType) {
     difficulty: classType.difficulty,
     duration: classType.duration,
     caloriesBurn: classType.caloriesBurn ?? null,
+    imageUrl: uploadedImageUrl(classType.photo),
     equipmentNeeded: Array.isArray(classType.equipmentNeeded) ? classType.equipmentNeeded.map(String) : []
   };
 }
@@ -8920,7 +10130,8 @@ function publicClassInstance(instance) {
   };
 }
 async function getPublicGymSettings(root, args, context) {
-  const organizationId = await publicOrganizationId(context);
+  const storefront = await configuredStorefrontOrganization(context);
+  const organizationId = storefront?.id ?? null;
   const [settingsItems, organizations] = await Promise.all([
     publicContext(context).query.GymSettings.findMany({
       where: publicTenantWhere(organizationId),
@@ -8937,6 +10148,8 @@ async function getPublicGymSettings(root, args, context) {
         phone
         email
         currencyCode
+        dropInPrice
+        lateCancelHours
         locale
         timezone
         countryCode
@@ -8969,28 +10182,44 @@ async function getPublicGymSettings(root, args, context) {
   const organization3 = organizations[0];
   const projected = projectPublicGymSettings(settings, organization3?.timezone);
   if (!projected) return null;
+  const sites = await publicContext(context).query.Location.findMany({
+    where: publicTenantWhere(organizationId, { isActive: { equals: true } }),
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: 6,
+    query: "id name address photo { url }"
+  });
+  const clubPhotos = sites.map((site) => ({ id: String(site.id), name: publicText(site.name, 200) || "Location", address: publicText(site.address, 500), url: uploadedImageUrl(site.photo) })).filter((site) => Boolean(site.url));
+  projected.heroImagePath = clubPhotos[0]?.url ?? null;
   const participationTerms = await currentParticipationTerms(guardKeystonePrismaResults(context.prisma), organizationId);
-  return { ...projected, participationTerms };
+  return { ...projected, clubPhotos, participationTerms, salesOpen: Boolean(storefront?.salesOpen) };
 }
 async function getPublicGymClassTypes(root, args, context) {
   const organizationId = await publicOrganizationId(context);
+  const filters = [await afterCursor(context, "ClassType", organizationId, args.after, "name")];
+  const q = String(args.q || "").trim().slice(0, 100);
+  if (q) filters.push({ name: containsText(q) });
+  if (args.difficulty && args.difficulty !== "all") filters.push({ difficulty: { equals: String(args.difficulty).slice(0, 50) } });
+  if (args.duration && args.duration !== "all") {
+    const minutes = Number(args.duration);
+    if (Number.isInteger(minutes) && minutes > 0) filters.push({ duration: minutes >= 75 ? { gte: 75 } : { equals: minutes } });
+  }
   const records = await publicContext(context).query.ClassType.findMany({
-    where: publicTenantWhere(organizationId),
+    where: publicTenantWhere(organizationId, { AND: filters }),
     take: normalizePublicLimit(args.limit),
-    skip: publicSkip(args.skip),
+    skip: args.after ? 0 : publicSkip(args.skip),
     orderBy: [{ name: "asc" }, { id: "asc" }],
-    query: `id name description { document } difficulty duration caloriesBurn equipmentNeeded`
+    query: `id name description { document } difficulty duration caloriesBurn equipmentNeeded photo { url }`
   });
   return records.map(publicClassType);
 }
 async function getPublicGymClassType(root, args, context) {
   const organizationId = await publicOrganizationId(context);
-  const [record] = await publicContext(context).query.ClassType.findMany({
+  const [record2] = await publicContext(context).query.ClassType.findMany({
     where: publicTenantWhere(organizationId, { id: { equals: args.id } }),
     take: 1,
-    query: `id name description { document } difficulty duration caloriesBurn equipmentNeeded`
+    query: `id name description { document } difficulty duration caloriesBurn equipmentNeeded photo { url }`
   });
-  return publicClassType(record);
+  return publicClassType(record2);
 }
 async function getPublicGymSchedules(root, args, context) {
   const organizationId = await publicOrganizationId(context);
@@ -9005,23 +10234,23 @@ async function getPublicGymSchedules(root, args, context) {
     query: `
       id name description dayOfWeek startTime endTime maxCapacity
       classType { id name description { document } difficulty duration caloriesBurn equipmentNeeded }
-      instructor { id displayName bio { document } specialties certifications photo }
+      instructor { id displayName bio { document } specialties certifications photo portrait { url } }
     `
   });
   return records.map(publicSchedule);
 }
 async function getPublicGymSchedule(root, args, context) {
   const organizationId = await publicOrganizationId(context);
-  const [record] = await publicContext(context).query.ClassSchedule.findMany({
+  const [record2] = await publicContext(context).query.ClassSchedule.findMany({
     where: publicTenantWhere(organizationId, { id: { equals: args.id } }),
     take: 1,
     query: `
       id name description dayOfWeek startTime endTime maxCapacity isActive
       classType { id name description { document } difficulty duration caloriesBurn equipmentNeeded }
-      instructor { id displayName bio { document } specialties certifications photo }
+      instructor { id displayName bio { document } specialties certifications photo portrait { url } }
     `
   });
-  return record?.isActive ? publicSchedule(record) : null;
+  return record2?.isActive ? publicSchedule(record2) : null;
 }
 async function getPublicGymClassInstances(root, args, context) {
   const organizationId = await publicOrganizationId(context);
@@ -9036,6 +10265,17 @@ async function getPublicGymClassInstances(root, args, context) {
     { location: { id: { equals: args.locationId } } },
     { AND: [{ location: null }, { classSchedule: { location: { id: { equals: args.locationId } } } }] }
   ] });
+  for (const term of String(args.search || "").trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6)) {
+    const text47 = containsText(term.slice(0, 60));
+    const levels = CLASS_LEVELS.filter((level) => level.startsWith(term));
+    filters.push({ OR: [
+      { classSchedule: { name: text47 } },
+      { classSchedule: { classType: { name: text47 } } },
+      ...levels.length ? [{ classSchedule: { classType: { difficulty: { in: levels } } } }] : [],
+      { instructor: { user: { name: text47 } } },
+      { AND: [{ instructor: null }, { classSchedule: { instructor: { user: { name: text47 } } } }] }
+    ] });
+  }
   const records = await publicContext(context).query.ClassInstance.findMany({
     where: publicTenantWhere(organizationId, {
       date: { gte: window.from, lte: window.to },
@@ -9053,12 +10293,12 @@ async function getPublicGymClassInstances(root, args, context) {
     query: `
       id date maxCapacity
       location { id name address isActive }
-      instructor { id displayName bio { document } specialties certifications photo }
+      instructor { id displayName bio { document } specialties certifications photo portrait { url } }
       classSchedule {
         id name description dayOfWeek startTime endTime maxCapacity
         location { id name address isActive }
         classType { id name description { document } difficulty duration caloriesBurn equipmentNeeded }
-        instructor { id displayName bio { document } specialties certifications photo }
+        instructor { id displayName bio { document } specialties certifications photo portrait { url } }
       }
       bookings { id status }
     `
@@ -9067,46 +10307,46 @@ async function getPublicGymClassInstances(root, args, context) {
 }
 async function getPublicGymClassInstance(root, args, context) {
   const organizationId = await publicOrganizationId(context);
-  const [record] = await publicContext(context).query.ClassInstance.findMany({
+  const [record2] = await publicContext(context).query.ClassInstance.findMany({
     where: publicTenantWhere(organizationId, { id: { equals: args.id } }),
     take: 1,
     query: `
       id date maxCapacity isCancelled
       location { id name address isActive }
-      instructor { id displayName bio { document } specialties certifications photo }
+      instructor { id displayName bio { document } specialties certifications photo portrait { url } }
       classSchedule {
         id name description dayOfWeek startTime endTime maxCapacity isActive
         location { id name address isActive }
         classType { id name description { document } difficulty duration caloriesBurn equipmentNeeded }
-        instructor { id displayName bio { document } specialties certifications photo }
+        instructor { id displayName bio { document } specialties certifications photo portrait { url } }
       }
       bookings { id status }
     `
   });
-  if (!record || record.isCancelled || !record.classSchedule?.isActive || new Date(record.date).getTime() < Date.now()) {
+  if (!record2 || record2.isCancelled || !record2.classSchedule?.isActive || new Date(record2.date).getTime() < Date.now()) {
     return null;
   }
-  return publicClassInstance(record);
+  return publicClassInstance(record2);
 }
 async function getPublicGymInstructors(root, args, context) {
   const organizationId = await publicOrganizationId(context);
   const records = await publicContext(context).query.Instructor.findMany({
-    where: publicTenantWhere(organizationId, { isActive: { equals: true } }),
+    where: publicTenantWhere(organizationId, { AND: [{ isActive: { equals: true } }, await afterCursor(context, "Instructor", organizationId, args.after, null)] }),
     take: normalizePublicLimit(args.limit),
-    skip: publicSkip(args.skip),
+    skip: args.after ? 0 : publicSkip(args.skip),
     orderBy: [{ id: "asc" }],
-    query: `id displayName bio { document } specialties certifications photo`
+    query: `id displayName bio { document } specialties certifications photo portrait { url }`
   });
-  return records.map(publicInstructor).filter((instructor) => Boolean(instructor)).sort((left, right) => left.name.localeCompare(right.name));
+  return records.map(publicInstructor).filter((instructor) => Boolean(instructor));
 }
 async function getPublicGymInstructor(root, args, context) {
   const organizationId = await publicOrganizationId(context);
-  const [record] = await publicContext(context).query.Instructor.findMany({
+  const [record2] = await publicContext(context).query.Instructor.findMany({
     where: publicTenantWhere(organizationId, { id: { equals: args.id } }),
     take: 1,
-    query: `id displayName bio { document } specialties certifications photo isActive`
+    query: `id displayName bio { document } specialties certifications photo portrait { url } isActive`
   });
-  return record?.isActive ? publicInstructor(record) : null;
+  return record2?.isActive ? publicInstructor(record2) : null;
 }
 async function publicCheckoutProviderEnabled(context, organizationId) {
   if (!organizationId) return false;
@@ -9115,17 +10355,24 @@ async function publicCheckoutProviderEnabled(context, organizationId) {
       AND: [{ code: { equals: "pp_stripe" } }, installedPaymentProviderWhere()]
     }),
     take: 1,
-    query: "id"
+    query: "id adapterKey"
   });
-  return Boolean(providers[0]);
+  const provider = providers[0];
+  if (!provider) return false;
+  return provider.adapterKey !== "stripe" || newPaymentChargesEnabled();
 }
 async function getPublicGymMembershipTiers(root, args, context) {
   const organizationId = await publicOrganizationId(context);
   const providerEnabled = await publicCheckoutProviderEnabled(context, organizationId);
+  const mapped = { not: { equals: "" } };
+  const purchasable = providerEnabled ? [{ stripeProductId: mapped }, { OR: [
+    { AND: [{ stripeMonthlyPriceId: mapped }, { monthlyPrice: { gt: 0 } }] },
+    { AND: [{ stripeAnnualPriceId: mapped }, { annualPrice: { gt: 0 } }] }
+  ] }] : [];
   const records = await publicContext(context).query.MembershipTier.findMany({
-    where: publicTenantWhere(organizationId),
+    where: publicTenantWhere(organizationId, { AND: [...purchasable, await afterCursor(context, "MembershipTier", organizationId, args.after, "monthlyPrice")] }),
     take: normalizePublicLimit(args.limit),
-    skip: publicSkip(args.skip),
+    skip: args.after ? 0 : publicSkip(args.skip),
     orderBy: [{ monthlyPrice: "asc" }, { id: "asc" }],
     query: `
       id name description { document } monthlyPrice annualPrice classCreditsPerMonth
@@ -9133,12 +10380,12 @@ async function getPublicGymMembershipTiers(root, args, context) {
       stripeMonthlyPriceId stripeAnnualPriceId stripeProductId features
     `
   });
-  return records.map((record) => publicMembershipTier(record, providerEnabled)).filter((tier) => !providerEnabled || tier.monthlyCheckoutAvailable || tier.annualCheckoutAvailable);
+  return records.map((record2) => publicMembershipTier(record2, providerEnabled)).filter((tier) => !providerEnabled || tier.monthlyCheckoutAvailable || tier.annualCheckoutAvailable);
 }
 async function getPublicGymMembershipTier(root, args, context) {
   const organizationId = await publicOrganizationId(context);
   const providerEnabled = await publicCheckoutProviderEnabled(context, organizationId);
-  const [record] = await publicContext(context).query.MembershipTier.findMany({
+  const [record2] = await publicContext(context).query.MembershipTier.findMany({
     where: publicTenantWhere(organizationId, { id: { equals: args.id } }),
     take: 1,
     query: `
@@ -9147,7 +10394,7 @@ async function getPublicGymMembershipTier(root, args, context) {
       stripeMonthlyPriceId stripeAnnualPriceId stripeProductId features
     `
   });
-  const tier = publicMembershipTier(record, providerEnabled);
+  const tier = publicMembershipTier(record2, providerEnabled);
   return tier && (!providerEnabled || tier.monthlyCheckoutAvailable || tier.annualCheckoutAvailable) ? tier : null;
 }
 
@@ -9257,18 +10504,6 @@ async function getPaymentProviderAdapter(adapterKey) {
   return loadedAdapter.stripePaymentProviderAdapter;
 }
 async function getPaymentProviderAdapterForExecution(adapterKey) {
-  if (adapterKey === "test") {
-    throw new Error("Synthetic test adapters cannot be selected from persisted payment provider configuration.");
-  }
-  if (process.env.PAYMENT_TEST_MODE === "true") {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("PAYMENT_TEST_MODE is prohibited in production.");
-    }
-    if (adapterKey === "stripe") {
-      const { testPaymentProviderAdapter: testPaymentProviderAdapter2 } = await Promise.resolve().then(() => (init_test_adapter(), test_adapter_exports));
-      return testPaymentProviderAdapter2;
-    }
-  }
   return getPaymentProviderAdapter(adapterKey);
 }
 
@@ -9289,7 +10524,7 @@ async function getPaymentProvider(context, providerCode, organizationId, purpose
   });
   const provider = providers[0];
   if (!provider) throw new Error(`Payment provider ${providerCode} is not installed.`);
-  if (purpose === "charge" && provider.adapterKey === "stripe" && !newPaymentChargesEnabled() && process.env.PAYMENT_TEST_MODE !== "true") {
+  if (purpose === "charge" && provider.adapterKey === "stripe" && !newPaymentChargesEnabled()) {
     throw new Error("Card payments are turned off for this Gym deployment.");
   }
   return provider;
@@ -9303,10 +10538,486 @@ async function getAdapterForProvider(context, providerCode, organizationId, purp
 // features/keystone/mutations/stripeSubscription.ts
 init_prisma_result();
 init_classCapacity();
+
+// features/keystone/mutations/gymLifecycle.ts
+init_membership_credits();
+init_operational_policy();
+init_operational_notices();
+init_prisma_result();
+init_classCapacity();
+function assertFacilityStaff(actor2) {
+  if (actor2.canManageAllRecords || actor2.canManageCheckIns || actor2.canManageFacilities || actor2.trustedKiosk) return;
+  throw new Error("Facility check-in management permission required");
+}
+function assertActorOrganization(actor2, organizationId) {
+  if (!organizationId || !actor2.organizationId || actor2.organizationId !== organizationId) {
+    throw new Error("Actor is not in the record organization");
+  }
+}
+function assertOwnerOrOperator(actor2, ownerUserId) {
+  if (actor2.canManageAllRecords || actor2.trustedKiosk || actor2.userId === ownerUserId) return;
+  throw new Error("You cannot manage another member's records");
+}
+async function lateCancelWindowHours(tx, organizationId) {
+  const settings = await tx.gymSettings.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "asc" }], select: { lateCancelHours: true } });
+  const hours = Number(settings?.lateCancelHours ?? 0);
+  return Number.isInteger(hours) && hours > 0 ? Math.min(hours, 72) : 0;
+}
+function isLateCancellation(classStart, now, windowHours) {
+  return windowHours > 0 && classStart.getTime() - now.getTime() < windowHours * 36e5;
+}
+async function cancelCapacityControlledBooking(prisma, input) {
+  prisma = guardKeystonePrismaResults(prisma);
+  const past = input.pastBookingReason !== void 0;
+  const reason = (input.pastBookingReason ?? "").trim();
+  if (past) {
+    if (reason.length < 3 || reason.length > 1e3) throw new Error("A reason between 3 and 1000 characters is required");
+    if (!input.actor.canManageAllRecords) throw new Error("Booking management permission required");
+  }
+  const result = await prisma.$transaction(async (transaction) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId);
+    const identity = await transaction.classBooking.findFirst({
+      where: { id: input.bookingId, organizationId: input.actor.organizationId },
+      select: { classInstanceId: true, memberId: true }
+    });
+    if (!identity?.classInstanceId || !identity.memberId) throw new Error("Booking not found");
+    await lockTransactionKey(transaction, `class-instance:${identity.classInstanceId}`);
+    await lockTransactionKey(transaction, `member:${identity.memberId}`);
+    const booking = await transaction.classBooking.findFirst({
+      where: { id: input.bookingId, organizationId: input.actor.organizationId },
+      include: {
+        classInstance: { select: { id: true, date: true, organizationId: true, isCancelled: true } },
+        member: {
+          include: {
+            user: {
+              include: {
+                membership: {
+                  include: { tier: { select: { classCreditsPerMonth: true } } }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+    if (!booking?.member?.user?.id || !booking.classInstance) {
+      throw new Error("Booking owner or class instance is missing");
+    }
+    assertActorOrganization(input.actor, booking.classInstance.organizationId);
+    assertActorOrganization(input.actor, booking.member.organizationId);
+    assertOwnerOrOperator(input.actor, booking.member.user.id);
+    if (booking.status === "cancelled") {
+      return {
+        bookingId: booking.id,
+        classInstanceId: booking.classInstance.id,
+        cancelled: false,
+        releasedConfirmedSpot: false,
+        promotion: { promoted: false, message: "No confirmed spot was released" }
+      };
+    }
+    if (!["confirmed", "waitlist"].includes(booking.status)) {
+      throw new Error(`Booking cannot be cancelled from ${booking.status}`);
+    }
+    if (past) {
+      if (booking.status !== "confirmed") throw new Error("Only a confirmed booking can be cancelled after the class");
+      if (booking.classInstance.isCancelled) throw new Error("This class was cancelled; its bookings are already closed");
+      if (booking.classInstance.date.getTime() > Date.now()) throw new Error("This class hasn't started; use the normal cancel");
+      const marked = await transaction.attendanceRecord.findFirst({ where: { bookingId: booking.id, organizationId: input.actor.organizationId }, select: { id: true } });
+      if (marked) throw new Error("This booking has an attendance mark; undo the check-in first");
+    } else if (booking.classInstance.date.getTime() <= Date.now()) {
+      throw new Error("A class booking cannot be cancelled after the class starts");
+    }
+    const late = !past && booking.status === "confirmed" && !input.actor.canManageAllRecords && isLateCancellation(booking.classInstance.date, /* @__PURE__ */ new Date(), await lateCancelWindowHours(transaction, input.actor.organizationId));
+    await transaction.classBooking.update({
+      where: { id: booking.id },
+      data: {
+        status: "cancelled",
+        activeBookingKey: null,
+        cancelledAt: /* @__PURE__ */ new Date(),
+        waitlistPosition: null,
+        lateCancelled: late
+      }
+    });
+    if (booking.status === "confirmed" && !late && !isDropInBooking(booking)) await restoreBookingCredit(transaction, booking.id);
+    await enqueueOperationalNotice(transaction, {
+      organizationId: input.actor.organizationId,
+      memberId: booking.memberId,
+      key: `booking:${booking.id}:cancelled`,
+      kind: "cancellation",
+      message: late ? "Your class booking has been cancelled. It was inside the club's late-cancel window, so the class credit or drop-in fee isn't returned." : "Your class booking has been cancelled. Any restorable credit returns to its original service month.",
+      ...past ? { history: [{ action: "past_booking_cancelled", at: (/* @__PURE__ */ new Date()).toISOString(), actorId: input.actor.userId, note: reason }] } : {}
+    });
+    const waiting = await transaction.classBooking.findMany({
+      where: {
+        classInstanceId: booking.classInstance.id,
+        status: "waitlist"
+      },
+      orderBy: [{ bookedAt: "asc" }, { id: "asc" }],
+      select: { id: true }
+    });
+    await Promise.all(
+      waiting.map(
+        (entry, index) => transaction.classBooking.update({
+          where: { id: entry.id },
+          data: { waitlistPosition: index + 1 }
+        })
+      )
+    );
+    const releasedConfirmedSpot = booking.status === "confirmed";
+    const promotion = releasedConfirmedSpot && !past ? await promoteCapacityControlledWaitlistBookingInTransaction(
+      transaction,
+      booking.classInstance.id,
+      input.actor.organizationId,
+      true
+    ) : { promoted: false, message: "No confirmed spot was released" };
+    return {
+      bookingId: booking.id,
+      classInstanceId: booking.classInstance.id,
+      cancelled: true,
+      lateCancelled: late,
+      releasedConfirmedSpot,
+      promotion
+    };
+  });
+  return result;
+}
+async function cancelCapacityControlledClassInstance(prisma, input) {
+  prisma = guardKeystonePrismaResults(prisma);
+  const reason = input.reason.trim();
+  if (reason.length < 3 || reason.length > 1e3) {
+    throw new Error("Class cancellation reason must be between 3 and 1000 characters");
+  }
+  if (!input.actor.canManageAllRecords) {
+    throw new Error("Class cancellation management permission required");
+  }
+  return prisma.$transaction(async (transaction) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId);
+    await lockTransactionKey(transaction, `class-instance:${input.classInstanceId}`);
+    const loadClassInstance = () => transaction.classInstance.findFirst({
+      where: { id: input.classInstanceId, organizationId: input.actor.organizationId },
+      include: {
+        bookings: {
+          where: { status: { in: ["confirmed", "waitlist"] } },
+          include: {
+            member: {
+              include: {
+                user: {
+                  include: {
+                    membership: {
+                      include: { tier: { select: { classCreditsPerMonth: true } } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+    let classInstance = await loadClassInstance();
+    if (!classInstance) throw new Error("Class instance not found");
+    assertActorOrganization(input.actor, classInstance.organizationId);
+    if (classInstance.date.getTime() <= Date.now()) {
+      throw new Error("A class instance cannot be cancelled after it starts");
+    }
+    if (classInstance.isCancelled) {
+      return {
+        classInstanceId: classInstance.id,
+        cancelledBookings: 0,
+        refundedCredits: 0,
+        reused: true
+      };
+    }
+    const memberIds = [...new Set(
+      classInstance.bookings.map((booking) => booking.memberId).filter((id) => typeof id === "string" && id.length > 0)
+    )].sort();
+    for (const memberId of memberIds) {
+      await lockTransactionKey(transaction, `member:${memberId}`);
+    }
+    classInstance = await loadClassInstance();
+    if (!classInstance || classInstance.isCancelled) throw new Error("Class instance changed during cancellation");
+    let refundedCredits = 0;
+    for (const booking of classInstance.bookings) {
+      if (booking.status !== "confirmed" || isDropInBooking(booking)) continue;
+      if (await restoreBookingCredit(transaction, booking.id)) refundedCredits += 1;
+    }
+    for (const booking of classInstance.bookings) await enqueueOperationalNotice(transaction, {
+      organizationId: input.actor.organizationId,
+      memberId: booking.memberId,
+      key: `booking:${booking.id}:class-cancelled`,
+      kind: "cancellation",
+      message: `Your class has been cancelled: ${reason}`
+    });
+    const cancelledAt = /* @__PURE__ */ new Date();
+    await transaction.classBooking.updateMany({
+      where: {
+        classInstanceId: classInstance.id,
+        status: { in: ["confirmed", "waitlist"] }
+      },
+      data: {
+        status: "cancelled",
+        activeBookingKey: null,
+        cancelledAt,
+        waitlistPosition: null
+      }
+    });
+    await transaction.classInstance.update({
+      where: { id: classInstance.id },
+      data: { isCancelled: true, cancellationReason: reason }
+    });
+    return {
+      classInstanceId: classInstance.id,
+      cancelledBookings: classInstance.bookings.length,
+      refundedCredits,
+      reused: false
+    };
+  });
+}
+async function loadStaffAttendanceBooking(transaction, bookingId, actor2) {
+  await lockTransactionKey(transaction, `attendance:${bookingId}`);
+  const booking = await transaction.classBooking.findFirst({
+    where: { id: bookingId, organizationId: actor2.organizationId },
+    include: {
+      member: { include: { user: { include: { membership: true } } } },
+      classInstance: {
+        include: {
+          instructor: { include: { user: { select: { id: true } } } },
+          classSchedule: {
+            include: { instructor: { include: { user: { select: { id: true } } } } }
+          }
+        }
+      }
+    }
+  });
+  if (!booking?.memberId || !booking.classInstance?.classScheduleId) {
+    throw new Error("Attendance booking is missing its member or schedule");
+  }
+  assertActorOrganization(actor2, booking.member.organizationId);
+  assertActorOrganization(actor2, booking.classInstance.organizationId);
+  if (booking.status !== "confirmed") {
+    throw new Error("Attendance can only be marked for a confirmed booking");
+  }
+  if (booking.classInstance.isCancelled) throw new Error("Attendance cannot be marked for a cancelled class");
+  if (booking.classInstance.date.getTime() > Date.now()) {
+    throw new Error("Attendance cannot be marked before the class starts");
+  }
+  const effectiveInstructor2 = booking.classInstance.instructor ?? booking.classInstance.classSchedule?.instructor ?? null;
+  const assignedToActor = Boolean(effectiveInstructor2?.isActive && effectiveInstructor2?.user?.id === actor2.userId);
+  if (!actor2.canManageAllRecords && !(actor2.isInstructor && assignedToActor)) {
+    throw new Error("Attendance management permission required");
+  }
+  return booking;
+}
+async function markCapacityControlledAttendance(prisma, input) {
+  prisma = guardKeystonePrismaResults(prisma);
+  const outcome = normalizeAttendanceOutcome(input.outcome);
+  return prisma.$transaction(async (transaction) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId);
+    const booking = await loadStaffAttendanceBooking(transaction, input.bookingId, input.actor);
+    if (outcome !== "no-show") {
+      await lockTransactionKey(transaction, `member:${booking.memberId}`);
+      const currentMember = await transaction.member.findFirst({ where: { id: booking.memberId, organizationId: input.actor.organizationId }, include: { user: { include: { membership: true } } } });
+      assertInstructorQualifications(booking.classInstance.instructor ?? booking.classInstance.classSchedule?.instructor ?? {}, /* @__PURE__ */ new Date());
+      if (currentMember?.status !== "active") throw new Error("Member account is not active");
+      if (!isDropInBooking(booking)) try {
+        assertMembershipServiceEligibility(currentMember.user?.membership, booking.classInstance.date);
+      } catch (error) {
+        const debit = await transaction.membershipCreditEntry.findUnique({ where: { key: `${booking.id}:debit` }, include: { grant: true } });
+        const membership = currentMember.user?.membership;
+        if (membership?.status !== "active" || !(error instanceof Error) || error.message !== "Service is outside the paid membership period" || debit?.grant?.membershipId !== membership.id || booking.classInstance.date < debit.grant.periodStart || booking.classInstance.date >= debit.grant.periodEnd) throw error;
+      }
+      await assertParticipationAllowed(transaction, input.actor.organizationId, booking.memberId, booking.classInstance.date, booking.classInstance.locationId);
+    }
+    const requestedMinutes = Number(input.minutesLate ?? 0);
+    const minutesLate = outcome === "late" ? Math.min(Math.max(Number.isFinite(requestedMinutes) ? Math.floor(requestedMinutes) : 5, 1), 180) : null;
+    const data = {
+      organizationId: booking.member.organizationId,
+      bookingId: booking.id,
+      classScheduleId: booking.classInstance.classScheduleId,
+      memberId: booking.memberId,
+      markedById: input.actor.userId,
+      markedAt: /* @__PURE__ */ new Date(),
+      attended: outcome !== "no-show",
+      lateArrival: outcome === "late",
+      minutesLate,
+      noShowReason: outcome === "no-show" ? input.notes?.trim() || "Marked from roster" : ""
+    };
+    const existing = await transaction.attendanceRecord.findFirst({
+      where: { bookingId: booking.id, organizationId: input.actor.organizationId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true }
+    });
+    const record2 = existing ? await transaction.attendanceRecord.update({ where: { id: existing.id }, data }) : await transaction.attendanceRecord.create({ data });
+    return { id: record2.id, outcome };
+  });
+}
+async function undoCapacityControlledAttendance(prisma, input) {
+  prisma = guardKeystonePrismaResults(prisma);
+  return prisma.$transaction(async (transaction) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId);
+    const booking = await loadStaffAttendanceBooking(transaction, input.bookingId, input.actor);
+    const removed = await transaction.attendanceRecord.deleteMany({
+      where: { bookingId: booking.id, organizationId: input.actor.organizationId }
+    });
+    return { bookingId: booking.id, removed: removed.count };
+  });
+}
+var STALE_OPEN_VISIT_MS = 12 * 60 * 60 * 1e3;
+async function recordCapacityControlledMemberCheckIn(prisma, input) {
+  prisma = guardKeystonePrismaResults(prisma);
+  assertFacilityStaff(input.actor);
+  const method = normalizeCheckInMethod(input.method);
+  return prisma.$transaction(async (transaction) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId);
+    await lockTransactionKey(transaction, `check-in:${input.memberId}`);
+    await lockTransactionKey(transaction, `member:${input.memberId}`);
+    const member = await transaction.member.findFirst({
+      where: { id: input.memberId, organizationId: input.actor.organizationId },
+      include: {
+        user: { include: { membership: true } },
+        subscriptions: { where: { status: "active" }, select: { id: true } }
+      }
+    });
+    if (!member?.user?.id) throw new Error("Member not found");
+    assertActorOrganization(input.actor, member.organizationId);
+    if (member.status !== "active") throw new Error(`Member status is ${member.status}`);
+    if (member.user.membership?.id) await assertNoPendingMembershipFreeze(transaction, input.actor.organizationId, member.user.membership.id);
+    assertMembershipServiceEligibility(member.user.membership, /* @__PURE__ */ new Date(), { renewalGrace: true });
+    await assertFacilityAccessHours(transaction, input.actor.organizationId, member.user.membership, /* @__PURE__ */ new Date());
+    await assertParticipationAllowed(transaction, input.actor.organizationId, member.id, /* @__PURE__ */ new Date(), input.locationId);
+    if (input.locationId) {
+      const location2 = await transaction.location.findFirst({
+        where: { id: input.locationId, organizationId: input.actor.organizationId },
+        select: { isActive: true, organizationId: true }
+      });
+      if (!location2?.isActive) throw new Error("Check-in location is not active");
+      if (location2.organizationId !== member.organizationId) throw new Error("Check-in location is not in the member's organization");
+    }
+    const existing = await transaction.checkIn.findFirst({
+      where: {
+        memberId: member.id,
+        organizationId: input.actor.organizationId,
+        isGuest: false,
+        checkOutTime: null
+      },
+      orderBy: { checkInTime: "desc" }
+    });
+    if (existing && Date.now() - new Date(existing.checkInTime).getTime() < STALE_OPEN_VISIT_MS) return { checkIn: existing, reused: true };
+    if (existing) {
+      await transaction.checkIn.update({ where: { id: existing.id }, data: { checkOutTime: existing.checkInTime, openCheckInKey: null, validationNotes: `${existing.validationNotes || ""} | Not checked out; closed when the member next checked in`.slice(0, 1e3) } });
+    }
+    if (input.actor.organizationId !== member.organizationId) throw new Error("Check-in actor organization is invalid");
+    const checkIn = await transaction.checkIn.create({
+      data: {
+        organizationId: member.organizationId,
+        memberId: member.id,
+        openCheckInKey: "open",
+        locationId: input.locationId || null,
+        method,
+        membershipValidated: true,
+        validationNotes: "Validated by controlled check-in transition"
+      }
+    });
+    return { checkIn, reused: false };
+  });
+}
+async function recordControlledGuestCheckIn(prisma, input) {
+  prisma = guardKeystonePrismaResults(prisma);
+  const guestName = input.guestName.trim();
+  const idempotencyKey = input.idempotencyKey.trim();
+  if (!guestName) throw new Error("Guest name is required");
+  if (idempotencyKey.length < 12 || idempotencyKey.length > 200) throw new Error("Guest check-in idempotency key is required");
+  const host = input.hostMemberId ? await prisma.member.findFirst({
+    where: { id: input.hostMemberId, organizationId: input.organizationId },
+    select: { organizationId: true }
+  }) : null;
+  if (input.hostMemberId && !host) throw new Error("Host member not found");
+  const organizationId = input.organizationId;
+  if (!organizationId || host && host.organizationId !== organizationId) {
+    throw new Error("Guest check-in organization is invalid");
+  }
+  return prisma.$transaction(async (transaction) => {
+    await lockParticipationPolicy(transaction, input.organizationId);
+    await assertFacilityAccessHours(transaction, organizationId, null, /* @__PURE__ */ new Date());
+    await assertParticipationAllowed(transaction, organizationId, null, /* @__PURE__ */ new Date());
+    await lockTransactionKey(transaction, `guest-check-in:${organizationId}:${idempotencyKey}`);
+    const marker = `[request:${idempotencyKey}]`;
+    const existing = await transaction.checkIn.findFirst({
+      where: { organizationId, isGuest: true, validationNotes: { contains: marker } },
+      orderBy: { createdAt: "asc" }
+    });
+    if (existing) return existing;
+    return transaction.checkIn.create({
+      data: {
+        organizationId,
+        memberId: input.hostMemberId || null,
+        isGuest: true,
+        guestName,
+        method: "manual",
+        membershipValidated: false,
+        validationNotes: `${marker}${input.phone?.trim() ? ` Guest phone: ${input.phone.trim()}.` : ""}${input.hostMemberId ? " Invited by member." : ""}`
+      }
+    });
+  });
+}
+async function checkOutControlledMember(prisma, input) {
+  prisma = guardKeystonePrismaResults(prisma);
+  assertFacilityStaff(input.actor);
+  return prisma.$transaction(async (transaction) => {
+    await lockParticipationPolicy(transaction, input.actor.organizationId);
+    await lockTransactionKey(transaction, `check-out:${input.checkInId}`);
+    const checkIn = await transaction.checkIn.findFirst({
+      where: { id: input.checkInId, organizationId: input.actor.organizationId },
+      include: { member: { include: { user: { select: { id: true } } } } }
+    });
+    if (!checkIn) throw new Error("Check-in not found");
+    assertActorOrganization(input.actor, checkIn.organizationId);
+    if (checkIn.checkOutTime) return { checkIn, reused: true };
+    const updated = await transaction.checkIn.update({
+      where: { id: checkIn.id },
+      data: { checkOutTime: /* @__PURE__ */ new Date(), openCheckInKey: null }
+    });
+    return { checkIn: updated, reused: false };
+  });
+}
+async function releaseFutureBookingsForEndedMembership(prisma, input) {
+  prisma = guardKeystonePrismaResults(prisma);
+  const member = await prisma.member.findFirst({
+    where: { organizationId: input.organizationId, userId: input.userId },
+    select: { id: true }
+  });
+  if (!member) return { released: 0, failed: 0 };
+  const bookings = await prisma.classBooking.findMany({
+    where: {
+      organizationId: input.organizationId,
+      memberId: member.id,
+      status: { in: ["confirmed", "waitlist"] },
+      classInstance: { date: { gt: /* @__PURE__ */ new Date() }, isCancelled: false }
+    },
+    select: { id: true, serviceSnapshot: true },
+    orderBy: { bookedAt: "asc" }
+  });
+  const actor2 = { userId: input.actorUserId, organizationId: input.organizationId, canManageAllRecords: true };
+  let released = 0;
+  let failed = 0;
+  for (const booking of bookings) {
+    if (isDropInBooking(booking)) continue;
+    try {
+      const result = await cancelCapacityControlledBooking(prisma, { bookingId: booking.id, actor: actor2 });
+      if (result.cancelled) released += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("Releasing a booking for an ended membership failed", { bookingId: booking.id, name: error instanceof Error ? error.name : "UnknownError" });
+    }
+  }
+  return { released, failed };
+}
+
+// features/keystone/mutations/stripeSubscription.ts
 init_membership_credits();
 
 // features/keystone/mutations/membershipBillingAttempts.ts
-var import_node_crypto4 = require("node:crypto");
+var import_node_crypto6 = require("node:crypto");
 init_membership_credits();
 init_operational_notices();
 init_classCapacity();
@@ -9315,13 +11026,13 @@ var LEASE_MS = 10 * 60 * 1e3;
 function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
-    const record = value;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+    const record2 = value;
+    return `{${Object.keys(record2).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record2[key])}`).join(",")}}`;
   }
   return JSON.stringify(value) ?? "null";
 }
 function membershipBillingRequestHash(operation, evidence) {
-  return (0, import_node_crypto4.createHash)("sha256").update(canonicalJson({ operation, evidence })).digest("hex");
+  return (0, import_node_crypto6.createHash)("sha256").update(canonicalJson({ operation, evidence })).digest("hex");
 }
 function normalizeScope(scope) {
   const idempotencyKey = scope.idempotencyKey.trim();
@@ -9332,8 +11043,8 @@ function normalizeScope(scope) {
   return { ...scope, idempotencyKey };
 }
 function providerIdempotencyKey(scope) {
-  const digest2 = (0, import_node_crypto4.createHash)("sha256").update(`${scope.organizationId}:${scope.membershipId}:${scope.operation}:${scope.idempotencyKey}`).digest("hex");
-  return `gym-membership-${scope.operation}:${digest2}`;
+  const digest = (0, import_node_crypto6.createHash)("sha256").update(`${scope.organizationId}:${scope.membershipId}:${scope.operation}:${scope.idempotencyKey}`).digest("hex");
+  return `gym-membership-${scope.operation}:${digest}`;
 }
 function uniqueAttemptWhere(scope) {
   return {
@@ -9371,7 +11082,7 @@ async function adoptPendingMembershipBillingKey(context, rawScope) {
 }
 async function claimMembershipBillingAttempt(context, rawScope, expectedMembership = {}) {
   const scope = normalizeScope(rawScope);
-  const claimToken = (0, import_node_crypto4.randomUUID)();
+  const claimToken = (0, import_node_crypto6.randomUUID)();
   const prisma = guardKeystonePrismaResults(context.prisma);
   return prisma.$transaction(async (transaction) => {
     await lockTransactionKey(transaction, `membership-billing:${scope.organizationId}:${scope.membershipId}`);
@@ -9421,7 +11132,7 @@ async function claimMembershipBillingAttempt(context, rawScope, expectedMembersh
       };
     }
     const unresolvedRemote = await transaction.membershipBillingAttempt.findFirst({
-      where: { organizationId: scope.organizationId, membershipId: scope.membershipId, operation: { in: ["cancel", "freeze", "unfreeze", "tier-change"] }, status: "processing" },
+      where: { organizationId: scope.organizationId, membershipId: scope.membershipId, operation: { in: ["cancel", "cancel-now", "freeze", "unfreeze", "tier-change"] }, status: "processing" },
       select: { id: true, operation: true }
     });
     if (unresolvedRemote instanceof Error) throw unresolvedRemote;
@@ -9494,42 +11205,54 @@ async function claimMembershipBillingAttempt(context, rawScope, expectedMembersh
     };
   });
 }
-async function finishMembershipBillingAttempt(context, claim, membershipData, finalizeRelated) {
+async function finishMembershipBillingAttempt(context, claim2, membershipData, finalizeRelated) {
   const prisma = guardKeystonePrismaResults(context.prisma);
   const finalized = await prisma.$transaction(async (transaction) => {
-    await lockTransactionKey(transaction, `membership-billing:${claim.organizationId}:${claim.membershipId}`);
-    const attempt = await transaction.membershipBillingAttempt.findUnique({ where: { id: claim.attemptId } });
-    if (!attempt || attempt.organizationId !== claim.organizationId || attempt.membershipId !== claim.membershipId || attempt.operation !== claim.operation || attempt.idempotencyKey !== claim.idempotencyKey || attempt.requestHash !== claim.requestHash || attempt.status !== "processing" || attempt.claimToken !== claim.claimToken || attempt.generation !== claim.generation) return false;
-    const membership = await transaction.membership.findFirst({ where: { id: claim.membershipId, organizationId: claim.organizationId } });
-    const member = membership && await transaction.member.findFirst({ where: { organizationId: claim.organizationId, userId: membership.memberId } });
+    await lockTransactionKey(transaction, `membership-billing:${claim2.organizationId}:${claim2.membershipId}`);
+    const attempt = await transaction.membershipBillingAttempt.findUnique({ where: { id: claim2.attemptId } });
+    if (!attempt || attempt.organizationId !== claim2.organizationId || attempt.membershipId !== claim2.membershipId || attempt.operation !== claim2.operation || attempt.idempotencyKey !== claim2.idempotencyKey || attempt.requestHash !== claim2.requestHash || attempt.status !== "processing" || attempt.claimToken !== claim2.claimToken || attempt.generation !== claim2.generation) return false;
+    const membership = await transaction.membership.findFirst({ where: { id: claim2.membershipId, organizationId: claim2.organizationId } });
+    const member = membership && await transaction.member.findFirst({ where: { organizationId: claim2.organizationId, userId: membership.memberId } });
     if (!member) throw new Error("Membership member disappeared while finalizing billing");
     await lockTransactionKey(transaction, `member:${member.id}`);
+    const fenced = await transaction.membership.findFirst({ where: { id: claim2.membershipId, organizationId: claim2.organizationId } });
+    const requested = { ...typeof membershipData === "function" ? membershipData(fenced) : membershipData };
+    if (typeof requested.status === "string" && fenced) {
+      const settled = settleTransition(MEMBERSHIP_MACHINE, fenced.status, requested.status);
+      if (settled !== requested.status) {
+        delete requested.status;
+        if ("freezeStartDate" in requested && requested.freezeStartDate) {
+          requested.freezeStartDate = null;
+          requested.freezeEndDate = null;
+        }
+      }
+    }
     const membershipUpdate = await transaction.membership.updateMany({
       where: {
-        id: claim.membershipId,
-        organizationId: claim.organizationId,
-        billingGeneration: claim.generation
+        id: claim2.membershipId,
+        organizationId: claim2.organizationId,
+        billingGeneration: claim2.generation
       },
-      data: membershipData
+      data: requested
     });
     if (membershipUpdate.count !== 1) throw new Error("Membership disappeared while finalizing billing operation");
-    const updated = await transaction.membership.findFirst({ where: { id: claim.membershipId, organizationId: claim.organizationId } });
+    const updated = await transaction.membership.findFirst({ where: { id: claim2.membershipId, organizationId: claim2.organizationId } });
     if (!updated) throw new Error("Membership disappeared while finalizing billing operation");
     if (finalizeRelated) await finalizeRelated(transaction, updated);
     await reviewFutureMembershipBookings(transaction, updated);
     await enqueueOperationalNotice(transaction, {
-      organizationId: claim.organizationId,
+      organizationId: claim2.organizationId,
       memberId: member.id,
-      key: `billing:${claim.attemptId}`,
+      key: `billing:${claim2.attemptId}`,
       kind: "membership",
-      message: `Membership ${claim.operation} completed. Review your membership and affected bookings.`
+      message: `Membership ${claim2.operation} completed. Review your membership and affected bookings.`
     });
     const attemptUpdate = await transaction.membershipBillingAttempt.updateMany({
       where: {
-        id: claim.attemptId,
+        id: claim2.attemptId,
         status: "processing",
-        claimToken: claim.claimToken,
-        generation: claim.generation
+        claimToken: claim2.claimToken,
+        generation: claim2.generation
       },
       data: { status: "completed", leaseUntil: null, lastError: "", completedAt: /* @__PURE__ */ new Date() }
     });
@@ -9538,20 +11261,48 @@ async function finishMembershipBillingAttempt(context, claim, membershipData, fi
   });
   if (!finalized) throw new Error("Billing operation claim was replaced; retry with the same idempotency key");
 }
-async function failMembershipBillingAttempt(context, claim, error, providerOutcome = "definite") {
+async function failMembershipBillingAttempt(context, claim2, error, providerOutcome = "definite") {
   const lastError = error instanceof Error ? error.message.slice(0, 2e3) : "Billing operation failed";
   const data = providerOutcome === "unknown" ? { lastError } : { status: "failed", leaseUntil: null, lastError };
   const prisma = guardKeystonePrismaResults(context.prisma);
   await prisma.membershipBillingAttempt.updateMany({
     where: {
-      id: claim.attemptId,
-      organizationId: claim.organizationId,
-      membershipId: claim.membershipId,
+      id: claim2.attemptId,
+      organizationId: claim2.organizationId,
+      membershipId: claim2.membershipId,
       status: "processing",
-      claimToken: claim.claimToken
+      claimToken: claim2.claimToken
     },
     data
   });
+}
+
+// features/integrations/payment/lifecycle.ts
+var import_node_crypto7 = require("node:crypto");
+function createMembershipCheckoutIdempotencyKey(input) {
+  return `gym-membership:${(0, import_node_crypto7.createHash)("sha256").update(input.userId).digest("hex")}`;
+}
+function mapStripeStatusToMembership(status, collectionPaused = false) {
+  if (collectionPaused) return "frozen";
+  switch (status) {
+    case "active":
+      return "active";
+    // This Gym checkout flow has no contracted free-trial entitlement. Stripe's
+    // display status alone must not grant service or credits.
+    case "trialing":
+      return "past-due";
+    case "past_due":
+    case "unpaid":
+    case "incomplete":
+    case "incomplete_expired":
+      return "past-due";
+    case "canceled":
+      return "cancelled";
+    case "paused":
+      return "frozen";
+    default:
+      return "past-due";
+  }
 }
 
 // features/keystone/mutations/stripeSubscription.ts
@@ -9566,7 +11317,7 @@ async function getAuthorizedMembership(context, membershipId, currentActor) {
   const memberships = await context.sudo().query.Membership.findMany({
     where: { AND: [{ id: { equals: membershipId } }, { organization: { id: { equals: organizationId } } }] },
     take: 1,
-    query: "id agreementSnapshot agreementHistory organization { id defaultCurrency } stripeSubscriptionId billingCycle status autoRenew nextBillingDate creditPeriodStart creditPeriodEnd member { id stripeCustomerId organization { id } } tier { id freezeAllowed organization { id } }"
+    query: "id startDate agreementSnapshot agreementHistory organization { id defaultCurrency } stripeSubscriptionId billingCycle status autoRenew nextBillingDate creditPeriodStart creditPeriodEnd member { id stripeCustomerId organization { id } } tier { id freezeAllowed contractLength organization { id } }"
   });
   const membership = memberships[0];
   if (!membership || membership.organization?.id !== organizationId || membership.member?.organization?.id !== organizationId) {
@@ -9586,6 +11337,22 @@ function billingAttemptScope(organizationId, membershipId, operation, idempotenc
     idempotencyKey,
     requestHash: membershipBillingRequestHash(operation, evidence)
   };
+}
+function minimumTermEnd(membership) {
+  const months = Number(membership.agreementSnapshot?.contractLength ?? membership.tier?.contractLength ?? 0);
+  if (!Number.isInteger(months) || months <= 0 || !membership.startDate) return null;
+  const start = new Date(membership.startDate);
+  if (!Number.isFinite(start.getTime())) return null;
+  const end = new Date(start);
+  end.setUTCMonth(end.getUTCMonth() + months);
+  return end;
+}
+function minimumTermCancelProblem(membership, now = /* @__PURE__ */ new Date()) {
+  const end = minimumTermEnd(membership);
+  if (!end || now >= end) return null;
+  const months = Number(membership.agreementSnapshot?.contractLength ?? membership.tier?.contractLength);
+  const date = end.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return `This plan has a ${months}-month minimum term, so renewal can be cancelled from ${date}. Contact the front desk to end it sooner.`;
 }
 async function currentMembership(context, membershipId) {
   return context.db.Membership.findOne({ where: { id: membershipId } });
@@ -9617,6 +11384,8 @@ async function cancelMembership(root, { membershipId, reason, idempotencyKey }, 
   }
   if (["cancelled", "expired"].includes(membership.status)) throw new Error(`Membership is already ${membership.status}`);
   if (!membership.autoRenew) throw new Error("Membership renewal is already cancelled");
+  const termProblem = actor2.canManageAllRecords ? null : minimumTermCancelProblem(membership);
+  if (termProblem) throw new Error(termProblem);
   if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
   const attempt = await claimMembershipBillingAttempt(context, scope, {
     status: membership.status,
@@ -9645,6 +11414,64 @@ async function cancelMembership(root, { membershipId, reason, idempotencyKey }, 
     throw error;
   }
 }
+async function cancelMembershipNow(root, { membershipId, reason, idempotencyKey }, context) {
+  const staff = await currentRoleActor(context);
+  if (!staff.canManageAllRecords) throw new Error("Only the front desk can end a membership today. You can cancel renewal so it ends after the paid period.");
+  const { membership, actor: actor2 } = await getAuthorizedMembership(context, membershipId, staff);
+  const organizationId = actor2.organizationId;
+  const normalizedReason = reason?.trim() || "";
+  if (normalizedReason.length > 500) throw new Error("Cancellation reason must be 500 characters or fewer");
+  const scope = await adoptPendingMembershipBillingKey(context, billingAttemptScope(organizationId, membershipId, "cancel-now", idempotencyKey, { reason: normalizedReason }));
+  if (await isCompletedMembershipBillingAttempt(context, scope)) {
+    return { membership: await currentMembership(context, membershipId), message: "Membership cancellation already completed" };
+  }
+  if (["cancelled", "expired"].includes(membership.status)) {
+    await releaseFutureBookingsForEndedMembership(context.prisma, { organizationId, userId: membership.member.id, actorUserId: actor2.userId });
+    return { membership: await currentMembership(context, membershipId), message: "Membership is already cancelled" };
+  }
+  if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
+  const attempt = await claimMembershipBillingAttempt(context, scope, {
+    status: membership.status,
+    autoRenew: membership.autoRenew,
+    stripeSubscriptionId: membership.stripeSubscriptionId
+  });
+  if (attempt.replay) return { membership: await currentMembership(context, membershipId), message: "Membership cancellation already completed" };
+  let providerExecutionStarted = false;
+  try {
+    const { adapter } = await getAdapter(context, organizationId);
+    providerExecutionStarted = true;
+    const providerSubscription = await adapter.cancelSubscriptionNow(
+      membership.stripeSubscriptionId,
+      attempt.providerIdempotencyKey
+    );
+    if (providerSubscription?.id !== membership.stripeSubscriptionId) throw new Error("The provider returned a different subscription; reconcile it before cancelling");
+    if (providerSubscription.status !== "canceled") throw new Error("The provider has not ended this subscription yet; check again before cancelling");
+    const endedAt = /* @__PURE__ */ new Date();
+    await finishMembershipBillingAttempt(context, attempt, {
+      status: "cancelled",
+      autoRenew: false,
+      cancelReason: normalizedReason,
+      cancelledAt: endedAt,
+      freezeStartDate: null,
+      freezeEndDate: null
+    }, async (transaction) => {
+      await transaction.subscription.updateMany({
+        where: { organizationId, stripeSubscriptionId: membership.stripeSubscriptionId },
+        data: { status: "cancelled", cancelledAt: endedAt, pausedAt: null }
+      });
+    });
+    const released = await releaseFutureBookingsForEndedMembership(context.prisma, {
+      organizationId,
+      userId: membership.member.id,
+      actorUserId: actor2.userId
+    });
+    const bookingNote = released.released ? ` ${released.released} upcoming class booking${released.released === 1 ? " was" : "s were"} released.` : "";
+    return { membership: await currentMembership(context, membershipId), message: `Membership cancelled now.${bookingNote} No refund was issued; refunds are separate.` };
+  } catch (error) {
+    await failMembershipBillingAttempt(context, attempt, error, providerExecutionStarted ? "unknown" : "definite");
+    throw error;
+  }
+}
 async function freezeMembership(root, { membershipId, endDate, idempotencyKey }, context) {
   const { membership, actor: actor2 } = await getAuthorizedMembership(context, membershipId);
   const organizationId = actor2.organizationId;
@@ -9654,14 +11481,20 @@ async function freezeMembership(root, { membershipId, endDate, idempotencyKey },
   if (await isCompletedMembershipBillingAttempt(context, scope)) {
     return { membership: await currentMembership(context, membershipId), message: "Membership freeze already completed" };
   }
-  if (membership.status !== "active") throw new Error("Only active memberships can be frozen");
-  if (!membership.autoRenew) throw new Error("A membership ending after this paid period cannot be frozen");
-  if (!(membership.agreementSnapshot?.freezeAllowed ?? membership.tier?.freezeAllowed)) throw new Error("This membership tier does not allow freezes");
+  const resumingPending = Boolean(await guardKeystonePrismaResults(context.prisma).membershipBillingAttempt.findFirst({
+    where: { organizationId, membershipId, operation: "freeze", idempotencyKey: scope.idempotencyKey, status: "processing" },
+    select: { id: true }
+  }));
+  if (!resumingPending) {
+    if (membership.status !== "active") throw new Error("Only active memberships can be frozen");
+    if (!membership.autoRenew) throw new Error("A membership ending after this paid period cannot be frozen");
+    if (!(membership.agreementSnapshot?.freezeAllowed ?? membership.tier?.freezeAllowed)) throw new Error("This membership tier does not allow freezes");
+  }
   if (!membership.stripeSubscriptionId) throw new Error("Membership has no active Stripe subscription");
   const startsAt = /* @__PURE__ */ new Date();
   const maximumEnd = new Date(startsAt.getTime() + 365 * 24 * 60 * 60 * 1e3);
-  if (endsAt <= startsAt) throw new Error("Freeze end date must be in the future");
-  if (endsAt > maximumEnd) throw new Error("Freeze duration cannot exceed one year");
+  if (!resumingPending && endsAt <= startsAt) throw new Error("Freeze end date must be in the future");
+  if (!resumingPending && endsAt > maximumEnd) throw new Error("Freeze duration cannot exceed one year");
   const attempt = await claimMembershipBillingAttempt(context, scope, {
     status: membership.status,
     autoRenew: membership.autoRenew,
@@ -9679,7 +11512,8 @@ async function freezeMembership(root, { membershipId, endDate, idempotencyKey },
   try {
     await adapter.pauseSubscription(membership.stripeSubscriptionId, endsAt, attempt.providerIdempotencyKey);
   } catch (error) {
-    await failMembershipBillingAttempt(context, attempt, error, "unknown");
+    const status = Number(error?.statusCode);
+    await failMembershipBillingAttempt(context, attempt, error, status >= 400 && status < 500 ? "definite" : "unknown");
     throw error;
   }
   await finishMembershipBillingAttempt(context, attempt, { status: "frozen", freezeStartDate: startsAt, freezeEndDate: endsAt });
@@ -9704,13 +11538,20 @@ async function unfreezeMembership(root, { membershipId, idempotencyKey }, contex
     const { adapter } = await getAdapter(context, organizationId);
     providerExecutionStarted = true;
     const resumed = await adapter.resumeSubscription(membership.stripeSubscriptionId, attempt.providerIdempotencyKey);
-    const paidPeriodActive = Boolean(membership.creditPeriodStart && membership.creditPeriodEnd && new Date(membership.creditPeriodStart) <= /* @__PURE__ */ new Date() && /* @__PURE__ */ new Date() < new Date(membership.creditPeriodEnd));
-    await finishMembershipBillingAttempt(context, attempt, {
-      status: paidPeriodActive && resumed.status !== "past_due" && resumed.status !== "unpaid" ? "active" : "past-due",
-      freezeStartDate: null,
-      freezeEndDate: null
+    if (resumed?.id !== membership.stripeSubscriptionId) throw new Error("The provider returned a different subscription; reconcile it before resuming");
+    const providerStatus = mapStripeStatusToMembership(resumed.status, Boolean(resumed.pause_collection));
+    if (providerStatus === "frozen") throw new Error("The provider still reports this subscription as paused; check again before resuming");
+    let restored = false;
+    await finishMembershipBillingAttempt(context, attempt, (current) => {
+      const now = /* @__PURE__ */ new Date();
+      const paidPeriodActive = Boolean(current?.creditPeriodStart && current.creditPeriodEnd && new Date(current.creditPeriodStart) <= now && now < new Date(current.creditPeriodEnd));
+      restored = providerStatus === "active" && paidPeriodActive;
+      return { status: providerStatus === "active" ? paidPeriodActive ? "active" : "past-due" : providerStatus, freezeStartDate: null, freezeEndDate: null };
     });
-    return { membership: await currentMembership(context, membershipId), message: paidPeriodActive ? "Membership resumed successfully" : "Membership resumed; access returns when the next payment succeeds" };
+    return {
+      membership: await currentMembership(context, membershipId),
+      message: restored ? "Membership resumed successfully" : providerStatus === "active" || providerStatus === "past-due" ? "Membership resumed; access returns when the next payment succeeds" : "The provider reports this subscription as ended, so the membership was not reactivated"
+    };
   } catch (error) {
     await failMembershipBillingAttempt(context, attempt, error, providerExecutionStarted ? "unknown" : "definite");
     throw error;
@@ -9748,7 +11589,9 @@ async function changeMembershipTier(root, { membershipId, newTierId, idempotency
   const planAmount = membership.billingCycle === "monthly" ? newTier.monthlyPrice : newTier.annualPrice;
   if (!Number.isFinite(planAmount) || planAmount < 0) throw new Error("Membership tier has an invalid price");
   const newAgreementSnapshot = snapshotMembershipAgreement(newTier, membership.billingCycle, contractCurrency, {
-    initialCreditLedger: membership.agreementSnapshot?.creditLedgerPolicy === "monthly-grant-v1"
+    initialCreditLedger: membership.agreementSnapshot?.creditLedgerPolicy === "monthly-grant-v1",
+    providerPriceId: newPriceId,
+    providerProductId: newTier.stripeProductId || null
   });
   const attempt = await claimMembershipBillingAttempt(context, scope, {
     status: membership.status,
@@ -9838,51 +11681,37 @@ async function getStripeBillingPortal(root, { userId, returnUrl }, context) {
 }
 
 // features/keystone/mutations/paymentLifecycle.ts
-var import_node_crypto8 = __toESM(require("node:crypto"));
-
-// features/integrations/payment/lifecycle.ts
-var import_node_crypto5 = require("node:crypto");
-function createMembershipCheckoutIdempotencyKey(input) {
-  return `gym-membership:${(0, import_node_crypto5.createHash)("sha256").update(input.userId).digest("hex")}`;
-}
-function mapStripeStatusToMembership(status, collectionPaused = false) {
-  if (collectionPaused) return "frozen";
-  switch (status) {
-    case "active":
-      return "active";
-    // This Gym checkout flow has no contracted free-trial entitlement. Stripe's
-    // display status alone must not grant service or credits.
-    case "trialing":
-      return "past-due";
-    case "past_due":
-    case "unpaid":
-    case "incomplete":
-    case "incomplete_expired":
-      return "past-due";
-    case "canceled":
-      return "cancelled";
-    case "paused":
-      return "frozen";
-    default:
-      return "past-due";
-  }
-}
+var import_node_crypto13 = __toESM(require("node:crypto"));
 
 // features/integrations/payment/membership-checkout-core.ts
 init_prisma_result();
 init_classCapacity();
+init_current_actor();
 var PROVIDER_CODE2 = "pp_stripe";
 var REUSABLE_SESSION_STATUSES = /* @__PURE__ */ new Set(["pending", "requires_action"]);
 var CHECKOUT_RECOVERY_MAX_AGE_MS = 12 * 60 * 60 * 1e3;
+async function providerExpiredCheckouts(prisma, adapter, organizationId, userId) {
+  const lapsed = await prisma.paymentSession.findMany({
+    where: { organizationId, userId, status: { in: [...REUSABLE_SESSION_STATUSES] }, expiresAt: { lte: /* @__PURE__ */ new Date() } },
+    select: { id: true, providerSessionId: true },
+    take: 20
+  });
+  const confirmed = [];
+  for (const local of lapsed) {
+    if (!local.providerSessionId) continue;
+    const session = await adapter.retrieveMembershipCheckout(local.providerSessionId).catch(() => null);
+    if (session?.id === local.providerSessionId && session.status === "expired") confirmed.push(local);
+  }
+  return confirmed;
+}
 function assertSingleMerchantCheckout(providers, organizationId) {
   if (providers.length !== 1 || providers[0].organization?.id !== organizationId || providers[0].providerAccountId) {
     throw new Error("Online checkout requires exactly one installed Stripe merchant organization; connected-account checkout is not supported");
   }
 }
 function tierPriceId(tier, billingCycle) {
-  const configured = billingCycle === "annual" ? tier.stripeAnnualPriceId : tier.stripeMonthlyPriceId;
-  if (configured) return configured;
-  if (process.env.PAYMENT_TEST_MODE === "true") return `test_price_${tier.id}_${billingCycle}`;
+  const configured2 = billingCycle === "annual" ? tier.stripeAnnualPriceId : tier.stripeMonthlyPriceId;
+  if (configured2) return configured2;
   throw new Error(`Payment provider price is not configured for the ${billingCycle} plan on ${tier.name}.`);
 }
 async function ensureMemberProfile(context, user) {
@@ -9964,7 +11793,7 @@ async function initiateMembershipCheckoutForUser(input) {
     throw new Error("This initial launch supports Stripe membership checkout in USD only.");
   }
   const { provider, adapter } = await getAdapterForProvider(input.context, PROVIDER_CODE2, user.organization.id);
-  if (provider.adapterKey === "stripe" && process.env.PAYMENT_TEST_MODE !== "true") {
+  if (provider.adapterKey === "stripe") {
     const merchants = await ctx.query.PaymentProvider.findMany({
       where: { AND: [{ code: { equals: PROVIDER_CODE2 } }, { adapterKey: { equals: "stripe" } }, installedPaymentProviderWhere()] },
       take: 2,
@@ -9974,8 +11803,12 @@ async function initiateMembershipCheckoutForUser(input) {
   }
   const amount = tierAmountMinor(tier, input.billingCycle);
   if (amount <= 0) throw new Error("This plan has no price for that billing cycle, so it can't be bought online. Contact the club.");
-  const agreementSnapshot = snapshotMembershipAgreement(tier, input.billingCycle, currencyCode, { initialCreditLedger: true });
   const priceId = tierPriceId(tier, input.billingCycle);
+  const agreementSnapshot = snapshotMembershipAgreement(tier, input.billingCycle, currencyCode, {
+    initialCreditLedger: true,
+    providerPriceId: priceId,
+    providerProductId: tier.stripeProductId || null
+  });
   const idempotencyKey = createMembershipCheckoutIdempotencyKey({
     userId: user.id,
     tierId: tier.id,
@@ -9985,18 +11818,22 @@ async function initiateMembershipCheckoutForUser(input) {
   const prisma = guardKeystonePrismaResults(input.context.prisma);
   const checkoutLeaseUntil = new Date(Date.now() + 10 * 60 * 1e3);
   const matchesRequest = (session) => session?.membershipTierId === tier.id && session?.billingCycle === input.billingCycle && session?.amount === amount && session?.currencyCode === currencyCode && session?.data?.priceId === priceId && session?.data?.productId === tier.stripeProductId;
+  const providerExpired = await providerExpiredCheckouts(prisma, adapter, user.organization.id, user.id);
   const reservation = await prisma.$transaction(async (tx) => {
     await lockTransactionKey(tx, `membership-checkout:${organizationId}:${user.id}`);
+    await lockActiveOrganization(tx, organizationId);
     const [current, legacy] = await Promise.all([
       tx.membership.findFirst({ where: { organizationId, memberId: user.id, status: { in: ["active", "frozen", "past-due"] } }, select: { id: true } }),
       tx.subscription.findFirst({ where: { organizationId, member: { userId: user.id }, status: { in: ["active", "past_due", "paused"] } }, select: { id: true } })
     ]);
     if (current || legacy) throw new Error("This account already has a current membership. Contact the front desk for plan changes.");
     const now = /* @__PURE__ */ new Date();
-    await tx.paymentSession.updateMany({
-      where: { organizationId, userId: user.id, status: { in: [...REUSABLE_SESSION_STATUSES] }, expiresAt: { lte: now } },
-      data: { status: "expired" }
-    });
+    for (const expired of providerExpired) {
+      await tx.paymentSession.updateMany({
+        where: { id: expired.id, organizationId, userId: user.id, providerSessionId: expired.providerSessionId, status: { in: [...REUSABLE_SESSION_STATUSES] } },
+        data: { status: "expired", provisioningLockedUntil: null }
+      });
+    }
     const open = await tx.paymentSession.findMany({
       where: { organizationId, userId: user.id, status: { in: ["pending", "processing", "requires_action", "failed"] } },
       orderBy: [{ createdAt: "desc" }],
@@ -10012,7 +11849,8 @@ async function initiateMembershipCheckoutForUser(input) {
     }
     const conflicting = unresolved.find((session) => !matchesRequest(session));
     if (conflicting) {
-      throw new Error(REUSABLE_SESSION_STATUSES.has(conflicting.status) ? "A different membership checkout is already in progress for this account." : "An unresolved checkout attempt is reserved for its original plan; retry that exact plan or reconcile it before starting another.");
+      const lapsed = conflicting.expiresAt && new Date(conflicting.expiresAt) <= now;
+      throw new Error(lapsed ? "An earlier checkout for this account hasn't been confirmed as closed by the payment provider yet. Try again in a few minutes, or contact the club." : REUSABLE_SESSION_STATUSES.has(conflicting.status) ? "A different membership checkout is already in progress for this account." : "An unresolved checkout attempt is reserved for its original plan; retry that exact plan or reconcile it before starting another.");
     }
     const existingSession2 = unresolved[0] || null;
     if (Array.isArray(existingSession2?.data?.providerIdentityConflicts) && existingSession2.data.providerIdentityConflicts.length > 0) {
@@ -10269,7 +12107,7 @@ init_classCapacity();
 init_prisma_result();
 
 // features/keystone/lib/refund-reservation.ts
-var import_node_crypto6 = __toESM(require("node:crypto"));
+var import_node_crypto8 = __toESM(require("node:crypto"));
 var REFUND_RESERVATION_PREFIX = "gym-refund-reservation:v1:";
 function parseRefundReservation(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -10302,7 +12140,7 @@ function assertSameRefundReservation(reservation, expected) {
   }
 }
 function providerRefundOperationKey(organizationId, paymentId, requestId) {
-  const identity = import_node_crypto6.default.createHash("sha256").update(JSON.stringify([organizationId, paymentId, requestId])).digest("hex");
+  const identity = import_node_crypto8.default.createHash("sha256").update(JSON.stringify([organizationId, paymentId, requestId])).digest("hex");
   return `gym-refund:${identity}`;
 }
 function providerRefundPaymentIntent(refund) {
@@ -10327,7 +12165,7 @@ init_classCapacity();
 init_prisma_result();
 
 // features/keystone/mutations/trainerAppointmentEvidence.ts
-var import_node_crypto7 = require("node:crypto");
+var import_node_crypto9 = require("node:crypto");
 function stableValue(value) {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "string") return value;
@@ -10340,7 +12178,7 @@ function stableValue(value) {
   return value;
 }
 function hashTrainerAppointmentRequest(request) {
-  return (0, import_node_crypto7.createHash)("sha256").update(JSON.stringify(stableValue(request))).digest("hex");
+  return (0, import_node_crypto9.createHash)("sha256").update(JSON.stringify(stableValue(request))).digest("hex");
 }
 function assertTrainerAppointmentReplayMatches(existing, request) {
   if (existing.requestHash !== hashTrainerAppointmentRequest(request)) {
@@ -10351,39 +12189,19 @@ function assertTrainerAppointmentReplayMatches(existing, request) {
 // features/keystone/mutations/counterPayments.ts
 init_operational_notices();
 
-// features/keystone/lib/internal-origin.ts
-function normalizeInternalOrigin(value) {
-  let url;
-  try {
-    url = new URL(value.trim());
-  } catch {
-    throw new Error("Internal application URL must be an absolute HTTP(S) origin");
-  }
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.pathname !== "/" && url.pathname !== "" || url.search || url.hash) {
-    throw new Error("Internal application URL must be an HTTP(S) origin without credentials or a path");
-  }
-  return url.origin;
-}
-function resolvePublicBaseUrl() {
-  const configured = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
-  if (!configured?.trim()) throw new Error("Application base URL is not configured");
-  return normalizeInternalOrigin(configured);
-}
-function publicAppUrl(path) {
-  if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\")) throw new Error("Return path must be a local path");
-  const origin = resolvePublicBaseUrl();
-  const url = new URL(path, origin);
-  if (url.origin !== origin) throw new Error("Return path must stay on the Gym origin");
-  return url.toString();
-}
-
 // features/keystone/lib/counter-card-payment.ts
+init_internal_origin();
 var COUNTER_SOURCE = "openfront-gym-counter";
 var MINIMUM_CARD_AMOUNT = 50;
-var COUNTER_CHECKOUT_MINUTES = 30;
-async function counterAdapter(context, organizationId, purpose) {
+var COUNTER_CHECKOUT_MINUTES = 60;
+function sameCounterProvider(provider, bound) {
+  return (provider.providerId ?? provider.id) === bound.providerId && (provider.providerAccountId ?? null) === (bound.providerAccountId ?? null) && provider.adapterKey === bound.adapterKey;
+}
+var PROVIDER_CHANGED_MESSAGE = "The payment provider changed since this card payment started. Reconcile it in the provider dashboard; Gym won't send it to a different account.";
+async function counterAdapter(context, organizationId, purpose, bound) {
   const { provider, adapter } = await getAdapterForProvider(context, "pp_stripe", organizationId, purpose);
-  if (provider.adapterKey === "stripe" && process.env.PAYMENT_TEST_MODE !== "true") {
+  if (bound && !sameCounterProvider(provider, bound)) throw new Error(PROVIDER_CHANGED_MESSAGE);
+  if (provider.adapterKey === "stripe") {
     const merchants = await context.sudo().query.PaymentProvider.findMany({
       where: { AND: [{ code: { equals: "pp_stripe" } }, { adapterKey: { equals: "stripe" } }, purpose === "charge" ? installedPaymentProviderWhere() : reconciliationPaymentProviderWhere()] },
       take: 2,
@@ -10396,34 +12214,45 @@ async function counterAdapter(context, organizationId, purpose) {
   }
   return { provider, adapter };
 }
-async function counterProviderId(context, organizationId) {
-  return (await counterAdapter(context, organizationId, "charge")).provider.id;
+async function counterProviderBinding(context, organizationId) {
+  const { provider } = await counterAdapter(context, organizationId, "charge");
+  return { providerId: provider.id, providerAccountId: provider.providerAccountId ?? null, adapterKey: provider.adapterKey };
 }
-async function createCounterProviderCheckout(context, organizationId, input) {
+async function counterReconcileBinding(context, organizationId) {
+  const { provider } = await counterAdapter(context, organizationId, "reconcile");
+  return { providerId: provider.id, providerAccountId: provider.providerAccountId ?? null, adapterKey: provider.adapterKey };
+}
+function attemptProviderBinding(attempt) {
+  const recorded = attempt?.quote?.provider;
+  if (recorded?.providerId) return { providerId: String(recorded.providerId), providerAccountId: recorded.providerAccountId ?? null, adapterKey: String(recorded.adapterKey || "stripe") };
+  return null;
+}
+function freezeCounterCheckoutRequest(input, now = /* @__PURE__ */ new Date()) {
   if (!Number.isSafeInteger(input.amount) || input.amount < MINIMUM_CARD_AMOUNT) throw new Error("Card payments need a total of at least $0.50");
-  const { adapter } = await counterAdapter(context, organizationId, "charge");
   const returnUrl = publicAppUrl(input.returnPath);
   const separator = returnUrl.includes("?") ? "&" : "?";
-  const result = await adapter.createCounterCheckout({
+  return {
     amount: input.amount,
     currencyCode: "USD",
     description: input.description.slice(0, 200),
-    metadata: { source: COUNTER_SOURCE, kind: input.kind, organizationId, attemptId: input.attemptId, amount: String(input.amount), currencyCode: "USD" },
     // Stripe substitutes the literal {CHECKOUT_SESSION_ID} placeholder.
     successUrl: `${returnUrl}${separator}cardCheckout={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${returnUrl}${separator}cardAttempt=${encodeURIComponent(input.attemptId)}`,
-    expiresAt: new Date(Date.now() + COUNTER_CHECKOUT_MINUTES * 6e4),
-    idempotencyKey: input.providerKey
-  });
-  return result;
+    expiresAt: new Date(Math.floor((now.getTime() + COUNTER_CHECKOUT_MINUTES * 6e4) / 1e3) * 1e3).toISOString(),
+    metadata: { source: COUNTER_SOURCE, kind: input.kind, organizationId: input.organizationId, attemptId: input.attemptId, amount: String(input.amount), currencyCode: "USD" }
+  };
 }
-async function retrieveCounterProviderCheckout(context, organizationId, checkoutSessionId) {
+async function createCounterProviderCheckout(context, organizationId, input) {
+  const { adapter } = await counterAdapter(context, organizationId, "charge", input.bound);
+  return adapter.createCounterCheckout({ ...input.request, expiresAt: new Date(input.request.expiresAt), idempotencyKey: input.providerKey });
+}
+async function retrieveCounterProviderCheckout(context, organizationId, checkoutSessionId, bound = null) {
   if (!/^cs_[A-Za-z0-9_]{1,250}$/.test(checkoutSessionId)) throw new Error("Card checkout reference is invalid");
-  const { adapter } = await counterAdapter(context, organizationId, "reconcile");
+  const { adapter } = await counterAdapter(context, organizationId, "reconcile", bound);
   return adapter.retrieveCounterCheckout(checkoutSessionId);
 }
-async function expireCounterProviderCheckout(context, organizationId, checkoutSessionId) {
-  const { adapter } = await counterAdapter(context, organizationId, "reconcile");
+async function expireCounterProviderCheckout(context, organizationId, checkoutSessionId, bound = null) {
+  const { adapter } = await counterAdapter(context, organizationId, "reconcile", bound);
   return adapter.expireCounterCheckout(checkoutSessionId);
 }
 function readCounterCheckout(session, expected) {
@@ -10451,7 +12280,7 @@ function assertExactCounterRefund(refund, expected) {
 async function findOrCreateCounterRefund(context, organizationId, input) {
   if (!/^pi_[A-Za-z0-9_]+$/.test(input.paymentIntentId)) throw new Error("This sale has no card payment to refund");
   if (!Number.isSafeInteger(input.amount) || input.amount < 1) throw new Error("Choose at least one paid unit to refund");
-  const { adapter } = await counterAdapter(context, organizationId, "reconcile");
+  const { adapter } = await counterAdapter(context, organizationId, "reconcile", input.bound);
   const existing = await adapter.findRefundPayment(input.paymentIntentId, input.providerKey);
   const refund = existing || await adapter.refundPayment(input.paymentIntentId, input.amount, input.providerKey, {
     operationKey: input.providerKey,
@@ -10461,6 +12290,9 @@ async function findOrCreateCounterRefund(context, organizationId, input) {
   assertExactCounterRefund(refund, input);
   return refund;
 }
+
+// features/keystone/mutations/counterPayments.ts
+init_current_actor();
 
 // features/keystone/security/tenant-status.ts
 var import_graphql = require("graphql");
@@ -10494,13 +12326,13 @@ function assertTrainingMember(member, actor2) {
 }
 function minutesOfDay(value) {
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new Error("Time must use HH:mm");
-  const [h, m] = value.split(":").map(Number);
-  return h * 60 + m;
+  const [h, m2] = value.split(":").map(Number);
+  return h * 60 + m2;
 }
 function assertTrainerAvailable(rows, start, end, timeZone) {
   normalizeTimeZone(timeZone);
   const a = localDateParts(start, timeZone), b = localDateParts(end, timeZone);
-  const key = (p) => `${p.year}-${p.month}-${p.day}`;
+  const key = (p2) => `${p2.year}-${p2.month}-${p2.day}`;
   if (key(a) !== key(b)) throw new Error("Appointments must finish on the same local day");
   const weekday = new Date(Date.UTC(a.year, a.month - 1, a.day)).getUTCDay();
   const startMinute = a.hour * 60 + a.minute, endMinute = b.hour * 60 + b.minute + b.second / 60;
@@ -10580,6 +12412,142 @@ async function unavailableReturnUnits(tx, organizationId, saleId, excludeAttempt
 init_operational_notices();
 init_prisma_result();
 init_classCapacity();
+init_current_actor();
+
+// features/keystone/mutations/staffIntents.ts
+var import_node_crypto10 = __toESM(require("node:crypto"));
+init_prisma_result();
+init_classCapacity();
+var WORKSPACES = /* @__PURE__ */ new Set(["retail", "training", "billing"]);
+var NAME = /^[A-Za-z][A-Za-z0-9_-]{0,60}$/;
+var SCOPE = /^[A-Za-z0-9_:-]{0,120}$/;
+var KEY = /^[A-Za-z0-9-]{12,200}$/;
+var MAX_FORM_BYTES = 64e3;
+var RETENTION_MS = 7 * 864e5;
+function actorOf(context) {
+  const session = context.session;
+  const organizationId = session?.data?.organization?.id;
+  if (!session?.itemId || !organizationId) throw new Error("Sign in again to continue");
+  return { userId: String(session.itemId), organizationId: String(organizationId) };
+}
+function normalizeForm(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("This request can't be recorded");
+  const entries = [];
+  for (const [name, raw] of Object.entries(value)) {
+    if (!/^[A-Za-z0-9_:.-]{1,120}$/.test(name)) continue;
+    const values = (Array.isArray(raw) ? raw : [raw]).filter((item) => typeof item === "string");
+    if (values.length) entries.push([name, values]);
+  }
+  entries.sort(([left], [right]) => left.localeCompare(right));
+  const form = Object.fromEntries(entries);
+  if (Buffer.byteLength(JSON.stringify(form)) > MAX_FORM_BYTES) throw new Error("This form is too large to record; shorten the text and try again");
+  return form;
+}
+var hashForm = (form) => import_node_crypto10.default.createHash("sha256").update(JSON.stringify(form)).digest("hex");
+function view(row) {
+  return {
+    id: row.id,
+    workspace: row.workspace,
+    operation: row.operation,
+    scope: row.scope || "",
+    requestKey: row.requestKey,
+    form: row.status === "pending" ? row.form || {} : {},
+    status: row.status,
+    lastError: row.lastError || "",
+    createdAt: row.createdAt
+  };
+}
+async function beginStaffIntent(_root, { workspace, operation, scope, requestKey, form }, context) {
+  const actor2 = actorOf(context);
+  if (!WORKSPACES.has(workspace) || !NAME.test(operation) || !SCOPE.test(scope || "") || !KEY.test(requestKey)) throw new Error("This request can't be recorded");
+  const values = normalizeForm(form);
+  const requestHash = hashForm(values);
+  return withKeystonePrismaTransaction(context.prisma, async (tx) => {
+    await lockTransactionKey(tx, `staff-intent:${actor2.organizationId}:${requestKey}`);
+    const existing = await tx.staffIntent.findFirst({ where: { organizationId: actor2.organizationId, requestKey } });
+    if (existing) {
+      if (existing.actorId !== actor2.userId || existing.workspace !== workspace || existing.operation !== operation || (existing.scope || "") !== (scope || "")) throw new Error("This request key belongs to another request");
+      if (existing.status === "pending" && existing.requestHash !== requestHash) throw new Error("This request was already started with different details");
+      return view(existing);
+    }
+    const created = await tx.staffIntent.create({ data: {
+      organizationId: actor2.organizationId,
+      actorId: actor2.userId,
+      workspace,
+      operation,
+      scope: scope || "",
+      requestKey,
+      requestHash,
+      form: values,
+      status: "pending",
+      expiresAt: new Date(Date.now() + RETENTION_MS)
+    } });
+    return view(created);
+  });
+}
+async function ownIntent(context, id) {
+  const actor2 = actorOf(context);
+  if (typeof id !== "string" || !id || id.length > 100) return null;
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const row = await prisma.staffIntent.findFirst({ where: { id, organizationId: actor2.organizationId, actorId: actor2.userId } });
+  return row && (row.status !== "pending" || !row.expiresAt || new Date(row.expiresAt) > /* @__PURE__ */ new Date()) ? row : null;
+}
+async function getStaffIntent(_root, { id }, context) {
+  const row = await ownIntent(context, id);
+  return row ? view(row) : null;
+}
+async function getMyPendingStaffIntents(_root, { workspace }, context) {
+  const actor2 = actorOf(context);
+  if (!WORKSPACES.has(workspace)) return [];
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const rows = await prisma.staffIntent.findMany({
+    where: { organizationId: actor2.organizationId, actorId: actor2.userId, workspace, status: "pending", expiresAt: { gt: /* @__PURE__ */ new Date() } },
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    take: 20,
+    select: { id: true, workspace: true, operation: true, scope: true, requestKey: true, status: true, lastError: true, createdAt: true }
+  });
+  return rows.map((row) => ({ ...row, form: {} }));
+}
+async function settleStaffIntent(_root, { id, outcome, error }, context) {
+  const actor2 = actorOf(context);
+  if (!["failed", "succeeded", "abandoned"].includes(outcome)) throw new Error("Unknown outcome");
+  return withKeystonePrismaTransaction(context.prisma, async (tx) => {
+    const row = await tx.staffIntent.findFirst({ where: { id, organizationId: actor2.organizationId, actorId: actor2.userId } });
+    if (!row) throw new Error("This request is no longer available");
+    await lockTransactionKey(tx, `staff-intent:${actor2.organizationId}:${row.requestKey}`);
+    if (row.status !== "pending") return view(row);
+    if (outcome === "failed") {
+      return view(await tx.staffIntent.update({ where: { id: row.id }, data: { lastError: String(error || "").slice(0, 1e3) } }));
+    }
+    if (outcome === "abandoned") {
+      const card = await tx.counterPaymentAttempt.findFirst({ where: { organizationId: actor2.organizationId, requestKey: row.requestKey, status: { in: ["reserved", "open", "exception", "compensating", "refund_pending"] } }, select: { id: true } });
+      if (card) throw new Error("This request opened a card payment that isn't settled. Finish or cancel it in Card payments first.");
+    }
+    return view(await tx.staffIntent.update({ where: { id: row.id }, data: { status: outcome, form: {}, resolvedAt: /* @__PURE__ */ new Date(), lastError: "" } }));
+  });
+}
+async function confirmedIntentResult(tx, organizationId, requestKey) {
+  if (typeof requestKey !== "string" || !KEY.test(requestKey)) return null;
+  await lockTransactionKey(tx, `staff-intent:${organizationId}:${requestKey}`);
+  const row = await tx.staffIntent.findFirst({ where: { organizationId, requestKey }, select: { status: true, result: true } });
+  return row?.status === "succeeded" && row.result && Object.keys(row.result).length ? row.result : null;
+}
+async function recordIntentResult(tx, organizationId, requestKey, result) {
+  if (typeof requestKey !== "string" || !KEY.test(requestKey)) return;
+  await tx.staffIntent.updateMany({ where: { organizationId, requestKey, status: "pending" }, data: { status: "succeeded", result, form: {}, resolvedAt: /* @__PURE__ */ new Date() } });
+}
+var staffIntentTypeDefs = `
+  extend type Query {
+    myStaffIntent(id: ID!): JSON
+    myPendingStaffIntents(workspace: String!): [JSON!]!
+  }
+  extend type Mutation {
+    beginStaffIntent(workspace: String!, operation: String!, scope: String, requestKey: String!, form: JSON!): JSON!
+    settleStaffIntent(id: ID!, outcome: String!, error: String): JSON!
+  }
+`;
+
+// features/keystone/mutations/trainingPackages.ts
 function throwOnKeystonePrismaError2(result) {
   if (result instanceof Error) throw result;
   return result;
@@ -10633,7 +12601,14 @@ async function recordSettledTrainingPackage(prisma, input, actor2, now = /* @__P
   if (!actor2.canManageAppointments) throw new Error("Training management permission required");
   if (input?.cardPayment === true) throw new Error("Card packages are recorded from their verified card checkout");
   settledPackageTerms(input, now);
-  return prisma.$transaction((tx) => createSettledTrainingPackage(tx, { ...input, cardPayment: false }, actor2, now));
+  return prisma.$transaction(async (tx) => {
+    const confirmed = await confirmedIntentResult(tx, actor2.organizationId, input?.requestKey);
+    if (confirmed?.packageId) return { id: confirmed.packageId, reused: true };
+    await lockActiveOrganization(tx, actor2.organizationId);
+    const recorded = await createSettledTrainingPackage(tx, { ...input, cardPayment: false }, actor2, now);
+    await recordIntentResult(tx, actor2.organizationId, input?.requestKey, { packageId: recorded.id });
+    return recorded;
+  });
 }
 async function recordTrainingPackageRefund(prisma, input, actor2) {
   prisma = guardKeystonePrismaResults(prisma);
@@ -10641,6 +12616,8 @@ async function recordTrainingPackageRefund(prisma, input, actor2) {
   if (!actor2.canManageAppointments) throw new Error("Training management permission required");
   const reference = trainingText(input.refundReference, "External settled refund reference", 200);
   return prisma.$transaction(async (tx) => {
+    const confirmed = await confirmedIntentResult(tx, actor2.organizationId, input?.requestKey);
+    if (confirmed?.refundedPackageId) return { id: confirmed.refundedPackageId, reused: true };
     await lockTransactionKey(tx, `training-refund:${actor2.organizationId}:${reference}`);
     await lockTransactionKey(tx, `training-package:${input.packageId}`);
     const pack = await tx.trainingPackage.findUnique({ where: { id: input.packageId } });
@@ -10659,6 +12636,7 @@ async function recordTrainingPackageRefund(prisma, input, actor2) {
     throwOnKeystonePrismaError2(await tx.trainingCreditEntry.create({ data: { organizationId: actor2.organizationId, trainingPackageId: pack.id, eventKey: `refunded:${pack.id}`, kind: "refunded", quantity: -pack.creditsRemaining, balanceAfter: 0, actorId: actor2.userId, reason: reference } }));
     throwOnKeystonePrismaError2(await tx.trainingPackage.update({ where: { id: pack.id }, data: { status: "refunded", refundAmount: amount, refundReference: reference, refundedAt: /* @__PURE__ */ new Date(), creditsRemaining: 0 } }));
     throwOnKeystonePrismaError2(await enqueueOperationalNotice(tx, { organizationId: actor2.organizationId, memberId: pack.memberId, key: `training-package-refund:${pack.id}`, kind: "training", message: `The studio recorded an external ${pack.currencyCode} ${(amount / 100).toFixed(2)} refund for unused ${pack.serviceName} credits. The remaining package credits are retired.` }));
+    await recordIntentResult(tx, actor2.organizationId, input?.requestKey, { refundedPackageId: pack.id });
     return { id: pack.id, amount, reused: false };
   });
 }
@@ -10687,10 +12665,35 @@ async function restoreTrainingPackage(tx, appointment, actor2) {
 
 // features/keystone/mutations/counterPayments.ts
 var OPEN_SALE_STATES = ["reserved", "open"];
-var STALE_UNOPENED_MS = 25 * 60 * 60 * 1e3;
+var EXPIRY_SKEW_MS = 5 * 6e4;
 function kindOf(attempt) {
   if (attempt.purpose === "exception_refund") return attempt.quote?.kind === "training" ? "training" : "retail";
   return attempt.purpose === "training_sale" || attempt.purpose === "training_refund" ? "training" : "retail";
+}
+function frozenRequest(attempt) {
+  const request = attempt?.quote?.checkoutRequest;
+  return request && typeof request.expiresAt === "string" ? request : null;
+}
+function requestDefinitelyExpired(attempt, now = Date.now()) {
+  const request = frozenRequest(attempt);
+  return Boolean(request && now >= new Date(request.expiresAt).getTime() + EXPIRY_SKEW_MS);
+}
+async function organizationAcceptsNewActivity(context, organizationId) {
+  try {
+    await assertActiveOrganization(context, organizationId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function freezeSaleAttempt(tx, created, binding) {
+  const kind = kindOf(created);
+  const request = freezeCounterCheckoutRequest({ organizationId: created.organizationId, attemptId: created.id, kind, amount: created.amount, description: describe(created), returnPath: workspacePath(kind) });
+  return tx.counterPaymentAttempt.update({ where: { id: created.id }, data: {
+    providerKey: `counter-checkout:${created.organizationId}:${created.id}`,
+    quote: { ...created.quote || {}, provider: binding, checkoutRequest: request },
+    expiresAt: new Date(new Date(request.expiresAt).getTime() + EXPIRY_SKEW_MS)
+  } });
 }
 function workspacePath(kind) {
   return kind === "retail" ? "/dashboard/platform/retail" : "/dashboard/platform/training";
@@ -10731,7 +12734,7 @@ async function startRetailCardSale(context, actor2, data) {
   const locationId = trainingText(data?.locationId, "Location", 200);
   const reviewedTotal = data?.reviewedTotal == null || data.reviewedTotal === "" ? null : trainingInteger(data.reviewedTotal, "Reviewed total in cents", 0, 2e9);
   const requestHash = hashTrainerAppointmentRequest({ purpose: "retail_sale", locationId, lines });
-  const providerId = await counterProviderId(context, actor2.organizationId);
+  const binding = await counterProviderBinding(context, actor2.organizationId);
   const attempt = await withKeystonePrismaTransaction(context.prisma, async (tx) => {
     await lockTransactionKey(tx, `counter-request:${actor2.organizationId}:${requestKey}`);
     const existing = await tx.counterPaymentAttempt.findFirst({ where: { organizationId: actor2.organizationId, requestKey } });
@@ -10739,6 +12742,8 @@ async function startRetailCardSale(context, actor2, data) {
       if (existing.requestHash !== requestHash) throw new Error("This sale was already started with different items; start a new sale");
       return existing;
     }
+    const current = await lockCurrentActor(tx, actor2.userId, actor2.organizationId, []);
+    if (!current.role.canManageRetail && !current.role.canManageAllRecords) throw new Error("Retail management permission required");
     await siteLock(tx, actor2, locationId);
     const quoteLines = [];
     let amount = 0;
@@ -10764,9 +12769,8 @@ async function startRetailCardSale(context, actor2, data) {
       amount,
       currencyCode: "USD",
       quote: { lines: quoteLines },
-      providerId,
-      recordedById: actor2.userId,
-      expiresAt: new Date(Date.now() + (COUNTER_CHECKOUT_MINUTES + 5) * 6e4)
+      providerId: binding.providerId,
+      recordedById: actor2.userId
     } });
     for (const line of quoteLines) {
       const item = await tx.retailItem.findUnique({ where: { id: line.itemId } });
@@ -10774,7 +12778,7 @@ async function startRetailCardSale(context, actor2, data) {
       await tx.retailItem.update({ where: { id: item.id }, data: { stockOnHand: balanceAfter } });
       await tx.retailStockEntry.create({ data: { organizationId: actor2.organizationId, locationId, itemId: item.id, eventKey: `hold:${created.id}:${item.id}`, quantity: -line.quantity, balanceAfter, reason: `Held for card checkout ${created.id}`, recordedById: actor2.userId } });
     }
-    return tx.counterPaymentAttempt.update({ where: { id: created.id }, data: { providerKey: `counter-checkout:${actor2.organizationId}:${created.id}` } });
+    return freezeSaleAttempt(tx, created, binding);
   });
   return openCounterCheckout(context, attempt);
 }
@@ -10793,7 +12797,7 @@ async function startTrainingCardSale(context, actor2, data) {
   const amount = trainingInteger(data?.amount, "Package price in cents", MINIMUM_CARD_AMOUNT, 1e8);
   if (new Date(terms.expiresAt) <= /* @__PURE__ */ new Date()) throw new Error("Choose a package expiry in the future");
   const requestHash = hashTrainerAppointmentRequest({ purpose: "training_sale", amount, terms });
-  const providerId = await counterProviderId(context, actor2.organizationId);
+  const binding = await counterProviderBinding(context, actor2.organizationId);
   const attempt = await withKeystonePrismaTransaction(context.prisma, async (tx) => {
     await lockTransactionKey(tx, `counter-request:${actor2.organizationId}:${requestKey}`);
     const existing = await tx.counterPaymentAttempt.findFirst({ where: { organizationId: actor2.organizationId, requestKey } });
@@ -10801,6 +12805,8 @@ async function startTrainingCardSale(context, actor2, data) {
       if (existing.requestHash !== requestHash) throw new Error("This package sale was already started with different terms; start a new sale");
       return existing;
     }
+    const current = await lockCurrentActor(tx, actor2.userId, actor2.organizationId, []);
+    if (!current.role.canManageAppointments && !current.role.canManageAllRecords) throw new Error("Training management permission required");
     const member = await tx.member.findUnique({ where: { id: terms.memberId } });
     const location2 = await tx.location.findUnique({ where: { id: terms.locationId } });
     assertTrainingTenant(member, actor2, "Member");
@@ -10816,28 +12822,23 @@ async function startTrainingCardSale(context, actor2, data) {
       amount,
       currencyCode: "USD",
       quote: { terms, memberName: member.name || "" },
-      providerId,
-      recordedById: actor2.userId,
-      expiresAt: new Date(Date.now() + (COUNTER_CHECKOUT_MINUTES + 5) * 6e4)
+      providerId: binding.providerId,
+      recordedById: actor2.userId
     } });
-    return tx.counterPaymentAttempt.update({ where: { id: created.id }, data: { providerKey: `counter-checkout:${actor2.organizationId}:${created.id}` } });
+    return freezeSaleAttempt(tx, created, binding);
   });
   return openCounterCheckout(context, attempt);
 }
 async function openCounterCheckout(context, attempt) {
   if (!OPEN_SALE_STATES.includes(attempt.status)) return counterAttemptView(attempt);
-  const kind = kindOf(attempt);
   if (attempt.providerCheckoutId) return completeCounterCheckout(context, attempt.organizationId, { attemptId: attempt.id });
+  const request = frozenRequest(attempt);
+  if (!request) throw new Error("This card payment has no recorded checkout request. Reconcile it in the provider dashboard before releasing it.");
+  if (requestDefinitelyExpired(attempt)) return releaseHeldAttempt(context, attempt.id, "The checkout window ended; no checkout from this sale can be paid");
+  if (Date.now() >= new Date(request.expiresAt).getTime()) throw new Error("This checkout window has just ended. Check again in a few minutes to release the hold.");
   let checkout;
   try {
-    checkout = await createCounterProviderCheckout(context, attempt.organizationId, {
-      attemptId: attempt.id,
-      kind,
-      amount: attempt.amount,
-      description: describe(attempt),
-      returnPath: workspacePath(kind),
-      providerKey: attempt.providerKey
-    });
+    checkout = await createCounterProviderCheckout(context, attempt.organizationId, { request, providerKey: attempt.providerKey, bound: attemptProviderBinding(attempt) });
   } catch (error) {
     await noteAttemptError(context, attempt.id, error);
     throw new Error("Card checkout could not be opened. The sale stays reserved: open it again or release it from Card payments.");
@@ -10861,7 +12862,7 @@ async function completeCounterCheckout(context, organizationId, ref) {
   if (!["retail_sale", "training_sale"].includes(attempt.purpose)) throw new Error("This is not a card sale");
   if (!OPEN_SALE_STATES.includes(attempt.status) && attempt.status !== "released") return counterAttemptView(attempt);
   if (!attempt.providerCheckoutId) return counterAttemptView(attempt);
-  const session = await retrieveCounterProviderCheckout(context, organizationId, attempt.providerCheckoutId);
+  const session = await retrieveCounterProviderCheckout(context, organizationId, attempt.providerCheckoutId, attemptProviderBinding(attempt));
   const state = readCounterCheckout(session, { organizationId, kind: kindOf(attempt), attemptId: attempt.id, amount: attempt.amount });
   if (state.state === "paid") return fulfillPaidAttempt(context, attempt.id, state.paymentIntentId);
   if (state.state === "expired") return releaseHeldAttempt(context, attempt.id, "Card checkout expired before payment");
@@ -10872,7 +12873,7 @@ async function fulfillPaidAttempt(context, attemptId, paymentIntentId, retryExce
     await lockTransactionKey(tx, `counter-attempt:${attemptId}`);
     const attempt = await tx.counterPaymentAttempt.findUnique({ where: { id: attemptId } });
     if (!attempt) throw new Error("Card payment was not found");
-    if (attempt.status === "fulfilled" || attempt.status === "exception" && !retryException) return counterAttemptView(attempt);
+    if (attempt.status === "fulfilled" || attempt.status === "compensating" || attempt.status === "exception" && !retryException) return counterAttemptView(attempt);
     if (![...OPEN_SALE_STATES, "released", "exception"].includes(attempt.status)) return counterAttemptView(attempt);
     const organizationId = attempt.organizationId;
     const recorder = { userId: attempt.recordedById || "", organizationId };
@@ -10970,24 +12971,21 @@ async function releaseHeldAttempt(context, attemptId, reason) {
 }
 async function cancelCounterCheckout(context, attempt) {
   if (!OPEN_SALE_STATES.includes(attempt.status)) return counterAttemptView(attempt);
+  const bound = attemptProviderBinding(attempt);
   let sessionId = attempt.providerCheckoutId;
   if (!sessionId) {
-    if (Date.now() - new Date(attempt.createdAt).getTime() > STALE_UNOPENED_MS) {
-      return releaseHeldAttempt(context, attempt.id, "Released by staff; no checkout could still be payable");
+    const request = frozenRequest(attempt);
+    if (!request) throw new Error("This card payment has no recorded checkout request. Reconcile it in the provider dashboard before releasing it.");
+    if (requestDefinitelyExpired(attempt)) return releaseHeldAttempt(context, attempt.id, "Cancelled by staff; the checkout window ended, so no checkout from this sale can be paid");
+    if (Date.now() >= new Date(request.expiresAt).getTime() || !await organizationAcceptsNewActivity(context, attempt.organizationId)) {
+      return counterAttemptView({ ...attempt, lastError: `The hold is released after the checkout window ends (${request.expiresAt}). Check again then.` });
     }
-    const checkout = await createCounterProviderCheckout(context, attempt.organizationId, {
-      attemptId: attempt.id,
-      kind: kindOf(attempt),
-      amount: attempt.amount,
-      description: describe(attempt),
-      returnPath: workspacePath(kindOf(attempt)),
-      providerKey: attempt.providerKey
-    });
+    const checkout = await createCounterProviderCheckout(context, attempt.organizationId, { request, providerKey: attempt.providerKey, bound });
     sessionId = checkout.providerSessionId;
     const prisma = guardKeystonePrismaResults(context.prisma);
     await prisma.counterPaymentAttempt.updateMany({ where: { id: attempt.id, status: { in: OPEN_SALE_STATES } }, data: { status: "open", providerCheckoutId: sessionId } });
   }
-  const session = await expireCounterProviderCheckout(context, attempt.organizationId, sessionId);
+  const session = await expireCounterProviderCheckout(context, attempt.organizationId, sessionId, bound);
   const state = readCounterCheckout(session, { organizationId: attempt.organizationId, kind: kindOf(attempt), attemptId: attempt.id, amount: attempt.amount });
   if (state.state === "paid") return fulfillPaidAttempt(context, attempt.id, state.paymentIntentId);
   if (state.state === "expired") return releaseHeldAttempt(context, attempt.id, "Cancelled by staff before payment");
@@ -10999,6 +12997,7 @@ async function startRetailCardRefund(context, actor2, data) {
   const requestKey = trainingText(data?.requestKey, "Request key", 200);
   const reason = trainingText(data?.reason, "Return reason", 1e3);
   const requestHash = hashTrainerAppointmentRequest({ purpose: "retail_refund", saleId, lines, reason });
+  const currentBinding = await counterReconcileBinding(context, actor2.organizationId);
   const attempt = await withKeystonePrismaTransaction(context.prisma, async (tx) => {
     await lockTransactionKey(tx, `counter-request:${actor2.organizationId}:${requestKey}`);
     const existing = await tx.counterPaymentAttempt.findFirst({ where: { organizationId: actor2.organizationId, requestKey } });
@@ -11024,6 +13023,8 @@ async function startRetailCardRefund(context, actor2, data) {
       snapshot.push({ ...line, sku: sold.sku, name: sold.name, unitAmount: sold.unitAmount, lineAmount });
     }
     if (amount < 1) throw new Error("Choose at least one paid unit to refund");
+    const provider = await refundBinding(tx, actor2.organizationId, { saleRequestKey: sale.requestKey, paymentIntentId: sale.paymentReference }, currentBinding);
+    const failed = await tx.counterPaymentAttempt.findFirst({ where: { organizationId: actor2.organizationId, purpose: "retail_refund", status: "refund_failed", quote: { path: ["saleId"], equals: sale.id } }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], select: { id: true } });
     const created = await tx.counterPaymentAttempt.create({ data: {
       organizationId: actor2.organizationId,
       locationId: sale.locationId,
@@ -11033,7 +13034,8 @@ async function startRetailCardRefund(context, actor2, data) {
       status: "refund_pending",
       amount,
       currencyCode: "USD",
-      quote: { saleId: sale.id, paymentIntentId: sale.paymentReference, lines: snapshot, reason },
+      quote: { saleId: sale.id, paymentIntentId: sale.paymentReference, lines: snapshot, reason, provider, ...failed ? { retryOf: failed.id } : {} },
+      providerId: provider.providerId,
       recordedById: actor2.userId
     } });
     return tx.counterPaymentAttempt.update({ where: { id: created.id }, data: { providerKey: `counter-refund:${actor2.organizationId}:${created.id}` } });
@@ -11044,6 +13046,7 @@ async function startTrainingCardRefund(context, actor2, data) {
   assertTrainingActor(actor2);
   if (!actor2.canManageAppointments) throw new Error("Training management permission required");
   const packageId = trainingText(data?.packageId, "Package", 200);
+  const currentBinding = await counterReconcileBinding(context, actor2.organizationId);
   const attempt = await withKeystonePrismaTransaction(context.prisma, async (tx) => {
     await lockTransactionKey(tx, `training-package:${packageId}`);
     const pending = await tx.counterPaymentAttempt.findFirst({ where: { organizationId: actor2.organizationId, purpose: "training_refund", status: "refund_pending", quote: { path: ["packageId"], equals: packageId } } });
@@ -11058,6 +13061,8 @@ async function startTrainingCardRefund(context, actor2, data) {
     if (amount < 1) throw new Error("This package has no unused paid credits to refund");
     const failures = await tx.counterPaymentAttempt.count({ where: { organizationId: actor2.organizationId, purpose: "training_refund", quote: { path: ["packageId"], equals: pack.id } } });
     const reason = `Unused ${pack.serviceName} credits`;
+    const provider = await refundBinding(tx, actor2.organizationId, { paymentIntentId: pack.purchaseReference }, currentBinding);
+    const failed = await tx.counterPaymentAttempt.findFirst({ where: { organizationId: actor2.organizationId, purpose: "training_refund", status: "refund_failed", quote: { path: ["packageId"], equals: pack.id } }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], select: { id: true } });
     const created = await tx.counterPaymentAttempt.create({ data: {
       organizationId: actor2.organizationId,
       locationId: pack.locationId,
@@ -11067,7 +13072,8 @@ async function startTrainingCardRefund(context, actor2, data) {
       status: "refund_pending",
       amount,
       currencyCode: "USD",
-      quote: { packageId: pack.id, paymentIntentId: pack.purchaseReference, credits: pack.creditsRemaining, reason },
+      quote: { packageId: pack.id, paymentIntentId: pack.purchaseReference, credits: pack.creditsRemaining, reason, provider, ...failed ? { retryOf: failed.id } : {} },
+      providerId: provider.providerId,
       recordedById: actor2.userId
     } });
     await tx.trainingPackage.update({ where: { id: pack.id }, data: { creditsRemaining: 0 } });
@@ -11076,26 +13082,43 @@ async function startTrainingCardRefund(context, actor2, data) {
   });
   return executeCounterRefund(context, attempt);
 }
+async function refundBinding(tx, organizationId, original, current) {
+  const attemptId = original.saleRequestKey?.startsWith("card:") ? original.saleRequestKey.slice("card:".length) : null;
+  const sale = await tx.counterPaymentAttempt.findFirst({
+    where: { organizationId, purpose: { in: ["retail_sale", "training_sale"] }, ...attemptId ? { id: attemptId } : { providerPaymentId: original.paymentIntentId } }
+  });
+  const recorded = attemptProviderBinding(sale);
+  if (recorded && !sameCounterProvider(current, recorded)) throw new Error(PROVIDER_CHANGED_MESSAGE);
+  return recorded || current;
+}
 async function refundCounterException(context, attempt, actorUserId) {
-  if (attempt.status !== "exception" || !attempt.providerPaymentId) throw new Error("Only a paid, unfulfilled checkout can be refunded here");
+  if (!["exception", "compensating"].includes(attempt.status) || !attempt.providerPaymentId) throw new Error("Only a paid, unfulfilled checkout can be refunded here");
+  const current = await counterReconcileBinding(context, attempt.organizationId);
+  const recorded = attemptProviderBinding(attempt);
+  if (recorded && !sameCounterProvider(current, recorded)) throw new Error(PROVIDER_CHANGED_MESSAGE);
+  const binding = recorded || current;
   const refund = await withKeystonePrismaTransaction(context.prisma, async (tx) => {
     await lockTransactionKey(tx, `counter-attempt:${attempt.id}`);
     const requestKey = `exception-refund:${attempt.id}`;
-    const existing = await tx.counterPaymentAttempt.findFirst({ where: { organizationId: attempt.organizationId, requestKey } });
-    if (existing) return existing;
-    const current = await tx.counterPaymentAttempt.findUnique({ where: { id: attempt.id } });
-    if (current.status !== "exception") throw new Error("This checkout is no longer awaiting staff action");
+    const pending = await tx.counterPaymentAttempt.findFirst({ where: { organizationId: attempt.organizationId, requestKey, status: "refund_pending" } });
+    if (pending) return pending;
+    const claimed = await tx.counterPaymentAttempt.updateMany({ where: { id: attempt.id, status: "exception" }, data: { status: "compensating", lastError: "" } });
+    if (claimed.count !== 1) throw new Error("This checkout is no longer awaiting staff action");
+    const attempts = await tx.counterPaymentAttempt.count({ where: { organizationId: attempt.organizationId, purpose: "exception_refund", quote: { path: ["attemptId"], equals: attempt.id } } });
+    const failed = attempts ? await tx.counterPaymentAttempt.findFirst({ where: { organizationId: attempt.organizationId, purpose: "exception_refund", status: "refund_failed", quote: { path: ["attemptId"], equals: attempt.id } }, orderBy: [{ createdAt: "desc" }, { id: "asc" }], select: { id: true } }) : null;
+    if (attempts && !failed) throw new Error("An earlier refund of this payment isn't confirmed as failed; check it with Stripe first");
     const created = await tx.counterPaymentAttempt.create({ data: {
       organizationId: attempt.organizationId,
       locationId: attempt.locationId,
       purpose: "exception_refund",
-      requestKey,
+      requestKey: attempts ? `${requestKey}:${attempts}` : requestKey,
       requestHash: hashTrainerAppointmentRequest({ purpose: "exception_refund", attemptId: attempt.id }),
       status: "refund_pending",
       amount: attempt.amount,
       currencyCode: "USD",
-      quote: { attemptId: attempt.id, kind: kindOf(attempt), paymentIntentId: attempt.providerPaymentId, reason: "Paid counter sale could not be fulfilled" },
-      recordedById: actorUserId
+      providerId: binding.providerId,
+      recordedById: actorUserId,
+      quote: { attemptId: attempt.id, kind: kindOf(attempt), paymentIntentId: attempt.providerPaymentId, reason: "Paid counter sale could not be fulfilled", provider: binding, ...failed ? { retryOf: failed.id } : {} }
     } });
     return tx.counterPaymentAttempt.update({ where: { id: created.id }, data: { providerKey: `counter-refund:${attempt.organizationId}:${created.id}` } });
   });
@@ -11109,7 +13132,8 @@ async function executeCounterRefund(context, attempt) {
       paymentIntentId: attempt.quote?.paymentIntentId,
       amount: attempt.amount,
       providerKey: attempt.providerKey,
-      reason: attempt.quote?.reason || ""
+      reason: attempt.quote?.reason || "",
+      bound: attemptProviderBinding(attempt)
     });
   } catch (error) {
     await noteAttemptError(context, attempt.id, error);
@@ -11168,13 +13192,27 @@ async function applyCounterRefundOutcome(context, attemptId, refund) {
         });
         result = { packageId: pack.id };
       } else if (attempt.purpose === "exception_refund") {
-        await tx.counterPaymentAttempt.updateMany({ where: { id: attempt.quote.attemptId, status: "exception" }, data: { status: "refunded", resolvedAt: now, result: { refundAttemptId: attempt.id } } });
+        await lockTransactionKey(tx, `counter-attempt:${attempt.quote.attemptId}`);
+        const settled = await tx.counterPaymentAttempt.updateMany({ where: { id: attempt.quote.attemptId, status: "compensating" }, data: { status: "refunded", resolvedAt: now, result: { refundAttemptId: attempt.id } } });
+        if (settled.count !== 1) {
+          await createFinanceException(tx, {
+            organizationId,
+            key: `counter-compensation:${attempt.id}`,
+            kind: "counter-payment",
+            reference: refund.id,
+            summary: `Refund ${refund.id} succeeded, but card payment ${attempt.quote.attemptId} was not awaiting that refund. Reconcile the sale and the refund from provider evidence.`
+          });
+        }
         result = { attemptId: attempt.quote.attemptId };
       }
       const updated2 = await tx.counterPaymentAttempt.update({ where: { id: attempt.id }, data: { status: "refunded", providerRefundId: refund.id, result, resolvedAt: now, lastError: "" } });
       return counterAttemptView(updated2);
     }
     if (refund.status === "failed" || refund.status === "canceled") {
+      if (attempt.purpose === "exception_refund") {
+        await lockTransactionKey(tx, `counter-attempt:${attempt.quote.attemptId}`);
+        await tx.counterPaymentAttempt.updateMany({ where: { id: attempt.quote.attemptId, status: "compensating" }, data: { status: "exception", lastError: `The refund was ${refund.status} at the provider` } });
+      }
       if (attempt.purpose === "training_refund") {
         const pack = await tx.trainingPackage.findUnique({ where: { id: attempt.quote.packageId } });
         if (pack.status === "active" && pack.creditsRemaining === 0) {
@@ -11190,8 +13228,9 @@ async function applyCounterRefundOutcome(context, attemptId, refund) {
     return counterAttemptView(updated);
   });
 }
-function assertCanAct(context, attempt) {
-  const role = context.session?.data?.role || {};
+async function assertCanAct(context, userId, attempt) {
+  const current = await withKeystonePrismaTransaction(context.prisma, (tx) => lockCurrentActor(tx, userId, attempt.organizationId, [], { requireActiveOrganization: false }));
+  const role = current.role;
   const allowed2 = kindOf(attempt) === "retail" ? role.canManageAllRecords || role.canManageRetail : role.canManageAllRecords || role.canManageAppointments;
   if (!allowed2) throw new Error(kindOf(attempt) === "retail" ? "Retail management permission required" : "Training management permission required");
 }
@@ -11202,9 +13241,13 @@ async function reconcileCounterPayment(_root, { attemptId, checkoutSessionId, ac
   const sessionId = String(checkoutSessionId || "");
   if (!attemptId && !/^cs_[A-Za-z0-9_]{1,250}$/.test(sessionId)) throw new Error("Card payment was not found for this workspace");
   const attempt = await findAttempt(context, organizationId, attemptId ? { id: String(attemptId) } : { providerCheckoutId: sessionId });
-  assertCanAct(context, attempt);
+  await assertCanAct(context, String(session.itemId), attempt);
   if (action === "status") {
     if (attempt.status === "refund_pending") return executeCounterRefund(context, attempt);
+    if (attempt.status === "compensating") {
+      const pending = await findAttempt(context, organizationId, { purpose: "exception_refund", status: "refund_pending", quote: { path: ["attemptId"], equals: attempt.id } });
+      return executeCounterRefund(context, pending);
+    }
     if (["retail_sale", "training_sale"].includes(attempt.purpose)) {
       if (OPEN_SALE_STATES.includes(attempt.status) && !attempt.providerCheckoutId) {
         await assertActiveOrganization(context, organizationId);
@@ -11215,7 +13258,13 @@ async function reconcileCounterPayment(_root, { attemptId, checkoutSessionId, ac
     return counterAttemptView(attempt);
   }
   if (action === "cancel") return cancelCounterCheckout(context, attempt);
-  if (action === "refund") return refundCounterException(context, attempt, session.itemId);
+  if (action === "refund") {
+    if (attempt.status === "compensating") {
+      const pending = await findAttempt(context, organizationId, { purpose: "exception_refund", status: "refund_pending", quote: { path: ["attemptId"], equals: attempt.id } });
+      return executeCounterRefund(context, pending);
+    }
+    return refundCounterException(context, attempt, session.itemId);
+  }
   if (action === "retry") {
     if (attempt.status !== "exception" || !attempt.providerPaymentId) throw new Error("Only a paid, unfulfilled checkout can be retried");
     return fulfillPaidAttempt(context, attempt.id, attempt.providerPaymentId, true);
@@ -11258,28 +13307,601 @@ async function ownsCounterPayment(prisma, organizationId, paymentIntentId) {
   ]);
   return Boolean(attempt || sale || pack);
 }
-async function counterAttemptsForWorkspace(prisma, organizationId, kind) {
-  const purposes = kind === "retail" ? ["retail_sale", "retail_refund", "exception_refund"] : ["training_sale", "training_refund", "exception_refund"];
+var UNRESOLVED_STATUSES = ["reserved", "open", "exception", "compensating", "refund_pending"];
+var CARD_PAGE_SIZE = 50;
+async function counterAttemptsForWorkspace(prisma, organizationId, kind, skip = 0) {
+  const purposes = kind === "retail" ? ["retail_sale", "retail_refund"] : ["training_sale", "training_refund"];
+  const where = {
+    organizationId,
+    OR: [{ purpose: { in: purposes } }, { purpose: "exception_refund", quote: { path: ["kind"], equals: kind } }],
+    AND: [{ OR: [
+      { status: { in: [...UNRESOLVED_STATUSES, "refund_failed"] } },
+      { updatedAt: { gte: new Date(Date.now() - 7 * 864e5) } }
+    ] }]
+  };
+  const offset = Number.isInteger(skip) && skip > 0 ? Math.min(skip, 1e5) : 0;
   const rows = await prisma.counterPaymentAttempt.findMany({
-    where: { organizationId, purpose: { in: purposes }, OR: [{ status: { in: ["reserved", "open", "exception", "refund_pending"] } }, { updatedAt: { gte: new Date(Date.now() - 7 * 864e5) } }] },
+    where,
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
-    take: 50,
-    select: { id: true, purpose: true, status: true, amount: true, currencyCode: true, quote: true, result: true, lastError: true, createdAt: true, expiresAt: true, providerCheckoutId: true }
+    skip: offset,
+    take: CARD_PAGE_SIZE + 1,
+    select: { id: true, purpose: true, status: true, amount: true, currencyCode: true, quote: true, result: true, lastError: true, createdAt: true, updatedAt: true, expiresAt: true, providerCheckoutId: true }
   });
-  return rows.filter((row) => row.purpose !== "exception_refund" || (row.quote?.kind === "training" ? "training" : "retail") === kind).map((row) => ({
-    id: row.id,
-    purpose: row.purpose,
-    status: row.status,
-    amount: row.amount,
-    currencyCode: row.currencyCode,
-    summary: row.purpose === "training_sale" ? `${row.quote?.terms?.serviceName || "Package"} \xB7 ${row.quote?.memberName || ""}`.trim() : row.purpose === "training_refund" ? `Refund ${row.quote?.credits ?? ""} unused credits` : row.purpose === "exception_refund" ? "Refund of unfulfilled card payment" : (row.quote?.lines || []).map((line) => `${line.quantity} \xD7 ${line.name}`).join(", "),
-    checkoutUrl: row.status === "open" ? row.result?.checkoutUrl || null : null,
-    lastError: row.lastError || "",
-    createdAt: row.createdAt,
-    expiresAt: row.expiresAt
-  }));
+  const failedIds = rows.filter((row) => row.status === "refund_failed").map((row) => row.id);
+  const retried = failedIds.length ? new Set((await prisma.counterPaymentAttempt.findMany({
+    where: { organizationId, OR: failedIds.map((id) => ({ quote: { path: ["retryOf"], equals: id } })) },
+    select: { quote: true }
+  })).map((row) => row.quote?.retryOf)) : /* @__PURE__ */ new Set();
+  const weekAgo = Date.now() - 7 * 864e5;
+  const visible = rows.slice(0, CARD_PAGE_SIZE).filter((row) => row.status !== "refund_failed" || !retried.has(row.id) || new Date(row.updatedAt).getTime() >= weekAgo);
+  return {
+    hasMore: rows.length > CARD_PAGE_SIZE,
+    skip: offset,
+    rows: visible.map((row) => ({
+      id: row.id,
+      purpose: row.purpose,
+      status: row.status,
+      amount: row.amount,
+      currencyCode: row.currencyCode,
+      summary: row.purpose === "training_sale" ? `${row.quote?.terms?.serviceName || "Package"} \xB7 ${row.quote?.memberName || ""}`.trim() : row.purpose === "training_refund" ? `Refund ${row.quote?.credits ?? ""} unused credits` : row.purpose === "exception_refund" ? "Refund of unfulfilled card payment" : (row.quote?.lines || []).map((line) => `${line.quantity} \xD7 ${line.name}`).join(", "),
+      checkoutUrl: row.status === "open" ? row.result?.checkoutUrl || null : null,
+      retried: row.status === "refund_failed" && retried.has(row.id),
+      lastError: row.lastError || "",
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt
+    }))
+  };
 }
 var counterPaymentTypeDefs = `extend type Mutation { reconcileCounterPayment(attemptId: ID, checkoutSessionId: String, action: String!): JSON! }`;
+
+// features/keystone/mutations/dropIn.ts
+var import_node_crypto11 = __toESM(require("node:crypto"));
+init_prisma_result();
+init_current_actor();
+init_operational_notices();
+init_operational_policy();
+init_internal_origin();
+init_classCapacity();
+var DROP_IN_SOURCE = "openfront-gym-drop-in";
+var PROVIDER_CODE3 = "pp_stripe";
+var CHECKOUT_MINUTES = 30;
+function requireSession(context) {
+  const session = context.session;
+  if (!session?.itemId) throw new Error("Sign in to book a drop-in class");
+  const organizationId = session.data?.organization?.id;
+  if (!organizationId) throw new Error("Account is not assigned to a club");
+  return { userId: String(session.itemId), organizationId: String(organizationId) };
+}
+async function dropInAdapter(context, organizationId, purpose) {
+  const { provider, adapter } = await getAdapterForProvider(context, PROVIDER_CODE3, organizationId, purpose);
+  if (purpose === "charge" && provider.adapterKey === "stripe") {
+    const merchants = await context.sudo().query.PaymentProvider.findMany({
+      where: { AND: [{ code: { equals: PROVIDER_CODE3 } }, { adapterKey: { equals: "stripe" } }, installedPaymentProviderWhere()] },
+      take: 2,
+      query: "id providerAccountId organization { id }"
+    });
+    assertSingleMerchantCheckout(merchants, organizationId);
+  }
+  if (!adapter.createCounterCheckout || !adapter.retrieveCounterCheckout) throw new Error("Card checkout is not available for this payment provider");
+  return { provider, adapter };
+}
+async function ensureVisitorProfile(tx, organizationId, user) {
+  const existing = await tx.member.findFirst({ where: { organizationId, userId: user.id }, select: { id: true, status: true } });
+  if (existing) {
+    if (existing.status !== "active") throw new Error("Your club profile isn't active. Contact the front desk.");
+    return existing.id;
+  }
+  const created = await tx.member.create({ data: {
+    organizationId,
+    userId: user.id,
+    name: user.name || user.email,
+    email: user.email,
+    phone: user.phone || "",
+    status: "active",
+    joinDate: /* @__PURE__ */ new Date()
+  }, select: { id: true } });
+  return created.id;
+}
+async function startDropInCheckout(_root, { classInstanceId }, context) {
+  const { userId, organizationId } = requireSession(context);
+  const id = String(classInstanceId || "").trim();
+  if (!id || id.length > 200) throw new Error("Choose a class");
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const [user, settings, instance] = await Promise.all([
+    prisma.user.findFirst({ where: { id: userId, organizationId }, select: { id: true, name: true, email: true, phone: true } }),
+    prisma.gymSettings.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "asc" }], select: { dropInPrice: true, currencyCode: true } }),
+    prisma.classInstance.findFirst({ where: { id, organizationId }, include: { classSchedule: { select: { name: true, isActive: true, maxCapacity: true } } } })
+  ]);
+  if (!user) throw new Error("Account not found");
+  const amount = Number(settings?.dropInPrice ?? 0);
+  if (!Number.isInteger(amount) || amount < 50) throw new Error("Drop-in classes aren't sold online. Contact the front desk to arrange a visit.");
+  if (String(settings?.currencyCode || "USD").toUpperCase() !== "USD") throw new Error("Drop-in checkout supports USD only");
+  if (!instance || instance.isCancelled || !instance.classSchedule?.isActive) throw new Error("This class isn't available to book");
+  if (instance.date.getTime() <= Date.now()) throw new Error("This class has already started");
+  const current = await prisma.membership.findFirst({ where: { organizationId, memberId: userId, status: { in: ["active", "frozen", "past-due"] } }, select: { status: true } });
+  if (current?.status === "active") throw new Error("Your membership covers classes; book it directly");
+  if (current) throw new Error("Your membership needs attention before you can book. Review it in your account.");
+  const member = await prisma.member.findFirst({ where: { organizationId, userId }, select: { id: true } });
+  if (member) {
+    const duplicate = await prisma.classBooking.findFirst({ where: { organizationId, classInstanceId: id, memberId: member.id, status: { in: ["confirmed", "waitlist"] } }, select: { id: true } });
+    if (duplicate) throw new Error("You're already booked for this class");
+  }
+  const confirmed = await prisma.classBooking.count({ where: { organizationId, classInstanceId: id, status: "confirmed" } });
+  if (confirmed >= (instance.maxCapacity ?? instance.classSchedule?.maxCapacity ?? 20)) throw new Error("This class is full. Drop-ins can book classes with open spaces.");
+  const open = await prisma.paymentSession.findFirst({
+    where: { organizationId, userId, billingCycle: "drop-in", status: "requires_action", expiresAt: { gt: /* @__PURE__ */ new Date() } },
+    orderBy: [{ createdAt: "desc" }]
+  });
+  if (open?.data?.classInstanceId === id && open.checkoutUrl) return { id: open.id, checkoutUrl: open.checkoutUrl, amount: open.amount };
+  const { provider, adapter } = await dropInAdapter(context, organizationId, "charge");
+  const key = `drop-in:${organizationId}:${userId}:${id}:${import_node_crypto11.default.randomUUID()}`;
+  const local = await withKeystonePrismaTransaction(context.prisma, async (tx) => {
+    await lockActiveOrganization(tx, organizationId);
+    if (member) await assertParticipationAllowed(tx, organizationId, member.id, instance.date, instance.locationId);
+    return tx.paymentSession.create({ data: {
+      organizationId,
+      userId,
+      paymentProviderId: provider.id,
+      status: "processing",
+      billingCycle: "drop-in",
+      amount,
+      currencyCode: "USD",
+      idempotencyKey: key,
+      data: { kind: "drop-in", classInstanceId: id, className: instance.classSchedule?.name || "Class", startsAt: instance.date.toISOString() }
+    } });
+  });
+  const returnPath = `/schedule/drop-in?class=${encodeURIComponent(id)}`;
+  try {
+    const checkout = await adapter.createCounterCheckout({
+      amount,
+      currencyCode: "USD",
+      description: `Drop-in: ${instance.classSchedule?.name || "Class"}`.slice(0, 200),
+      metadata: { source: DROP_IN_SOURCE, organizationId, paymentSessionId: local.id, classInstanceId: id, userId },
+      successUrl: `${publicAppUrl(returnPath)}&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: publicAppUrl(`/schedule?book=${encodeURIComponent(id)}`),
+      expiresAt: new Date(Date.now() + CHECKOUT_MINUTES * 6e4 + 6e4),
+      idempotencyKey: key,
+      customerEmail: user.email || void 0
+    });
+    const saved = await prisma.paymentSession.updateMany({
+      where: { id: local.id, status: "processing" },
+      data: { status: "requires_action", providerSessionId: checkout.providerSessionId, checkoutUrl: checkout.checkoutUrl, expiresAt: checkout.expiresAt ? new Date(checkout.expiresAt) : null }
+    });
+    requirePrismaAffectedCount(saved, 1, "Drop-in checkout finalization");
+    return { id: local.id, checkoutUrl: checkout.checkoutUrl, amount };
+  } catch (error) {
+    await prisma.paymentSession.updateMany({ where: { id: local.id, status: "processing" }, data: { status: "failed", failedAt: /* @__PURE__ */ new Date(), lastError: error instanceof Error ? error.message.slice(0, 1e3) : "Checkout failed" } });
+    throw error;
+  }
+}
+async function fulfillDropInCheckout(context, organizationId, providerSessionId) {
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const local = await prisma.paymentSession.findFirst({ where: { organizationId, providerSessionId, billingCycle: "drop-in" } });
+  if (!local) throw new Error("Drop-in checkout not found");
+  const { adapter, provider } = await dropInAdapter(context, organizationId, "reconcile");
+  const session = await adapter.retrieveCounterCheckout(providerSessionId);
+  const metadata = session?.metadata || {};
+  if (session?.id !== providerSessionId || metadata.source !== DROP_IN_SOURCE || metadata.paymentSessionId !== local.id || metadata.organizationId !== organizationId) {
+    throw new Error("Checkout does not belong to this drop-in");
+  }
+  if (session.amount_total !== local.amount || String(session.currency).toUpperCase() !== "USD") throw new Error("Drop-in amount does not match the checkout");
+  if (session.status === "expired") {
+    await prisma.paymentSession.updateMany({ where: { id: local.id, status: { in: ["requires_action", "processing"] } }, data: { status: "expired", provisioningLockedUntil: null } });
+    return { state: "expired", classInstanceId: local.data?.classInstanceId };
+  }
+  if (session.status !== "complete" || session.payment_status !== "paid") return { state: "pending", classInstanceId: local.data?.classInstanceId };
+  const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || "";
+  if (!paymentIntentId) throw new Error("Paid checkout has no payment reference");
+  const classInstanceId = String(local.data?.classInstanceId || "");
+  const outcome = await withKeystonePrismaTransaction(context.prisma, async (tx) => {
+    await lockTransactionKey(tx, `drop-in:${local.id}`);
+    const current = await tx.paymentSession.findFirst({ where: { id: local.id } });
+    if (current.status === "completed") return { state: current.data?.bookingId ? "booked" : "refunded", bookingId: current.data?.bookingId ?? null, fresh: false };
+    const user = await tx.user.findFirst({ where: { id: local.userId, organizationId }, select: { id: true, name: true, email: true, phone: true } });
+    if (!user) throw new Error("Drop-in account is missing");
+    const memberId = await ensureVisitorProfile(tx, organizationId, user);
+    const existingPayment = await tx.gymPayment.findFirst({ where: { organizationId, stripePaymentIntentId: paymentIntentId }, select: { id: true } });
+    if (!existingPayment) {
+      await tx.gymPayment.create({ data: {
+        organizationId,
+        memberId,
+        paymentProviderId: provider.id,
+        paymentSessionId: local.id,
+        amount: local.amount,
+        currencyCode: "USD",
+        status: "succeeded",
+        paymentDate: /* @__PURE__ */ new Date(),
+        stripePaymentIntentId: paymentIntentId,
+        receiptNumber: `DROPIN-${providerSessionId.slice(-12)}`,
+        description: `Drop-in class: ${local.data?.className || "Class"}`,
+        metadata: { kind: "drop-in", classInstanceId, providerSessionId }
+      } });
+    }
+    let bookingId = null;
+    let failure = "";
+    try {
+      await tx.$executeRaw`SAVEPOINT drop_in_booking`;
+      const booked = await createCapacityControlledBookingInTransaction(tx, {
+        classInstanceId,
+        memberId,
+        actorUserId: user.id,
+        actorOrganizationId: organizationId,
+        actorCanManageAllRecords: false,
+        capacityMode: "reject",
+        dropIn: { paymentSessionId: local.id, amount: local.amount, currencyCode: "USD" }
+      });
+      await tx.$executeRaw`RELEASE SAVEPOINT drop_in_booking`;
+      bookingId = booked.bookingId;
+    } catch (error) {
+      await tx.$executeRaw`ROLLBACK TO SAVEPOINT drop_in_booking`;
+      failure = error instanceof Error ? error.message : "The class could not be booked";
+    }
+    await tx.paymentSession.update({ where: { id: local.id }, data: {
+      status: "completed",
+      completedAt: /* @__PURE__ */ new Date(),
+      provisioningLockedUntil: null,
+      lastError: failure.slice(0, 1e3),
+      data: { ...local.data || {}, bookingId, paymentIntentId, bookingFailure: failure || null }
+    } });
+    return { state: bookingId ? "booked" : "refunded", bookingId, fresh: true, failure };
+  });
+  if (outcome.state === "booked" && outcome.fresh && outcome.bookingId) await sendBookingConfirmation(prisma, outcome.bookingId);
+  if (outcome.state === "refunded" && outcome.fresh) {
+    try {
+      await adapter.refundPayment(paymentIntentId, void 0, `drop-in-refund:${local.id}`);
+      await prisma.gymPayment.updateMany({ where: { organizationId, stripePaymentIntentId: paymentIntentId }, data: { status: "refunded", refundAmount: local.amount, refundedAt: /* @__PURE__ */ new Date(), refundReason: outcome.failure || DROP_IN_CLASS_FULL } });
+    } catch (error) {
+      console.error("Drop-in automatic refund failed", { paymentSessionId: local.id, name: error instanceof Error ? error.name : "UnknownError" });
+      await withKeystonePrismaTransaction(context.prisma, (tx) => createFinanceException(tx, {
+        organizationId,
+        key: `drop-in-refund:${local.id}`,
+        kind: "drop-in-refund",
+        reference: paymentIntentId,
+        summary: `A drop-in payment (${paymentIntentId}) could not book its class and the automatic refund failed. Refund it from Payments.`
+      })).catch(() => void 0);
+    }
+  }
+  const final = await prisma.paymentSession.findFirst({ where: { id: local.id }, select: { lastError: true } });
+  return { state: outcome.state, classInstanceId, bookingId: outcome.bookingId, message: final?.lastError || null };
+}
+async function completeDropInCheckout(_root, { providerSessionId }, context) {
+  const { userId, organizationId } = requireSession(context);
+  const id = String(providerSessionId || "").trim();
+  if (!/^cs_[A-Za-z0-9_]{1,250}$/.test(id)) throw new Error("Checkout reference is invalid");
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const owned = await prisma.paymentSession.findFirst({ where: { organizationId, userId, providerSessionId: id, billingCycle: "drop-in" }, select: { id: true } });
+  if (!owned) throw new Error("Checkout was not found for this account");
+  return fulfillDropInCheckout(context, organizationId, id);
+}
+async function refundCancelledDropIns(context, organizationId, bookingIds) {
+  if (!bookingIds.length) return { refunded: 0 };
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const bookings = await prisma.classBooking.findMany({ where: { organizationId, id: { in: bookingIds }, status: "cancelled", lateCancelled: false }, select: { id: true, serviceSnapshot: true } });
+  let refunded = 0;
+  for (const booking of bookings) {
+    const credit = booking.serviceSnapshot?.credit;
+    if (credit?.basis !== "drop_in_paid" || !credit.paymentSessionId) continue;
+    const payment = await prisma.gymPayment.findFirst({ where: { organizationId, paymentSessionId: credit.paymentSessionId } });
+    if (!payment?.stripePaymentIntentId || payment.status === "refunded") continue;
+    try {
+      const { adapter } = await dropInAdapter(context, organizationId, "reconcile");
+      await adapter.refundPayment(payment.stripePaymentIntentId, void 0, `drop-in-refund:${credit.paymentSessionId}`);
+      await prisma.gymPayment.updateMany({ where: { id: payment.id, status: { not: "refunded" } }, data: { status: "refunded", refundAmount: payment.amount, refundedAt: /* @__PURE__ */ new Date(), refundReason: "Drop-in class cancelled before it started" } });
+      refunded += 1;
+    } catch (error) {
+      console.error("Drop-in refund after cancellation failed", { bookingId: booking.id, name: error instanceof Error ? error.name : "UnknownError" });
+      await withKeystonePrismaTransaction(context.prisma, (tx) => createFinanceException(tx, {
+        organizationId,
+        key: `drop-in-cancel-refund:${booking.id}`,
+        kind: "drop-in-refund",
+        reference: payment.stripePaymentIntentId,
+        summary: `A drop-in booking was cancelled before the class but its refund (${payment.stripePaymentIntentId}) failed. Refund it from Payments.`
+      })).catch(() => void 0);
+    }
+  }
+  return { refunded };
+}
+var dropInTypeDefs = `
+  type DropInCheckoutResult { id: ID!, checkoutUrl: String!, amount: Int! }
+  type DropInCompletionResult { state: String!, classInstanceId: ID, bookingId: ID, message: String }
+  extend type Mutation {
+    startDropInCheckout(classInstanceId: ID!): DropInCheckoutResult!
+    completeDropInCheckout(providerSessionId: String!): DropInCompletionResult!
+  }
+`;
+
+// features/keystone/mutations/giftCards.ts
+var import_node_crypto12 = __toESM(require("node:crypto"));
+init_prisma_result();
+init_internal_origin();
+init_clientSource();
+init_classCapacity();
+var GIFT_CARD_SOURCE = "openfront-gym-gift-card";
+var GIFT_CARD_AMOUNTS = [2500, 5e3, 7500, 1e4, 15e3, 2e4];
+var PROVIDER_CODE4 = "pp_stripe";
+var CHECKOUT_MINUTES2 = 30;
+var EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+var usd = (cents) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
+function giftCodeFor(seed) {
+  return import_node_crypto12.default.createHash("sha256").update(`gym-gift:${seed}`).digest("hex").slice(0, 12).toUpperCase().match(/.{4}/g).join("-");
+}
+function normalizeGiftCode(code) {
+  const raw = String(code || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+  return raw.length === 12 ? raw.match(/.{4}/g).join("-") : "";
+}
+function orderToken(paymentSessionId) {
+  const secret = process.env.SESSION_SECRET || "";
+  if (secret.length < 32) throw new Error("Gift cards are unavailable on this deployment");
+  return import_node_crypto12.default.createHmac("sha256", secret).update(`gym-gift-order:${paymentSessionId}`).digest("hex");
+}
+function tokenOk(paymentSessionId, token) {
+  if (!/^[a-f0-9]{64}$/.test(token || "")) return false;
+  const a = Buffer.from(orderToken(paymentSessionId)), b = Buffer.from(token);
+  return a.length === b.length && import_node_crypto12.default.timingSafeEqual(a, b);
+}
+async function storefrontOrg(context) {
+  const org = await configuredStorefrontOrganization(context);
+  if (!org?.salesOpen) throw new Error("Gift cards are unavailable right now");
+  return org.id;
+}
+async function giftAdapter(context, organizationId, purpose) {
+  const { provider, adapter } = await getAdapterForProvider(context.sudo(), PROVIDER_CODE4, organizationId, purpose);
+  if (!adapter.createCounterCheckout || !adapter.retrieveCounterCheckout) throw new Error("Card checkout is not available for this payment provider");
+  return { provider, adapter };
+}
+async function giftCardOptions(_root, _args, context) {
+  try {
+    const organizationId = await storefrontOrg(context);
+    await giftAdapter(context, organizationId, "charge");
+    return { online: true, amounts: GIFT_CARD_AMOUNTS };
+  } catch {
+    return { online: false, amounts: [] };
+  }
+}
+function validateGiftCardOrder(args) {
+  if (!GIFT_CARD_AMOUNTS.includes(args.amount)) throw new Error("Choose one of the gift card amounts");
+  const purchaserName = String(args.purchaserName || "").trim(), purchaserEmail = normalizeAuthIdentity(String(args.purchaserEmail || ""));
+  const recipientEmail = args.recipientEmail?.trim() ? normalizeAuthIdentity(args.recipientEmail) : purchaserEmail;
+  const recipientName = String(args.recipientName || "").trim() || purchaserName;
+  const message = String(args.message || "").trim();
+  if (!purchaserName || purchaserName.length > 120 || recipientName.length > 120 || /[\r\n]/.test(purchaserName + recipientName)) throw new Error("Enter your name");
+  if (!EMAIL.test(purchaserEmail) || !EMAIL.test(recipientEmail) || purchaserEmail.length > 254 || recipientEmail.length > 254) throw new Error("Enter a valid email address");
+  if (message.length > 500) throw new Error("Keep the message under 500 characters");
+  return { amount: args.amount, purchaserName, purchaserEmail, recipientName, recipientEmail, message };
+}
+async function startGiftCardCheckout(_root, args, context) {
+  const order = validateGiftCardOrder(args);
+  const source = requestClientSource(context.req);
+  if (isKnownSource(source) && !await consumeAuthAttempt(context.prisma, budgetKey("gift-card-source", source), 10, 15 * 60 * 1e3) || !await consumeAuthAttempt(context.prisma, budgetKey("gift-card", order.purchaserEmail, source), 5, 15 * 60 * 1e3)) {
+    throw new Error("Too many gift card orders. Try again in 15 minutes.");
+  }
+  const organizationId = await storefrontOrg(context);
+  const { provider, adapter } = await giftAdapter(context, organizationId, "charge");
+  const prisma = guardKeystonePrismaResults(context.sudo().prisma);
+  const key = `gift-card:${organizationId}:${import_node_crypto12.default.randomUUID()}`;
+  const local = await prisma.paymentSession.create({ data: {
+    organizationId,
+    paymentProviderId: provider.id,
+    status: "processing",
+    billingCycle: "gift-card",
+    amount: order.amount,
+    currencyCode: "USD",
+    idempotencyKey: key,
+    data: { kind: "gift-card", ...order }
+  } });
+  const back = `/gift-cards/order?ref=${encodeURIComponent(local.id)}&token=${orderToken(local.id)}`;
+  try {
+    const org = await prisma.organization.findFirst({ where: { id: organizationId }, select: { name: true } });
+    const checkout = await adapter.createCounterCheckout({
+      amount: order.amount,
+      currencyCode: "USD",
+      description: `${org?.name || "Club"} gift card \xB7 ${usd(order.amount)}`.slice(0, 200),
+      metadata: { source: GIFT_CARD_SOURCE, organizationId, paymentSessionId: local.id },
+      successUrl: publicAppUrl(back),
+      cancelUrl: publicAppUrl(`${back}&result=cancelled`),
+      expiresAt: new Date(Date.now() + CHECKOUT_MINUTES2 * 6e4 + 6e4),
+      idempotencyKey: key,
+      customerEmail: order.purchaserEmail
+    });
+    await prisma.paymentSession.updateMany({
+      where: { id: local.id, status: "processing" },
+      data: { status: "requires_action", providerSessionId: checkout.providerSessionId, checkoutUrl: checkout.checkoutUrl, expiresAt: checkout.expiresAt ? new Date(checkout.expiresAt) : null }
+    });
+    return { checkoutUrl: checkout.checkoutUrl };
+  } catch (error) {
+    await prisma.paymentSession.updateMany({ where: { id: local.id, status: "processing" }, data: { status: "failed", failedAt: /* @__PURE__ */ new Date(), lastError: error instanceof Error ? error.message.slice(0, 1e3) : "Checkout failed" } });
+    throw new Error("Online gift cards are unavailable right now. Buy one at the front desk.");
+  }
+}
+async function fulfillGiftCardCheckout(context, organizationId, providerSessionId) {
+  const prisma = guardKeystonePrismaResults(context.sudo().prisma);
+  const local = await prisma.paymentSession.findFirst({ where: { organizationId, providerSessionId, billingCycle: "gift-card" } });
+  if (!local) throw new Error("Gift card order not found");
+  if (local.status === "completed") return local;
+  const { adapter, provider } = await giftAdapter(context, organizationId, "reconcile");
+  const session = await adapter.retrieveCounterCheckout(providerSessionId);
+  const metadata = session?.metadata || {};
+  if (session?.id !== providerSessionId || metadata.source !== GIFT_CARD_SOURCE || metadata.paymentSessionId !== local.id || metadata.organizationId !== organizationId) throw new Error("Checkout does not belong to this gift card order");
+  if (session.amount_total !== local.amount || String(session.currency).toUpperCase() !== "USD") throw new Error("Gift card amount does not match the checkout");
+  if (session.status === "expired") {
+    await prisma.paymentSession.updateMany({ where: { id: local.id, status: { in: ["requires_action", "processing"] } }, data: { status: "expired" } });
+    return { ...local, status: "expired" };
+  }
+  if (session.status !== "complete" || session.payment_status !== "paid") return local;
+  const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || "";
+  if (!paymentIntentId) throw new Error("Paid checkout has no payment reference");
+  const order = local.data || {};
+  const issued = await withKeystonePrismaTransaction(context.sudo().prisma, async (tx) => {
+    await lockTransactionKey(tx, `gift-card:${local.id}`);
+    const current = await tx.paymentSession.findFirst({ where: { id: local.id } });
+    if (current.status === "completed") return { session: current, fresh: false };
+    const now = /* @__PURE__ */ new Date();
+    const code = giftCodeFor(paymentIntentId);
+    const expiresAt = new Date(now);
+    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    const ledger = [{ at: now.toISOString(), type: "issue", amount: local.amount, balance: local.amount, ref: paymentIntentId }];
+    const card = await tx.giftCard.create({ data: {
+      organizationId,
+      code,
+      status: "active",
+      initialValue: local.amount,
+      balance: local.amount,
+      purchaserName: order.purchaserName || "",
+      purchaserEmail: order.purchaserEmail || "",
+      recipientName: order.recipientName || "",
+      recipientEmail: order.recipientEmail || "",
+      message: order.message || "",
+      paymentSessionId: local.id,
+      stripePaymentIntentId: paymentIntentId,
+      expiresAt,
+      activatedAt: now,
+      ledger
+    } });
+    const updated = await tx.paymentSession.update({ where: { id: local.id }, data: { status: "completed", completedAt: now, data: { ...order, giftCardId: card.id, paymentIntentId, providerPaymentProviderId: provider.id } } });
+    return { session: updated, fresh: true };
+  });
+  if (issued.fresh) await emailGiftCard(prisma, String(issued.session.data?.giftCardId || ""));
+  return issued.session;
+}
+async function emailGiftCard(prisma, giftCardId, send) {
+  try {
+    const { mailDeliveryEnabled: mailDeliveryEnabled2 } = await Promise.resolve().then(() => (init_mail(), mail_exports));
+    if (!giftCardId || !send && !mailDeliveryEnabled2()) return false;
+    const claimed = await prisma.giftCard.updateMany({ where: { id: giftCardId, emailedAt: null, recipientEmail: { not: "" } }, data: { emailedAt: /* @__PURE__ */ new Date() } });
+    if (!claimed.count) return false;
+    const card = await prisma.giftCard.findFirst({ where: { id: giftCardId }, include: { organization: { select: { name: true } } } });
+    const sender = send || (await Promise.resolve().then(() => (init_confirmation_mail(), confirmation_mail_exports))).sendConfirmationMail;
+    const club = card.organization?.name || "the club";
+    const from = card.purchaserName && card.purchaserEmail !== card.recipientEmail ? card.purchaserName : "";
+    const result = await sender({
+      to: card.recipientEmail,
+      subject: from ? `${from} sent you a ${usd(card.initialValue)} gift card for ${club}` : `Your ${usd(card.initialValue)} gift card for ${club}`,
+      heading: `${usd(card.initialValue)} to spend at ${club}`,
+      lines: [
+        ...from ? [`Hi ${card.recipientName || "there"}, ${from} sent you a gift card.`] : [],
+        ...card.message ? [`"${card.message}"`] : [],
+        `Code: ${card.code}`,
+        `Show this code at the front desk for classes, passes or anything in the shop.${card.expiresAt ? ` Valid until ${card.expiresAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.` : ""}`
+      ],
+      link: { url: publicAppUrl("/schedule"), label: "See the schedule" }
+    });
+    if (!result.sent) await prisma.giftCard.updateMany({ where: { id: giftCardId }, data: { emailedAt: null } });
+    return result.sent;
+  } catch (error) {
+    console.error("Gift card email failed:", error instanceof Error ? error.message : "unknown");
+    await prisma.giftCard.updateMany({ where: { id: giftCardId }, data: { emailedAt: null } }).catch(() => void 0);
+    return false;
+  }
+}
+async function confirmGiftCardOrder(_root, { ref, token }, context) {
+  if (!ref || ref.length > 200 || !tokenOk(ref, token)) throw new Error("We couldn't find that gift card order");
+  const prisma = guardKeystonePrismaResults(context.sudo().prisma);
+  let local = await prisma.paymentSession.findFirst({ where: { id: ref, billingCycle: "gift-card" } });
+  if (!local) throw new Error("We couldn't find that gift card order");
+  if (local.status === "requires_action" && local.providerSessionId) {
+    try {
+      local = await fulfillGiftCardCheckout(context, local.organizationId, local.providerSessionId);
+    } catch {
+    }
+  }
+  const card = local.data?.giftCardId ? await prisma.giftCard.findFirst({ where: { id: String(local.data.giftCardId) } }) : null;
+  return {
+    status: card ? card.status : local.status === "expired" || local.status === "failed" ? "cancelled" : "pending",
+    amount: local.amount,
+    recipientName: local.data?.recipientName || null,
+    recipientEmail: local.data?.recipientEmail || null,
+    code: card && card.status !== "voided" ? card.code : null,
+    expiresAt: card?.expiresAt?.toISOString() || null
+  };
+}
+function staffActor(context) {
+  return retailActorFromContext(context);
+}
+async function lookupGiftCard(_root, { code }, context) {
+  const actor2 = staffActor(context);
+  const normalized = normalizeGiftCode(code);
+  if (!normalized) throw new Error("Enter the 12-character gift card code");
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const card = await prisma.giftCard.findFirst({ where: { organizationId: actor2.organizationId, code: normalized } });
+  if (!card) throw new Error("No gift card with that code");
+  return { id: card.id, code: card.code, status: card.status, balance: card.balance, initialValue: card.initialValue, recipientName: card.recipientName, expiresAt: card.expiresAt?.toISOString() || null, ledger: card.ledger };
+}
+async function redeemGiftCardAtomic(prisma, input, now = /* @__PURE__ */ new Date()) {
+  const code = normalizeGiftCode(input.code);
+  if (!code) throw new Error("Enter the 12-character gift card code");
+  if (!Number.isSafeInteger(input.amount) || input.amount < 1 || input.amount > 1e6) throw new Error("Enter the amount to take from the card");
+  const requestKey = String(input.requestKey || "").trim();
+  if (requestKey.length < 8 || requestKey.length > 200) throw new Error("Request key is required");
+  const note = String(input.note || "").trim().slice(0, 200);
+  if (!note) throw new Error("Say what the card paid for");
+  return withKeystonePrismaTransaction(prisma, async (tx) => {
+    await lockTransactionKey(tx, `gift-card-code:${input.organizationId}:${code}`);
+    const card = await tx.giftCard.findFirst({ where: { organizationId: input.organizationId, code } });
+    if (!card) throw new Error("No gift card with that code");
+    const ledger = Array.isArray(card.ledger) ? card.ledger : [];
+    const replay2 = ledger.find((row) => row.ref === requestKey);
+    if (replay2) return { id: card.id, balance: card.balance, amount: replay2.amount, reused: true };
+    if (card.status !== "active") throw new Error(card.status === "redeemed" ? "This gift card has been used up" : "This gift card isn't active");
+    if (card.expiresAt && card.expiresAt < now) throw new Error("This gift card has expired");
+    if (card.balance < input.amount) throw new Error(`This gift card has ${usd(card.balance)} left. Take the rest another way.`);
+    const balance = card.balance - input.amount;
+    await tx.giftCard.update({ where: { id: card.id }, data: { balance, status: balance === 0 ? "redeemed" : "active", ledger: [...ledger, { at: now.toISOString(), type: "redeem", amount: input.amount, balance, ref: requestKey, note }] } });
+    return { id: card.id, balance, amount: input.amount, reused: false };
+  });
+}
+async function redeemGiftCard(_root, { code, amount, requestKey, note }, context) {
+  const actor2 = staffActor(context);
+  return redeemGiftCardAtomic(context.prisma, { organizationId: actor2.organizationId, code, amount, requestKey, note });
+}
+async function refundGiftCard(_root, { giftCardId }, context) {
+  const actor2 = staffActor(context);
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const card = await withKeystonePrismaTransaction(context.prisma, async (tx) => {
+    const row = await tx.giftCard.findFirst({ where: { id: giftCardId, organizationId: actor2.organizationId } });
+    if (!row) throw new Error("Gift card not found");
+    await lockTransactionKey(tx, `gift-card-code:${actor2.organizationId}:${row.code}`);
+    const fresh = await tx.giftCard.findFirst({ where: { id: row.id } });
+    if (fresh.status === "voided") return fresh;
+    if (fresh.status !== "active" || fresh.balance !== fresh.initialValue) throw new Error("Only an unused gift card can be refunded");
+    if (!fresh.stripePaymentIntentId) throw new Error("This gift card has no card payment to refund");
+    const ledger = Array.isArray(fresh.ledger) ? fresh.ledger : [];
+    return tx.giftCard.update({ where: { id: fresh.id }, data: { status: "voided", balance: 0, ledger: [...ledger, { at: (/* @__PURE__ */ new Date()).toISOString(), type: "void", amount: fresh.balance, balance: 0, ref: `refund:${fresh.id}`, note: "Refunded to the buyer's card" }] } });
+  });
+  if (card.refundedAt) return { id: card.id, status: card.status };
+  const { adapter } = await giftAdapter(context, actor2.organizationId, "reconcile");
+  await adapter.refundPayment(card.stripePaymentIntentId, void 0, `gift-card-refund:${card.id}`);
+  await prisma.giftCard.updateMany({ where: { id: card.id }, data: { refundedAt: /* @__PURE__ */ new Date() } });
+  return { id: card.id, status: "voided" };
+}
+async function giftCardsWorkspace(_root, { skip = 0 }, context) {
+  const actor2 = staffActor(context);
+  if (!Number.isInteger(skip) || skip < 0 || skip > 1e5) throw new Error("Invalid page");
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const rows = await prisma.giftCard.findMany({
+    where: { organizationId: actor2.organizationId },
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    skip,
+    take: 26,
+    select: { id: true, code: true, status: true, initialValue: true, balance: true, purchaserName: true, recipientName: true, recipientEmail: true, expiresAt: true, createdAt: true, refundedAt: true }
+  });
+  return { cards: rows.slice(0, 25), hasMore: rows.length > 25, skip };
+}
+var giftCardTypeDefs = `
+  type GiftCardOptions { online: Boolean!, amounts: [Int!]! }
+  type GiftCardCheckout { checkoutUrl: String! }
+  type GiftCardOrder { status: String!, amount: Int!, recipientName: String, recipientEmail: String, code: String, expiresAt: String }
+  extend type Query {
+    giftCardOptions: GiftCardOptions!
+    lookupGiftCard(code: String!): JSON!
+    giftCardsWorkspace(skip: Int = 0): JSON!
+  }
+  extend type Mutation {
+    startGiftCardCheckout(amount: Int!, purchaserName: String!, purchaserEmail: String!, recipientName: String, recipientEmail: String, message: String): GiftCardCheckout!
+    confirmGiftCardOrder(ref: ID!, token: String!): GiftCardOrder!
+    redeemGiftCard(code: String!, amount: Int!, requestKey: String!, note: String!): JSON!
+    refundGiftCard(giftCardId: ID!): JSON!
+  }
+`;
 
 // features/keystone/mutations/paymentWebhook.ts
 function mapStripeStatusToSubscription(status, collectionPaused = false) {
@@ -11313,13 +13935,13 @@ function paymentEventReplayEvidence(event) {
   }
   return { id: event.id, type: event.type, created: event.created, livemode: event.livemode, data: { object: evidence } };
 }
-async function claimEvent(context, providerId, organizationId, event) {
+async function claimEvent(context, providerId2, organizationId, event) {
   const now = /* @__PURE__ */ new Date();
   try {
     return await withKeystonePrismaTransaction(context.prisma, async (transaction) => {
-      await lockTransactionKey(transaction, `payment-event:${providerId}:${event.id}`);
+      await lockTransactionKey(transaction, `payment-event:${providerId2}:${event.id}`);
       const existing = await transaction.paymentEvent.findUnique({
-        where: { paymentProviderId_providerEventId: { paymentProviderId: providerId, providerEventId: event.id } }
+        where: { paymentProviderId_providerEventId: { paymentProviderId: providerId2, providerEventId: event.id } }
       });
       if (existing?.status === "processed" || existing?.status === "ignored") return null;
       if (existing?.status === "processing" && existing.lockedUntil && existing.lockedUntil > now) throw new Error("Payment event is already processing; retry later");
@@ -11327,7 +13949,7 @@ async function claimEvent(context, providerId, organizationId, event) {
         return transaction.paymentEvent.update({ where: { id: existing.id }, data: { status: "processing", attempts: { increment: 1 }, lockedUntil: new Date(now.getTime() + 5 * 60 * 1e3), lastError: "" }, select: { id: true, status: true, attempts: true } });
       }
       return transaction.paymentEvent.create({
-        data: { providerEventId: event.id, eventType: event.type, status: "processing", attempts: 1, lockedUntil: new Date(now.getTime() + 5 * 60 * 1e3), organizationId, paymentProviderId: providerId, data: { event: paymentEventReplayEvidence(event) } },
+        data: { providerEventId: event.id, eventType: event.type, status: "processing", attempts: 1, lockedUntil: new Date(now.getTime() + 5 * 60 * 1e3), organizationId, paymentProviderId: providerId2, data: { event: paymentEventReplayEvidence(event) } },
         select: { id: true, status: true, attempts: true }
       });
     });
@@ -11335,6 +13957,17 @@ async function claimEvent(context, providerId, organizationId, event) {
     if (error?.code === "P2002") throw new Error("Payment event claim conflicted; retry later");
     throw error;
   }
+}
+async function membershipAcceptedPrice(transaction, membership, checkout) {
+  const tierId = membership?.tierId || checkout?.membershipTierId;
+  const cycle = membership?.billingCycle || checkout?.billingCycle;
+  const tier = tierId ? await transaction.membershipTier.findFirst({ where: { id: tierId }, select: { stripeMonthlyPriceId: true, stripeAnnualPriceId: true } }) : null;
+  const checkoutAccepted = checkout && (!membership || checkout.membershipTierId === membership.tierId && checkout.billingCycle === membership.billingCycle);
+  return acceptedProviderPrice(membership?.agreementSnapshot || checkout?.data?.agreementSnapshot, {
+    checkoutPriceId: checkoutAccepted ? checkout.data?.priceId : null,
+    checkoutProductId: checkoutAccepted ? checkout.data?.productId : null,
+    tierPriceId: cycle === "annual" ? tier?.stripeAnnualPriceId : tier?.stripeMonthlyPriceId
+  });
 }
 async function tierForProviderPrice(transaction, subscription, organizationId) {
   const priceId = subscription.items?.data?.[0]?.price?.id;
@@ -11347,18 +13980,18 @@ async function tierForProviderPrice(transaction, subscription, organizationId) {
 async function findUserForSubscription(transaction, subscription, organizationId) {
   const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
   if (!customerId) return null;
-  const select31 = { id: true, organizationId: true, stripeCustomerId: true };
+  const select34 = { id: true, organizationId: true, stripeCustomerId: true };
   if (subscription.metadata?.userId) {
     const user2 = await transaction.user.findFirst({
       where: { id: subscription.metadata.userId, organizationId },
-      select: select31
+      select: select34
     });
     if (user2?.stripeCustomerId && user2.stripeCustomerId !== customerId) throw new Error("Subscription customer does not match the existing user");
     if (user2) return { user: user2, customerId };
   }
   const user = await transaction.user.findFirst({
     where: { stripeCustomerId: customerId, organizationId },
-    select: select31
+    select: select34
   });
   return user ? { user, customerId } : null;
 }
@@ -11372,7 +14005,7 @@ async function syncSubscription(context, adapter, incomingSubscription, organiza
   if (!event.id || !Number.isInteger(event.created) || event.created < 0) {
     throw new Error("Stripe subscription event ordering evidence is invalid");
   }
-  return withKeystonePrismaTransaction(context.prisma, async (transaction) => {
+  const result = await withKeystonePrismaTransaction(context.prisma, async (transaction) => {
     await lockTransactionKey(
       transaction,
       `stripe-subscription:${organizationId}:${incomingSubscription.id}`
@@ -11410,11 +14043,13 @@ async function syncSubscription(context, adapter, incomingSubscription, organiza
     if (membership && membership.stripeSubscriptionId !== subscription.id) throw new Error("Another subscription owns this membership; checkout reconciliation required");
     const priceTier = await tierForProviderPrice(transaction, subscription, organizationId);
     let tierId = membership?.tierId || checkout?.membershipTierId || null;
-    if (!membership && checkout?.data?.priceId && subscription.items?.data?.[0]?.price?.id !== checkout.data.priceId) {
-      throw new Error("Subscription price does not match its checkout agreement; operator reconciliation required");
+    const accepted = await membershipAcceptedPrice(transaction, membership, checkout);
+    const itemProblem = subscriptionItemsProblem(subscription, accepted, membership?.billingCycle || checkout?.billingCycle || "monthly");
+    if (!membership && checkout && itemProblem) {
+      throw new Error(`Subscription doesn't match its checkout agreement (it ${itemProblem}); operator reconciliation required`);
     }
     if (!tierId) tierId = priceTier?.id || null;
-    if (membership && priceTier?.id !== membership.tierId) {
+    if (membership && itemProblem) {
       const pendingTierChange = await transaction.membershipBillingAttempt.findFirst({
         where: { organizationId, membershipId: membership.id, operation: "tier-change", status: "processing" },
         select: { id: true }
@@ -11425,7 +14060,7 @@ async function syncSubscription(context, adapter, incomingSubscription, organiza
           key: `subscription-price:${subscription.id}:${subscription.items?.data?.[0]?.price?.id || "none"}`,
           kind: "subscription-plan-mismatch",
           reference: subscription.id,
-          summary: "The provider subscription bills a price that does not match the member's accepted plan. Review the subscription and change the plan from Billing, or restore the provider price."
+          summary: `The provider subscription ${itemProblem}, which doesn't match the member's accepted plan. Review the subscription and change the plan from Billing, or restore the provider price.`
         });
       }
     }
@@ -11434,10 +14069,12 @@ async function syncSubscription(context, adapter, incomingSubscription, organiza
       Boolean(subscription.pause_collection)
     );
     const now = /* @__PURE__ */ new Date();
+    const renewing = subscription.status === "active" && !subscription.cancel_at_period_end;
     const hasCurrentPaidServicePeriod = Boolean(
-      membership?.creditPeriodStart && membership.creditPeriodEnd && new Date(membership.creditPeriodStart) <= now && now < new Date(membership.creditPeriodEnd)
+      membership?.creditPeriodStart && membership.creditPeriodEnd && new Date(membership.creditPeriodStart) <= now && now.getTime() < new Date(membership.creditPeriodEnd).getTime() + (renewing ? RENEWAL_GRACE_MS : 0)
     );
-    const membershipStatus = providerMembershipStatus === "active" ? hasCurrentPaidServicePeriod ? "active" : "past-due" : providerMembershipStatus;
+    const providerDerivedStatus = providerMembershipStatus === "active" ? hasCurrentPaidServicePeriod ? "active" : "past-due" : providerMembershipStatus;
+    const membershipStatus = membership ? settleTransition(MEMBERSHIP_MACHINE, membership.status, providerDerivedStatus) : providerDerivedStatus;
     const billingCycle = membership?.billingCycle === "annual" || !membership && subscription.metadata?.billingCycle === "annual" ? "annual" : "monthly";
     const nextBillingDate = subscription.current_period_end ? new Date(subscription.current_period_end * 1e3) : null;
     const startDate = subscription.current_period_start ? new Date(subscription.current_period_start * 1e3) : new Date(event.created * 1e3);
@@ -11445,11 +14082,12 @@ async function syncSubscription(context, adapter, incomingSubscription, organiza
     const membershipData = {
       status: membershipStatus,
       billingCycle,
-      startDate,
+      // The agreement started once; a renewal moves the billing period, not the start (minimum term, member since).
+      startDate: membership?.stripeSubscriptionId === subscription.id && membership.startDate ? membership.startDate : startDate,
       nextBillingDate,
       autoRenew: subscription.status !== "canceled" && !subscription.cancel_at_period_end,
       stripeSubscriptionId: subscription.id,
-      ...membershipStatus === "cancelled" ? { cancelledAt: eventTime, freezeStartDate: null, freezeEndDate: null } : membershipStatus === "frozen" ? {} : subscription.cancel_at_period_end ? { cancelledAt: null } : { cancelledAt: null, cancelReason: "", freezeStartDate: null, freezeEndDate: null }
+      ...membershipStatus === "cancelled" ? { cancelledAt: membership?.status === "cancelled" && membership.cancelledAt ? membership.cancelledAt : eventTime, freezeStartDate: null, freezeEndDate: null } : membershipStatus === "frozen" ? {} : subscription.cancel_at_period_end ? { cancelledAt: null } : { cancelledAt: null, cancelReason: "", freezeStartDate: null, freezeEndDate: null }
     };
     if (!membership && !agreement?.version) throw new Error("Subscription checkout agreement prerequisite missing; retry reconciliation");
     if (membership) {
@@ -11477,10 +14115,10 @@ async function syncSubscription(context, adapter, incomingSubscription, organiza
     const projectionData = {
       memberId: member.id,
       ...tierId ? { membershipTierId: tierId } : {},
-      status: mapStripeStatusToSubscription(
+      status: settleTransition(SUBSCRIPTION_MACHINE, existingProjection?.status, mapStripeStatusToSubscription(
         subscription.status,
         Boolean(subscription.pause_collection)
-      ),
+      )),
       startDate,
       nextBillingDate,
       cancelledAt: subscription.status === "canceled" ? eventTime : null,
@@ -11505,10 +14143,18 @@ async function syncSubscription(context, adapter, incomingSubscription, organiza
     }
     const reconciled = await transaction.membership.findFirst({ where: { memberId: user.id, organizationId } });
     if (reconciled) await reviewFutureMembershipBookings(transaction, reconciled);
-    return { applied: true };
+    return { applied: true, endedUserId: reconciled?.status === "cancelled" ? user.id : null };
   }, { maxWait: 1e4, timeout: 3e4 });
+  if (result?.endedUserId) {
+    await releaseFutureBookingsForEndedMembership(context.prisma, {
+      organizationId,
+      userId: result.endedUserId,
+      actorUserId: result.endedUserId
+    });
+  }
+  return result;
 }
-async function recordInvoicePayment(context, providerId, organizationId, invoice, status, eventCreated) {
+async function recordInvoicePayment(context, providerId2, organizationId, invoice, status, eventCreated) {
   const subscriptionId = typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
   if (!subscriptionId) return;
   if (!invoice.id || !Number.isInteger(eventCreated)) throw new Error("Invoice event identity is invalid");
@@ -11516,7 +14162,8 @@ async function recordInvoicePayment(context, providerId, organizationId, invoice
   if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("Invoice amount must use non-negative minor units");
   if (String(invoice.currency || "").toUpperCase() !== "USD") throw new Error("Membership invoice currency is outside the supported USD contract");
   if (status === "succeeded" && amount <= 0) throw new Error("A positive paid invoice is required to grant membership service");
-  return withKeystonePrismaTransaction(context.prisma, async (tx) => {
+  let firstPaidInvoice = false;
+  const outcome = await withKeystonePrismaTransaction(context.prisma, async (tx) => {
     await lockTransactionKey(tx, `stripe-subscription:${organizationId}:${subscriptionId}`);
     await lockTransactionKey(tx, `invoice:${organizationId}:${invoice.id}`);
     let membership = await tx.membership.findFirst({ where: { organizationId, stripeSubscriptionId: subscriptionId } });
@@ -11528,7 +14175,7 @@ async function recordInvoicePayment(context, providerId, organizationId, invoice
     if (!membership) throw new Error("Invoice membership changed while acquiring member lock");
     const existingGym = await tx.gymPayment.findUnique({ where: { stripeInvoiceId: invoice.id } });
     const existingMember = await tx.membershipPayment.findUnique({ where: { stripeInvoiceId: invoice.id } });
-    if ([existingGym, existingMember].some((p) => p && p.organizationId !== organizationId)) throw new Error("Invoice belongs to another organization");
+    if ([existingGym, existingMember].some((p2) => p2 && p2.organizationId !== organizationId)) throw new Error("Invoice belongs to another organization");
     const settled = ["succeeded", "refunded"].includes(existingGym?.status) || ["completed", "disputed", "refunded"].includes(existingMember?.status);
     const session = await tx.paymentSession.findFirst({ where: { organizationId, providerSubscriptionId: subscriptionId } });
     const effectiveAt = status === "succeeded" ? invoice.status_transitions?.paid_at || eventCreated : eventCreated;
@@ -11547,7 +14194,7 @@ async function recordInvoicePayment(context, providerId, organizationId, invoice
     const gymData = {
       ...common,
       memberId: member.id,
-      paymentProviderId: providerId,
+      paymentProviderId: providerId2,
       paymentSessionId: session?.id,
       status,
       metadata: {
@@ -11593,9 +14240,27 @@ async function recordInvoicePayment(context, providerId, organizationId, invoice
     const isOlderPeriod = membership.creditPeriodEnd && periodEnd * 1e3 < new Date(membership.creditPeriodEnd).getTime();
     const isOlderEvent = membership.billingEventAt && eventAt < new Date(membership.billingEventAt);
     if (isOlderPeriod || isOlderEvent || settled && status === "failed") return { applied: false, stale: true };
+    const grantsPeriod = status === "succeeded" && ["subscription_create", "subscription_cycle"].includes(invoice.billing_reason || "");
+    const serviceProblem = grantsPeriod ? invoiceServiceProblem(invoice, await membershipAcceptedPrice(tx, membership, session), membership.billingCycle) : null;
+    if (serviceProblem) {
+      const pendingTierChange = await tx.membershipBillingAttempt.findFirst({
+        where: { organizationId, membershipId: membership.id, operation: "tier-change", status: "processing" },
+        select: { id: true }
+      });
+      if (pendingTierChange) throw new Error("A plan change is being finalized for this membership; retry invoice reconciliation");
+      await createFinanceException(tx, {
+        organizationId,
+        key: `invoice-service:${invoice.id}`,
+        kind: "subscription-plan-mismatch",
+        reference: invoice.id,
+        summary: `Paid invoice ${invoice.id} ${serviceProblem}, so it was recorded without granting a service period. Reconcile the subscription with the member's accepted plan.`
+      });
+      await tx.membership.update({ where: { id: membership.id }, data: { billingEventAt: new Date(eventCreated * 1e3) } });
+      return { applied: false, mismatch: true };
+    }
     const data = { billingEventAt: eventAt };
     if (!["cancelled", "frozen"].includes(membership.status) && (membership.status !== "expired" || membership.autoRenew && status === "succeeded" && periodEnd * 1e3 > Date.now())) data.status = status === "succeeded" ? "active" : "past-due";
-    if (status === "succeeded" && ["subscription_create", "subscription_cycle"].includes(invoice.billing_reason || "")) {
+    if (grantsPeriod) {
       if (!Number.isInteger(periodStart) || !Number.isInteger(periodEnd) || periodEnd <= periodStart) throw new Error("Invoice service period is invalid");
       data.creditPeriodStart = new Date(periodStart * 1e3);
       data.creditPeriodEnd = new Date(periodEnd * 1e3);
@@ -11606,12 +14271,21 @@ async function recordInvoicePayment(context, providerId, organizationId, invoice
       await tx.membership.update({ where: { id: updated.id }, data: { classCreditsRemaining: grant.remaining } });
     }
     await reviewFutureMembershipBookings(tx, updated);
+    firstPaidInvoice = status === "succeeded" && invoice.billing_reason === "subscription_create";
     if (status === "failed") {
       await createFinanceException(tx, { organizationId, key: `invoice:${invoice.id}`, kind: "failed-payment", reference: invoice.id, summary: "Membership invoice collection failed; reconcile payment and contact member." });
       await enqueueOperationalNotice(tx, { organizationId, memberId: member.id, key: `invoice:${invoice.id}:${eventCreated}`, kind: "billing", message: "Membership payment needs attention. Open your billing portal or contact the front desk." });
     }
     return { applied: true };
   });
+  if (firstPaidInvoice && outcome?.applied) {
+    try {
+      const { deliverMembershipConfirmation: deliverMembershipConfirmation2 } = await Promise.resolve().then(() => (init_order_confirmation(), order_confirmation_exports));
+      await deliverMembershipConfirmation2(context.prisma, { organizationId, stripeSubscriptionId: subscriptionId, invoiceId: invoice.id, amountCents: amount, currencyCode: invoice.currency });
+    } catch {
+    }
+  }
+  return outcome;
 }
 function monotonicRefundAmount(paymentAmount, currentRefundAmount, incomingRefundAmount) {
   if (!Number.isInteger(paymentAmount) || paymentAmount < 0 || !Number.isInteger(incomingRefundAmount)) {
@@ -11705,7 +14379,7 @@ async function expireCheckoutSession(context, session, organizationId) {
     if (!localSession) return;
     await lockTransactionKey(tx, `membership-checkout:${organizationId}:${localSession.userId}`);
     await tx.paymentSession.updateMany({
-      where: { id: localSession.id, organizationId, status: { notIn: ["completed", "expired"] }, OR: [{ providerSessionId: session.id }, { providerSessionId: "" }] },
+      where: { id: localSession.id, organizationId, status: { notIn: ["completed", "expired", "cancelled"] }, OR: [{ providerSessionId: session.id }, { providerSessionId: "" }] },
       data: { status: "expired", expiresAt: /* @__PURE__ */ new Date(), provisioningLockedUntil: null }
     });
   });
@@ -11754,28 +14428,28 @@ async function replayPaymentEvent(_root, { eventId }, context) {
   const actor2 = await currentRoleActor(context);
   if (!actor2.canManageAllRecords) throw new Error("Payment reconciliation management permission required");
   const organizationId = actor2.organizationId;
-  const record = await prisma.paymentEvent.findFirst({ where: { id: eventId, organizationId } });
-  return replayStoredPaymentEvent(context, organizationId, record);
+  const record2 = await prisma.paymentEvent.findFirst({ where: { id: eventId, organizationId } });
+  return replayStoredPaymentEvent(context, organizationId, record2);
 }
-async function replayStoredPaymentEvent(context, organizationId, record) {
-  if (!record || !record.data?.event || !["failed", "processing"].includes(record.status)) throw new Error("Replayable payment event not found");
-  if (record.status === "processing" && record.lockedUntil > /* @__PURE__ */ new Date()) throw new Error("Payment event is currently processing");
-  const provider = await context.sudo().query.PaymentProvider.findOne({ where: { id: record.paymentProviderId }, query: "id adapterKey organization { id }" });
+async function replayStoredPaymentEvent(context, organizationId, record2) {
+  if (!record2 || !record2.data?.event || !["failed", "processing"].includes(record2.status)) throw new Error("Replayable payment event not found");
+  if (record2.status === "processing" && record2.lockedUntil > /* @__PURE__ */ new Date()) throw new Error("Payment event is currently processing");
+  const provider = await context.sudo().query.PaymentProvider.findOne({ where: { id: record2.paymentProviderId }, query: "id adapterKey organization { id }" });
   if (!provider || provider.organization?.id !== organizationId) throw new Error("Payment event provider organization mismatch");
-  const event = record.data.event;
-  if (event.id !== record.providerEventId || event.type !== record.eventType) throw new Error("Stored payment event evidence mismatch");
+  const event = record2.data.event;
+  if (event.id !== record2.providerEventId || event.type !== record2.eventType) throw new Error("Stored payment event evidence mismatch");
   const adapter = await getPaymentProviderAdapterForExecution(provider.adapterKey);
   return processVerifiedPaymentEvent(context, provider, adapter, organizationId, event);
 }
 var INVOICE_PREREQUISITE_ERROR = /^Invoice (?:membership|member) prerequisite missing/;
-async function recordInvoiceWithCheckoutPrerequisites(context, providerId, adapter, organizationId, invoice, status, eventCreated) {
+async function recordInvoiceWithCheckoutPrerequisites(context, providerId2, adapter, organizationId, invoice, status, eventCreated) {
   try {
-    return await recordInvoicePayment(context, providerId, organizationId, invoice, status, eventCreated);
+    return await recordInvoicePayment(context, providerId2, organizationId, invoice, status, eventCreated);
   } catch (error) {
     if (!(error instanceof Error) || !INVOICE_PREREQUISITE_ERROR.test(error.message)) throw error;
     const subscriptionId = typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
     if (!subscriptionId || !await provisionCheckoutForSubscription(context, adapter, organizationId, subscriptionId)) throw error;
-    return recordInvoicePayment(context, providerId, organizationId, invoice, status, eventCreated);
+    return recordInvoicePayment(context, providerId2, organizationId, invoice, status, eventCreated);
   }
 }
 async function provisionCheckoutForSubscription(context, adapter, organizationId, subscriptionId) {
@@ -11806,12 +14480,12 @@ async function replayDeferredInvoiceEvents(context, organizationId, subscription
     take: 10
   });
   let replayed = 0;
-  for (const record of deferred) {
+  for (const record2 of deferred) {
     try {
-      await replayStoredPaymentEvent(context, organizationId, record);
+      await replayStoredPaymentEvent(context, organizationId, record2);
       replayed += 1;
     } catch (error) {
-      console.error("Deferred payment event replay failed", { eventType: record.eventType, name: error instanceof Error ? error.name : "UnknownError" });
+      console.error("Deferred payment event replay failed", { eventType: record2.eventType, name: error instanceof Error ? error.name : "UnknownError" });
     }
   }
   return replayed;
@@ -11829,6 +14503,10 @@ async function processVerifiedPaymentEvent(context, provider, adapter, organizat
         const session = event.data.object;
         if (session.metadata?.source === COUNTER_SOURCE) {
           await reconcileCounterCheckoutEvent(context, organizationId, session);
+        } else if (session.metadata?.source === DROP_IN_SOURCE) {
+          await fulfillDropInCheckout(context, organizationId, session.id);
+        } else if (session.metadata?.source === GIFT_CARD_SOURCE) {
+          await fulfillGiftCardCheckout(context, organizationId, session.id);
         } else if (session.mode === "subscription" && event.type === "checkout.session.completed") {
           const provisioned = await provisionMembershipFromCheckoutSession(session.id, organizationId, context);
           await replayDeferredInvoiceEvents(context, organizationId, provisioned.subscriptionId);
@@ -11838,6 +14516,8 @@ async function processVerifiedPaymentEvent(context, provider, adapter, organizat
       case "checkout.session.expired": {
         const session = event.data.object;
         if (session.metadata?.source === COUNTER_SOURCE) await reconcileCounterCheckoutEvent(context, organizationId, session);
+        else if (session.metadata?.source === DROP_IN_SOURCE) await fulfillDropInCheckout(context, organizationId, session.id);
+        else if (session.metadata?.source === GIFT_CARD_SOURCE) await fulfillGiftCardCheckout(context, organizationId, session.id);
         else await expireCheckoutSession(context, session, organizationId);
         break;
       }
@@ -11896,7 +14576,8 @@ async function processVerifiedPaymentEvent(context, provider, adapter, organizat
         }
         const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
         const counterCharge = counterRefunds > 0 || (paymentIntentId ? await ownsCounterPayment(prisma, organizationId, paymentIntentId) : false);
-        if (!counterCharge) await recordRefund(context, charge, organizationId, new Date(event.created * 1e3));
+        const giftCardCharge = charge.metadata?.source === GIFT_CARD_SOURCE;
+        if (!counterCharge && !giftCardCharge) await recordRefund(context, charge, organizationId, new Date(event.created * 1e3));
         break;
       }
       default:
@@ -11928,18 +14609,18 @@ async function processVerifiedPaymentEvent(context, provider, adapter, organizat
 
 // features/keystone/mutations/paymentLifecycle.ts
 init_prisma_result();
-var PROVIDER_CODE3 = "pp_stripe";
+var PROVIDER_CODE5 = "pp_stripe";
 async function acquireRefundAdvisoryLock(transaction, paymentId) {
   const lockResult = await transaction.$queryRaw`SELECT true AS locked FROM (SELECT pg_advisory_xact_lock(hashtextextended(${`refund:${paymentId}`}, 0))) AS acquired`;
   if (lockResult instanceof Error) throw lockResult;
 }
-function requireSession(context) {
+function requireSession2(context) {
   const session = context.session;
   if (!session?.itemId) throw new Error("Authentication required");
   return session;
 }
 async function initiateMembershipCheckout(root, { tierId, billingCycle }, context) {
-  const session = requireSession(context);
+  const session = requireSession2(context);
   const cycle = billingCycle === "annual" ? "annual" : billingCycle === "monthly" ? "monthly" : null;
   if (!cycle) throw new Error("Billing cycle must be monthly or annual");
   const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -11953,7 +14634,7 @@ async function initiateMembershipCheckout(root, { tierId, billingCycle }, contex
   });
 }
 async function completeMembershipCheckout(_root, { providerSessionId }, context) {
-  const session = requireSession(context);
+  const session = requireSession2(context);
   const organizationId = session.data?.organization?.id;
   const normalizedSessionId = providerSessionId.trim();
   if (!organizationId || !normalizedSessionId || normalizedSessionId.length > 500) {
@@ -11976,7 +14657,7 @@ async function completeMembershipCheckout(_root, { providerSessionId }, context)
   return provisioned;
 }
 async function refundGymPayment(root, { paymentId, amount, reason, idempotencyKey }, context) {
-  const session = requireSession(context);
+  const session = requireSession2(context);
   if (!session.data?.role?.canManageAllRecords) throw new Error("Payment management permission required");
   const organizationId = session.data?.organization?.id;
   if (!organizationId) throw new Error("Organization context required");
@@ -11985,12 +14666,12 @@ async function refundGymPayment(root, { paymentId, amount, reason, idempotencyKe
   if (normalizedReason.length > 500) throw new Error("Refund reason must be 500 characters or fewer");
   if (requestId.length < 12 || requestId.length > 200) throw new Error("A unique refund idempotency key is required");
   const requestKey = `gym-refund:${paymentId}:${requestId}`;
-  const { provider, adapter } = await getAdapterForProvider(context, PROVIDER_CODE3, organizationId, "reconcile");
+  const { provider, adapter } = await getAdapterForProvider(context, PROVIDER_CODE5, organizationId, "reconcile");
   const deadline = Date.now() + 3e4;
-  let claim;
+  let claim2;
   while (Date.now() < deadline) {
-    const refundToken = import_node_crypto8.default.randomUUID();
-    claim = await withKeystonePrismaTransaction(context.prisma, async (transaction) => {
+    const refundToken = import_node_crypto13.default.randomUUID();
+    claim2 = await withKeystonePrismaTransaction(context.prisma, async (transaction) => {
       await acquireRefundAdvisoryLock(transaction, paymentId);
       const payment = await transaction.gymPayment.findFirst({
         where: { id: paymentId, organizationId }
@@ -12081,29 +14762,29 @@ async function refundGymPayment(root, { paymentId, amount, reason, idempotencyKe
         reservation: frozenReservation
       };
     });
-    if (!claim.wait) break;
+    if (!claim2.wait) break;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  if (!claim || claim.wait) throw new Error("Refund remained busy; retry with the same idempotency key");
-  if (claim.done) return context.db.GymPayment.findOne({ where: { id: claim.paymentId } });
+  if (!claim2 || claim2.wait) throw new Error("Refund remained busy; retry with the same idempotency key");
+  if (claim2.done) return context.db.GymPayment.findOne({ where: { id: claim2.paymentId } });
   let providerRefund = null;
   let providerResponseMatchesReservation = false;
   try {
-    if (claim.isExistingAttempt && typeof adapter.findRefundPayment !== "function") {
+    if (claim2.isExistingAttempt && typeof adapter.findRefundPayment !== "function") {
       throw new Error("Payment adapter cannot reconcile exact refund identity; operator reconciliation required");
     }
-    providerRefund = await adapter.findRefundPayment?.(claim.paymentIntentId, claim.providerRequestKey) || null;
-    if (!providerRefund && claim.currentRefundAmount > claim.startingRefundAmount) {
+    providerRefund = await adapter.findRefundPayment?.(claim2.paymentIntentId, claim2.providerRequestKey) || null;
+    if (!providerRefund && claim2.currentRefundAmount > claim2.startingRefundAmount) {
       throw new Error("Cumulative refund evidence changed without an exact provider refund identity; operator reconciliation required");
     }
     if (!providerRefund) {
-      providerRefund = await adapter.refundPayment(claim.paymentIntentId, claim.refundAmount, claim.providerRequestKey, {
-        operationKey: claim.providerRequestKey,
-        currencyCode: claim.currencyCode,
-        reason: claim.reason
+      providerRefund = await adapter.refundPayment(claim2.paymentIntentId, claim2.refundAmount, claim2.providerRequestKey, {
+        operationKey: claim2.providerRequestKey,
+        currencyCode: claim2.currencyCode,
+        reason: claim2.reason
       });
     }
-    assertExactProviderRefund(providerRefund, claim.reservation);
+    assertExactProviderRefund(providerRefund, claim2.reservation);
     providerResponseMatchesReservation = true;
     if (["failed", "canceled"].includes(providerRefund.status)) {
       throw new Error(`Provider refund definitively ${providerRefund.status}; use a new idempotency key after reviewing the receipt`);
@@ -12112,37 +14793,37 @@ async function refundGymPayment(root, { paymentId, amount, reason, idempotencyKe
       throw new Error(`Refund remains unresolved at the payment provider (status: ${providerRefund.status || "unknown"})`);
     }
     const finalized = await withKeystonePrismaTransaction(context.prisma, async (transaction) => {
-      await acquireRefundAdvisoryLock(transaction, claim.paymentId);
+      await acquireRefundAdvisoryLock(transaction, claim2.paymentId);
       const payment = await transaction.gymPayment.findFirst({
-        where: { id: claim.paymentId, organizationId }
+        where: { id: claim2.paymentId, organizationId }
       });
-      const attempt = await transaction.gymRefundAttempt.findUnique({ where: { id: claim.attemptId } });
+      const attempt = await transaction.gymRefundAttempt.findUnique({ where: { id: claim2.attemptId } });
       if (!payment || !attempt) return false;
       if (attempt.status === "succeeded" && attempt.providerRefundId === providerRefund.id) return true;
-      if (attempt.status !== "processing" || attempt.claimToken !== claim.claimToken || payment.refundLockToken !== claim.claimToken) return false;
-      if (payment.stripePaymentIntentId !== claim.paymentIntentId || String(payment.currencyCode || "").toUpperCase() !== claim.currencyCode || payment.paymentProviderId && payment.paymentProviderId !== provider.id) {
+      if (attempt.status !== "processing" || attempt.claimToken !== claim2.claimToken || payment.refundLockToken !== claim2.claimToken) return false;
+      if (payment.stripePaymentIntentId !== claim2.paymentIntentId || String(payment.currencyCode || "").toUpperCase() !== claim2.currencyCode || payment.paymentProviderId && payment.paymentProviderId !== provider.id) {
         throw new Error("Payment identity changed while refund was in flight; operator reconciliation required");
       }
       const membershipPayments = payment.stripeInvoiceId ? await transaction.membershipPayment.findMany({
-        where: { organizationId, stripePaymentIntentId: claim.paymentIntentId, status: { in: ["completed", "refunded", "disputed"] } }
+        where: { organizationId, stripePaymentIntentId: claim2.paymentIntentId, status: { in: ["completed", "refunded", "disputed"] } }
       }) : [];
       if (payment.stripeInvoiceId && membershipPayments.length !== 1) throw new Error("Invoice receipt projection is missing or ambiguous during refund finalization");
       const memberReceipt = membershipPayments[0];
-      if (memberReceipt && (memberReceipt.amount !== payment.amount || String(memberReceipt.currencyCode || "").toUpperCase() !== claim.currencyCode)) {
+      if (memberReceipt && (memberReceipt.amount !== payment.amount || String(memberReceipt.currencyCode || "").toUpperCase() !== claim2.currencyCode)) {
         throw new Error("Payment receipt projections disagree on amount or currency; operator reconciliation required");
       }
       const priorRefundAmount = Math.max(payment.refundAmount ?? 0, memberReceipt?.refundAmount ?? 0);
-      const totalRefunded = reconcileProviderRefundCumulative(payment.amount, priorRefundAmount, claim.startingRefundAmount, claim.refundAmount);
+      const totalRefunded = reconcileProviderRefundCumulative(payment.amount, priorRefundAmount, claim2.startingRefundAmount, claim2.refundAmount);
       const attemptUpdate = await transaction.gymRefundAttempt.updateMany({
-        where: { id: attempt.id, status: "processing", claimToken: claim.claimToken },
-        data: { status: "succeeded", providerRefundId: providerRefund.id, completedAt: /* @__PURE__ */ new Date(), reservation: claim.reservation, lastError: "" }
+        where: { id: attempt.id, status: "processing", claimToken: claim2.claimToken },
+        data: { status: "succeeded", providerRefundId: providerRefund.id, completedAt: /* @__PURE__ */ new Date(), reservation: claim2.reservation, lastError: "" }
       });
       if (!attemptUpdate.count) return false;
       requirePrismaAffectedCount(attemptUpdate, 1, "refund attempt finalization fence");
       const refundedAt = /* @__PURE__ */ new Date();
       const fullyRefunded = totalRefunded >= payment.amount;
       const paymentUpdate = await transaction.gymPayment.updateMany({
-        where: { id: payment.id, refundLockToken: claim.claimToken },
+        where: { id: payment.id, refundLockToken: claim2.claimToken },
         data: {
           status: fullyRefunded ? "refunded" : "succeeded",
           refundAmount: totalRefunded,
@@ -12166,436 +14847,26 @@ async function refundGymPayment(root, { paymentId, amount, reason, idempotencyKe
       }
       return true;
     });
-    if (!finalized) return context.db.GymPayment.findOne({ where: { id: claim.paymentId } });
+    if (!finalized) return context.db.GymPayment.findOne({ where: { id: claim2.paymentId } });
   } catch (error) {
     const detail = error instanceof Error ? error.message.slice(0, 2e3) : "Refund provider outcome requires reconciliation";
     const definiteProviderFailure = providerResponseMatchesReservation && ["failed", "canceled"].includes(providerRefund?.status);
     await withKeystonePrismaTransaction(context.prisma, async (transaction) => {
       const attemptUpdate = await transaction.gymRefundAttempt.updateMany({
-        where: { id: claim.attemptId, status: "processing", claimToken: claim.claimToken },
+        where: { id: claim2.attemptId, status: "processing", claimToken: claim2.claimToken },
         data: {
           status: definiteProviderFailure ? "failed" : "processing",
           ...providerRefund?.id ? { providerRefundId: providerRefund.id } : {},
-          reservation: claim.reservation,
+          reservation: claim2.reservation,
           lastError: detail
         }
       });
       if (attemptUpdate.count > 1) requirePrismaAffectedCount(attemptUpdate, 1, "refund outcome fence");
-      await transaction.gymPayment.updateMany({ where: { id: claim.paymentId, refundLockToken: claim.claimToken }, data: { refundLockUntil: null, refundLockToken: "" } });
+      await transaction.gymPayment.updateMany({ where: { id: claim2.paymentId, refundLockToken: claim2.claimToken }, data: { refundLockUntil: null, refundLockToken: "" } });
     });
     throw error;
   }
-  return context.db.GymPayment.findOne({ where: { id: claim.paymentId } });
-}
-
-// features/keystone/mutations/trainerQualifications.ts
-function assertInstructorQualifications(instructor, at) {
-  const entries = Array.isArray(instructor.certifications) ? instructor.certifications : [];
-  for (const entry of entries) {
-    if (!entry || typeof entry !== "object" || entry.required !== true) continue;
-    const expiresAt = new Date(entry.expiresAt);
-    const verifiedAt = new Date(entry.verifiedAt);
-    if (!entry.name || !entry.evidenceReference || !Number.isFinite(expiresAt.getTime()) || expiresAt <= at || !Number.isFinite(verifiedAt.getTime()) || verifiedAt > at || entry.revoked === true) throw new Error("A required instructor qualification is expired, revoked or unverified");
-  }
-}
-
-// features/keystone/mutations/gymLifecycle.ts
-init_membership_credits();
-init_operational_policy();
-init_operational_notices();
-init_prisma_result();
-init_classCapacity();
-function assertFacilityStaff(actor2) {
-  if (actor2.canManageAllRecords || actor2.canManageCheckIns || actor2.canManageFacilities || actor2.trustedKiosk) return;
-  throw new Error("Facility check-in management permission required");
-}
-function assertActorOrganization(actor2, organizationId) {
-  if (!organizationId || !actor2.organizationId || actor2.organizationId !== organizationId) {
-    throw new Error("Actor is not in the record organization");
-  }
-}
-function assertOwnerOrOperator(actor2, ownerUserId) {
-  if (actor2.canManageAllRecords || actor2.trustedKiosk || actor2.userId === ownerUserId) return;
-  throw new Error("You cannot manage another member's records");
-}
-async function cancelCapacityControlledBooking(prisma, input) {
-  prisma = guardKeystonePrismaResults(prisma);
-  const result = await prisma.$transaction(async (transaction) => {
-    await lockParticipationPolicy(transaction, input.actor.organizationId);
-    const identity = await transaction.classBooking.findFirst({
-      where: { id: input.bookingId, organizationId: input.actor.organizationId },
-      select: { classInstanceId: true, memberId: true }
-    });
-    if (!identity?.classInstanceId || !identity.memberId) throw new Error("Booking not found");
-    await lockTransactionKey(transaction, `class-instance:${identity.classInstanceId}`);
-    await lockTransactionKey(transaction, `member:${identity.memberId}`);
-    const booking = await transaction.classBooking.findFirst({
-      where: { id: input.bookingId, organizationId: input.actor.organizationId },
-      include: {
-        classInstance: { select: { id: true, date: true, organizationId: true } },
-        member: {
-          include: {
-            user: {
-              include: {
-                membership: {
-                  include: { tier: { select: { classCreditsPerMonth: true } } }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-    if (!booking?.member?.user?.id || !booking.classInstance) {
-      throw new Error("Booking owner or class instance is missing");
-    }
-    assertActorOrganization(input.actor, booking.classInstance.organizationId);
-    assertActorOrganization(input.actor, booking.member.organizationId);
-    assertOwnerOrOperator(input.actor, booking.member.user.id);
-    if (booking.status === "cancelled") {
-      return {
-        bookingId: booking.id,
-        classInstanceId: booking.classInstance.id,
-        cancelled: false,
-        releasedConfirmedSpot: false,
-        promotion: { promoted: false, message: "No confirmed spot was released" }
-      };
-    }
-    if (!["confirmed", "waitlist"].includes(booking.status)) {
-      throw new Error(`Booking cannot be cancelled from ${booking.status}`);
-    }
-    if (booking.classInstance.date.getTime() <= Date.now()) {
-      throw new Error("A class booking cannot be cancelled after the class starts");
-    }
-    await transaction.classBooking.update({
-      where: { id: booking.id },
-      data: {
-        status: "cancelled",
-        activeBookingKey: null,
-        cancelledAt: /* @__PURE__ */ new Date(),
-        waitlistPosition: null
-      }
-    });
-    if (booking.status === "confirmed") await restoreBookingCredit(transaction, booking.id);
-    await enqueueOperationalNotice(transaction, {
-      organizationId: input.actor.organizationId,
-      memberId: booking.memberId,
-      key: `booking:${booking.id}:cancelled`,
-      kind: "cancellation",
-      message: "Your class booking has been cancelled. Any restorable credit returns to its original service month."
-    });
-    const waiting = await transaction.classBooking.findMany({
-      where: {
-        classInstanceId: booking.classInstance.id,
-        status: "waitlist"
-      },
-      orderBy: [{ bookedAt: "asc" }, { id: "asc" }],
-      select: { id: true }
-    });
-    await Promise.all(
-      waiting.map(
-        (entry, index) => transaction.classBooking.update({
-          where: { id: entry.id },
-          data: { waitlistPosition: index + 1 }
-        })
-      )
-    );
-    const releasedConfirmedSpot = booking.status === "confirmed";
-    const promotion = releasedConfirmedSpot ? await promoteCapacityControlledWaitlistBookingInTransaction(
-      transaction,
-      booking.classInstance.id,
-      input.actor.organizationId,
-      true
-    ) : { promoted: false, message: "No confirmed spot was released" };
-    return {
-      bookingId: booking.id,
-      classInstanceId: booking.classInstance.id,
-      cancelled: true,
-      releasedConfirmedSpot,
-      promotion
-    };
-  });
-  return result;
-}
-async function cancelCapacityControlledClassInstance(prisma, input) {
-  prisma = guardKeystonePrismaResults(prisma);
-  const reason = input.reason.trim();
-  if (reason.length < 3 || reason.length > 1e3) {
-    throw new Error("Class cancellation reason must be between 3 and 1000 characters");
-  }
-  if (!input.actor.canManageAllRecords) {
-    throw new Error("Class cancellation management permission required");
-  }
-  return prisma.$transaction(async (transaction) => {
-    await lockParticipationPolicy(transaction, input.actor.organizationId);
-    await lockTransactionKey(transaction, `class-instance:${input.classInstanceId}`);
-    const loadClassInstance = () => transaction.classInstance.findFirst({
-      where: { id: input.classInstanceId, organizationId: input.actor.organizationId },
-      include: {
-        bookings: {
-          where: { status: { in: ["confirmed", "waitlist"] } },
-          include: {
-            member: {
-              include: {
-                user: {
-                  include: {
-                    membership: {
-                      include: { tier: { select: { classCreditsPerMonth: true } } }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-    let classInstance = await loadClassInstance();
-    if (!classInstance) throw new Error("Class instance not found");
-    assertActorOrganization(input.actor, classInstance.organizationId);
-    if (classInstance.date.getTime() <= Date.now()) {
-      throw new Error("A class instance cannot be cancelled after it starts");
-    }
-    if (classInstance.isCancelled) {
-      return {
-        classInstanceId: classInstance.id,
-        cancelledBookings: 0,
-        refundedCredits: 0,
-        reused: true
-      };
-    }
-    const memberIds = [...new Set(
-      classInstance.bookings.map((booking) => booking.memberId).filter((id) => typeof id === "string" && id.length > 0)
-    )].sort();
-    for (const memberId of memberIds) {
-      await lockTransactionKey(transaction, `member:${memberId}`);
-    }
-    classInstance = await loadClassInstance();
-    if (!classInstance || classInstance.isCancelled) throw new Error("Class instance changed during cancellation");
-    let refundedCredits = 0;
-    for (const booking of classInstance.bookings) {
-      if (booking.status !== "confirmed") continue;
-      if (await restoreBookingCredit(transaction, booking.id)) refundedCredits += 1;
-    }
-    for (const booking of classInstance.bookings) await enqueueOperationalNotice(transaction, {
-      organizationId: input.actor.organizationId,
-      memberId: booking.memberId,
-      key: `booking:${booking.id}:class-cancelled`,
-      kind: "cancellation",
-      message: `Your class has been cancelled: ${reason}`
-    });
-    const cancelledAt = /* @__PURE__ */ new Date();
-    await transaction.classBooking.updateMany({
-      where: {
-        classInstanceId: classInstance.id,
-        status: { in: ["confirmed", "waitlist"] }
-      },
-      data: {
-        status: "cancelled",
-        activeBookingKey: null,
-        cancelledAt,
-        waitlistPosition: null
-      }
-    });
-    await transaction.classInstance.update({
-      where: { id: classInstance.id },
-      data: { isCancelled: true, cancellationReason: reason }
-    });
-    return {
-      classInstanceId: classInstance.id,
-      cancelledBookings: classInstance.bookings.length,
-      refundedCredits,
-      reused: false
-    };
-  });
-}
-async function markCapacityControlledAttendance(prisma, input) {
-  prisma = guardKeystonePrismaResults(prisma);
-  const outcome = normalizeAttendanceOutcome(input.outcome);
-  return prisma.$transaction(async (transaction) => {
-    await lockParticipationPolicy(transaction, input.actor.organizationId);
-    await lockTransactionKey(transaction, `attendance:${input.bookingId}`);
-    const booking = await transaction.classBooking.findFirst({
-      where: { id: input.bookingId, organizationId: input.actor.organizationId },
-      include: {
-        member: { include: { user: { include: { membership: true } } } },
-        classInstance: {
-          include: {
-            instructor: { include: { user: { select: { id: true } } } },
-            classSchedule: {
-              include: { instructor: { include: { user: { select: { id: true } } } } }
-            }
-          }
-        }
-      }
-    });
-    if (!booking?.memberId || !booking.classInstance?.classScheduleId) {
-      throw new Error("Attendance booking is missing its member or schedule");
-    }
-    assertActorOrganization(input.actor, booking.member.organizationId);
-    assertActorOrganization(input.actor, booking.classInstance.organizationId);
-    if (booking.status !== "confirmed") {
-      throw new Error("Attendance can only be marked for a confirmed booking");
-    }
-    if (booking.classInstance.isCancelled) throw new Error("Attendance cannot be marked for a cancelled class");
-    if (booking.classInstance.date.getTime() > Date.now()) {
-      throw new Error("Attendance cannot be marked before the class starts");
-    }
-    const effectiveInstructor2 = booking.classInstance.instructor ?? booking.classInstance.classSchedule?.instructor ?? null;
-    const assignedToActor = Boolean(effectiveInstructor2?.isActive && effectiveInstructor2?.user?.id === input.actor.userId);
-    if (!input.actor.canManageAllRecords && !(input.actor.isInstructor && assignedToActor)) {
-      throw new Error("Attendance management permission required");
-    }
-    if (outcome !== "no-show") {
-      await lockTransactionKey(transaction, `member:${booking.memberId}`);
-      const currentMember = await transaction.member.findFirst({ where: { id: booking.memberId, organizationId: input.actor.organizationId }, include: { user: { include: { membership: true } } } });
-      assertInstructorQualifications(booking.classInstance.instructor ?? booking.classInstance.classSchedule?.instructor ?? {}, /* @__PURE__ */ new Date());
-      if (currentMember?.status !== "active") throw new Error("Member account is not active");
-      try {
-        assertMembershipServiceEligibility(currentMember.user?.membership, booking.classInstance.date);
-      } catch (error) {
-        const debit = await transaction.membershipCreditEntry.findUnique({ where: { key: `${booking.id}:debit` }, include: { grant: true } });
-        const membership = currentMember.user?.membership;
-        if (membership?.status !== "active" || !(error instanceof Error) || error.message !== "Service is outside the paid membership period" || debit?.grant?.membershipId !== membership.id || booking.classInstance.date < debit.grant.periodStart || booking.classInstance.date >= debit.grant.periodEnd) throw error;
-      }
-      await assertParticipationAllowed(transaction, input.actor.organizationId, booking.memberId, booking.classInstance.date, booking.classInstance.locationId);
-    }
-    const requestedMinutes = Number(input.minutesLate ?? 0);
-    const minutesLate = outcome === "late" ? Math.min(Math.max(Number.isFinite(requestedMinutes) ? Math.floor(requestedMinutes) : 5, 1), 180) : null;
-    const data = {
-      organizationId: booking.member.organizationId,
-      bookingId: booking.id,
-      classScheduleId: booking.classInstance.classScheduleId,
-      memberId: booking.memberId,
-      markedById: input.actor.userId,
-      markedAt: /* @__PURE__ */ new Date(),
-      attended: outcome !== "no-show",
-      lateArrival: outcome === "late",
-      minutesLate,
-      noShowReason: outcome === "no-show" ? input.notes?.trim() || "Marked from roster" : ""
-    };
-    const existing = await transaction.attendanceRecord.findFirst({
-      where: { bookingId: booking.id, organizationId: input.actor.organizationId },
-      orderBy: { createdAt: "asc" },
-      select: { id: true }
-    });
-    const record = existing ? await transaction.attendanceRecord.update({ where: { id: existing.id }, data }) : await transaction.attendanceRecord.create({ data });
-    return { id: record.id, outcome };
-  });
-}
-async function recordCapacityControlledMemberCheckIn(prisma, input) {
-  prisma = guardKeystonePrismaResults(prisma);
-  assertFacilityStaff(input.actor);
-  const method = normalizeCheckInMethod(input.method);
-  return prisma.$transaction(async (transaction) => {
-    await lockParticipationPolicy(transaction, input.actor.organizationId);
-    await lockTransactionKey(transaction, `check-in:${input.memberId}`);
-    await lockTransactionKey(transaction, `member:${input.memberId}`);
-    const member = await transaction.member.findFirst({
-      where: { id: input.memberId, organizationId: input.actor.organizationId },
-      include: {
-        user: { include: { membership: true } },
-        subscriptions: { where: { status: "active" }, select: { id: true } }
-      }
-    });
-    if (!member?.user?.id) throw new Error("Member not found");
-    assertActorOrganization(input.actor, member.organizationId);
-    if (member.status !== "active") throw new Error(`Member status is ${member.status}`);
-    if (member.user.membership?.id) await assertNoPendingMembershipFreeze(transaction, input.actor.organizationId, member.user.membership.id);
-    assertMembershipServiceEligibility(member.user.membership, /* @__PURE__ */ new Date());
-    await assertFacilityAccessHours(transaction, input.actor.organizationId, member.user.membership, /* @__PURE__ */ new Date());
-    await assertParticipationAllowed(transaction, input.actor.organizationId, member.id, /* @__PURE__ */ new Date(), input.locationId);
-    if (input.locationId) {
-      const location2 = await transaction.location.findFirst({
-        where: { id: input.locationId, organizationId: input.actor.organizationId },
-        select: { isActive: true, organizationId: true }
-      });
-      if (!location2?.isActive) throw new Error("Check-in location is not active");
-      if (location2.organizationId !== member.organizationId) throw new Error("Check-in location is not in the member's organization");
-    }
-    const existing = await transaction.checkIn.findFirst({
-      where: {
-        memberId: member.id,
-        organizationId: input.actor.organizationId,
-        isGuest: false,
-        checkOutTime: null
-      },
-      orderBy: { checkInTime: "desc" }
-    });
-    if (existing) return { checkIn: existing, reused: true };
-    if (input.actor.organizationId !== member.organizationId) throw new Error("Check-in actor organization is invalid");
-    const checkIn = await transaction.checkIn.create({
-      data: {
-        organizationId: member.organizationId,
-        memberId: member.id,
-        openCheckInKey: "open",
-        locationId: input.locationId || null,
-        method,
-        membershipValidated: true,
-        validationNotes: "Validated by controlled check-in transition"
-      }
-    });
-    return { checkIn, reused: false };
-  });
-}
-async function recordControlledGuestCheckIn(prisma, input) {
-  prisma = guardKeystonePrismaResults(prisma);
-  const guestName = input.guestName.trim();
-  const idempotencyKey = input.idempotencyKey.trim();
-  if (!guestName) throw new Error("Guest name is required");
-  if (idempotencyKey.length < 12 || idempotencyKey.length > 200) throw new Error("Guest check-in idempotency key is required");
-  const host = input.hostMemberId ? await prisma.member.findFirst({
-    where: { id: input.hostMemberId, organizationId: input.organizationId },
-    select: { organizationId: true }
-  }) : null;
-  if (input.hostMemberId && !host) throw new Error("Host member not found");
-  const organizationId = input.organizationId;
-  if (!organizationId || host && host.organizationId !== organizationId) {
-    throw new Error("Guest check-in organization is invalid");
-  }
-  return prisma.$transaction(async (transaction) => {
-    await lockParticipationPolicy(transaction, input.organizationId);
-    await assertFacilityAccessHours(transaction, organizationId, null, /* @__PURE__ */ new Date());
-    await assertParticipationAllowed(transaction, organizationId, null, /* @__PURE__ */ new Date());
-    await lockTransactionKey(transaction, `guest-check-in:${organizationId}:${idempotencyKey}`);
-    const marker = `[request:${idempotencyKey}]`;
-    const existing = await transaction.checkIn.findFirst({
-      where: { organizationId, isGuest: true, validationNotes: { contains: marker } },
-      orderBy: { createdAt: "asc" }
-    });
-    if (existing) return existing;
-    return transaction.checkIn.create({
-      data: {
-        organizationId,
-        memberId: input.hostMemberId || null,
-        isGuest: true,
-        guestName,
-        method: "manual",
-        membershipValidated: false,
-        validationNotes: `${marker}${input.phone?.trim() ? ` Guest phone: ${input.phone.trim()}.` : ""}${input.hostMemberId ? " Invited by member." : ""}`
-      }
-    });
-  });
-}
-async function checkOutControlledMember(prisma, input) {
-  prisma = guardKeystonePrismaResults(prisma);
-  assertFacilityStaff(input.actor);
-  return prisma.$transaction(async (transaction) => {
-    await lockParticipationPolicy(transaction, input.actor.organizationId);
-    await lockTransactionKey(transaction, `check-out:${input.checkInId}`);
-    const checkIn = await transaction.checkIn.findFirst({
-      where: { id: input.checkInId, organizationId: input.actor.organizationId },
-      include: { member: { include: { user: { select: { id: true } } } } }
-    });
-    if (!checkIn) throw new Error("Check-in not found");
-    assertActorOrganization(input.actor, checkIn.organizationId);
-    if (checkIn.checkOutTime) return { checkIn, reused: true };
-    const updated = await transaction.checkIn.update({
-      where: { id: checkIn.id },
-      data: { checkOutTime: /* @__PURE__ */ new Date(), openCheckInKey: null }
-    });
-    return { checkIn: updated, reused: false };
-  });
+  return context.db.GymPayment.findOne({ where: { id: claim2.paymentId } });
 }
 
 // features/keystone/mutations/gymLifecycleResolvers.ts
@@ -12603,22 +14874,26 @@ async function actorFromContext(context) {
   return currentRoleActor(context);
 }
 async function cancelClassBooking(root, { bookingId }, context) {
+  const actor2 = await actorFromContext(context);
   const result = await cancelCapacityControlledBooking(context.prisma, {
     bookingId,
-    actor: await actorFromContext(context)
+    actor: actor2
   });
+  const late = Boolean(result.lateCancelled);
+  if (result.cancelled && !late) await refundCancelledDropIns(context, actor2.organizationId, [result.bookingId]);
   const booking = await context.db.ClassBooking.findOne({ where: { id: result.bookingId } });
   return {
     booking,
     promoted: result.promotion.promoted,
-    message: result.cancelled ? "Booking cancelled" : "Booking was already cancelled"
+    message: !result.cancelled ? "Booking was already cancelled" : late ? "Booking cancelled inside the late-cancel window; the credit isn't returned" : "Booking cancelled"
   };
 }
 async function cancelClassInstance(_root, args, context) {
-  return cancelCapacityControlledClassInstance(context.prisma, {
-    ...args,
-    actor: await actorFromContext(context)
-  });
+  const actor2 = await actorFromContext(context);
+  const result = await cancelCapacityControlledClassInstance(context.prisma, { ...args, actor: actor2 });
+  const cancelled = await context.prisma.classBooking.findMany({ where: { organizationId: actor2.organizationId, classInstanceId: args.classInstanceId, status: "cancelled" }, select: { id: true } });
+  await refundCancelledDropIns(context, actor2.organizationId, cancelled.map((row) => row.id));
+  return result;
 }
 async function markClassAttendance(root, args, context) {
   const result = await markCapacityControlledAttendance(context.prisma, {
@@ -12626,6 +14901,17 @@ async function markClassAttendance(root, args, context) {
     actor: await actorFromContext(context)
   });
   return context.db.AttendanceRecord.findOne({ where: { id: result.id } });
+}
+async function cancelPastClassBooking(root, args, context) {
+  const result = await cancelCapacityControlledBooking(context.prisma, {
+    bookingId: args.bookingId,
+    pastBookingReason: args.reason ?? "",
+    actor: await actorFromContext(context)
+  });
+  return { bookingId: result.bookingId, classInstanceId: result.classInstanceId, cancelled: result.cancelled };
+}
+async function undoClassAttendance(root, args, context) {
+  return undoCapacityControlledAttendance(context.prisma, { bookingId: args.bookingId, actor: await actorFromContext(context) });
 }
 async function authorizedCheckInResult(context, checkInId) {
   const organizationId = context.session?.data?.organization?.id;
@@ -12649,7 +14935,7 @@ async function checkOutMember(root, { checkInId }, context) {
 }
 
 // features/keystone/mutations/deterministicOnboarding.ts
-var import_node_crypto9 = __toESM(require("node:crypto"));
+var import_node_crypto14 = __toESM(require("node:crypto"));
 
 // features/keystone/onboarding/seed.json
 var seed_default = {
@@ -12786,7 +15072,7 @@ var seed_default = {
     ],
     rating: null,
     reviewCount: 0,
-    heroImageUrl: "/images/training-floor.jpg"
+    heroImageUrl: ""
   },
   location: {
     name: "Kinetic Performance Club \u2013 Main Studio",
@@ -13295,11 +15581,24 @@ function parseGymOnboardingSeed(value) {
   throw new Error(`Invalid gym onboarding configuration: ${details}`);
 }
 
+// features/platform/onboarding/lib/starterBrand.ts
+var STARTER_SETTINGS_BRAND = Object.freeze({
+  logoIcon: DEFAULT_GYM_LOGO_ICON,
+  logoColor: DEFAULT_LIBRARY_LOGO_COLOR
+});
+function starterSettingsValues(seedSettings) {
+  return { ...STARTER_SETTINGS_BRAND, ...seedSettings };
+}
+function adoptedSettingsLogoPatch(existing) {
+  return existing.logoIcon ? null : { logoIcon: STARTER_SETTINGS_BRAND.logoIcon };
+}
+
 // features/keystone/mutations/deterministicOnboarding.ts
 init_classCapacity();
 
 // features/keystone/lib/class-scheduling.ts
 init_classCapacity();
+init_operational_policy();
 init_membership_credits();
 init_operational_notices();
 function scheduleDuration(schedule) {
@@ -13361,6 +15660,8 @@ async function assertClassAllocation(tx, organizationId, candidate, ignoreId) {
   }
 }
 async function saveControlledOccurrence(tx, organizationId, input, id) {
+  await lockParticipationPolicy(tx, organizationId);
+  await lockTransactionKey(tx, `gym-scheduling:${organizationId}`);
   if (id) await lockTransactionKey(tx, `class-instance:${id}`);
   const existing = id ? await tx.classInstance.findFirst({ where: { id, organizationId } }) : null;
   if (id && !existing) throw new Error("Class instance not found");
@@ -13394,8 +15695,11 @@ async function saveControlledOccurrence(tx, organizationId, input, id) {
     for (const booking of bookings) {
       const lockedMember = await tx.member.findFirst({ where: { id: booking.memberId, organizationId }, include: { user: { include: { membership: true } } } });
       if (lockedMember?.status !== "active") throw new Error("A booked member is not eligible; resolve the booking before rescheduling");
-      assertMembershipServiceEligibility(lockedMember?.user?.membership, date);
-      if (booking.status === "confirmed" && existing.date.getTime() !== date.getTime()) {
+      const dropIn = booking.serviceSnapshot?.credit?.basis === "drop_in_paid";
+      if (!dropIn) assertMembershipServiceEligibility(lockedMember?.user?.membership, date);
+      if (dropIn && booking.status === "confirmed" && existing.date.getTime() !== date.getTime()) {
+        await assertNoMemberServiceConflict(tx, booking.memberId, organizationId, { ...data, id: existing.id, classSchedule: schedule });
+      } else if (booking.status === "confirmed" && existing.date.getTime() !== date.getTime()) {
         const debit = await tx.membershipCreditEntry.findUnique({ where: { key: `${booking.id}:debit` }, include: { grant: true } });
         if (!debit?.grant || date < debit.grant.periodStart || date >= debit.grant.periodEnd) throw new Error("Reschedule crosses a booking credit month or legacy credit provenance is missing; cancel and rebook with restored credits");
         await assertNoMemberServiceConflict(tx, booking.memberId, organizationId, { ...data, id: existing.id, classSchedule: schedule });
@@ -13407,6 +15711,7 @@ async function saveControlledOccurrence(tx, organizationId, input, id) {
     { at: (/* @__PURE__ */ new Date()).toISOString(), actorId: input.actorId || "system", before: { date: existing.date.toISOString(), instructorId: existing.instructorId, locationId: existing.locationId, resourceId: existing.resourceId }, after: { date: date.toISOString(), instructorId: data.instructorId, locationId: data.locationId, resourceId: data.resourceId } }
   ] } : {} };
   const result = existing ? await tx.classInstance.update({ where: { id: existing.id }, data: persisted }) : await tx.classInstance.create({ data: persisted });
+  if (existing) await fillReleasedSeats(tx, result.id, organizationId);
   if (changed) for (const booking of bookings) await enqueueOperationalNotice(tx, {
     organizationId,
     memberId: booking.memberId,
@@ -13417,8 +15722,19 @@ async function saveControlledOccurrence(tx, organizationId, input, id) {
   return result;
 }
 
+// features/keystone/lib/business-time-zone.ts
+async function businessTimeZone(prisma, organizationId) {
+  const [settings, organization3] = await Promise.all([
+    prisma.gymSettings.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "asc" }], select: { timezone: true } }),
+    prisma.organization.findUnique({ where: { id: organizationId }, select: { timezone: true } })
+  ]);
+  return resolveGymTimeZone(settings?.timezone, organization3?.timezone);
+}
+
 // features/keystone/mutations/deterministicOnboarding.ts
+init_current_actor();
 init_prisma_result();
+init_participation_terms();
 var dayNumbers = {
   sunday: 0,
   monday: 1,
@@ -13493,46 +15809,78 @@ var BOUNDED_INSTRUCTOR_ROLE = {
 };
 function placeholderCoachEmail(seedEmail, organizationId) {
   const local = seedEmail.split("@")[0].toLowerCase().replace(/[^a-z0-9._-]/g, "");
-  const tenant = import_node_crypto9.default.createHash("sha256").update(organizationId).digest("hex").slice(0, 12);
+  const tenant = import_node_crypto14.default.createHash("sha256").update(organizationId).digest("hex").slice(0, 12);
   return `${local}+${tenant}@example.invalid`;
 }
-async function onboardingReadiness(tx, organizationId) {
+var PRICE_ID = /^price_[A-Za-z0-9]+$/;
+var PRODUCT_ID = /^prod_[A-Za-z0-9]+$/;
+async function manifestRecords(tx, manifest) {
+  const created = {};
+  const adoptedCounts = {};
+  for (const entry of manifest?.created ?? []) {
+    const kind = entry.split(":")[0];
+    created[kind] = (created[kind] ?? 0) + 1;
+  }
+  for (const entry of manifest?.adopted ?? []) {
+    const kind = entry.split(":")[0];
+    adoptedCounts[kind] = (adoptedCounts[kind] ?? 0) + 1;
+  }
+  const delegates2 = { settings: "gymSettings", location: "location", membershipTier: "membershipTier", classType: "classType", role: "role", user: "user", instructor: "instructor", classSchedule: "classSchedule", paymentProvider: "paymentProvider" };
+  const missing = [];
+  for (const entry of [...manifest?.created ?? [], ...manifest?.adopted ?? []]) {
+    const [kind, id] = entry.split(":");
+    const delegate = delegates2[kind];
+    if (!delegate || !id) continue;
+    if (!await tx[delegate].count({ where: { id } })) missing.push(entry);
+  }
+  return { created, adopted: adoptedCounts, missing, configurationRecorded: Boolean(manifest?.configHash) };
+}
+async function onboardingReadiness(context, tx, organizationId, manifest = null) {
   const now = /* @__PURE__ */ new Date();
-  const chargesOn = newPaymentChargesEnabled();
-  const [settings, locations, plans, purchasablePlans, classTypes, coaches, schedules, sessions, resources, availability, retailItems, policy, provider] = await Promise.all([
+  const checkoutOpen = await publicCheckoutProviderEnabled(context, organizationId);
+  const [settings, locations, plans, mappedPlans, classTypes, coaches, scheduleRows, resources, availability, retailItems, policy, members, exercises, credentials, legacyWaitlist] = await Promise.all([
     tx.gymSettings.findFirst({ where: { organizationId }, select: { email: true, hours: true } }),
     tx.location.count({ where: { organizationId, isActive: true } }),
     tx.membershipTier.count({ where: { organizationId } }),
-    tx.membershipTier.count({ where: { organizationId, stripeProductId: { not: "" }, OR: [
-      { stripeMonthlyPriceId: { not: "" }, monthlyPrice: { gt: 0 } },
-      { stripeAnnualPriceId: { not: "" }, annualPrice: { gt: 0 } }
-    ] } }),
+    tx.membershipTier.findMany({ where: { organizationId, stripeProductId: { not: "" } }, select: { stripeProductId: true, stripeMonthlyPriceId: true, stripeAnnualPriceId: true, monthlyPrice: true, annualPrice: true }, take: 500 }),
     tx.classType.count({ where: { organizationId } }),
     tx.instructor.count({ where: { organizationId, isActive: true } }),
-    tx.classSchedule.count({ where: { organizationId, isActive: true } }),
-    tx.classInstance.count({ where: { organizationId, isCancelled: false, date: { gt: now } } }),
+    tx.classSchedule.findMany({ where: { organizationId, isActive: true }, select: { id: true, instructor: { select: { isActive: true } }, location: { select: { isActive: true } } }, take: 500 }),
     tx.gymResource.count({ where: { organizationId, isActive: true } }),
     tx.trainerAvailability.count({ where: { organizationId } }),
     tx.retailItem.count({ where: { organizationId, isActive: true } }),
-    tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { documentText: true, enforceWaiver: true } }),
-    tx.paymentProvider.findFirst({ where: { organizationId, code: "pp_stripe" }, select: { id: true } })
+    tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { documentText: true, documentReference: true, enforceWaiver: true } }),
+    tx.member.count({ where: { organizationId } }),
+    tx.exercise.count({ where: { organizationId } }),
+    tx.integrationCredential.count({ where: { organizationId, revokedAt: null, expiresAt: { gt: now } } }),
+    tx.waitlist.count({ where: { organizationId } })
   ]);
-  const step = (key, label, done, href, required = true) => ({ key, label, done, required, href });
+  const purchasable = mappedPlans.filter((plan) => PRODUCT_ID.test(plan.stripeProductId) && (PRICE_ID.test(plan.stripeMonthlyPriceId || "") && Number(plan.monthlyPrice) > 0 || PRICE_ID.test(plan.stripeAnnualPriceId || "") && Number(plan.annualPrice) > 0)).length;
+  const liveSchedules = scheduleRows.filter((row) => row.instructor?.isActive !== false && row.location?.isActive !== false);
+  const sessions = liveSchedules.length ? await tx.classInstance.count({ where: { organizationId, isCancelled: false, date: { gt: now }, classScheduleId: { in: liveSchedules.map((row) => row.id) } } }) : 0;
+  const reviewedTerms = Boolean(policy?.documentText && !isParticipationTermsPlaceholder(String(policy.documentText))) || Boolean(policy && !policy.documentText && /^https:\/\//.test(String(policy.documentReference || "")));
+  const step = (key, label, done, href, kind = "required") => ({ key, label, done, required: kind === "required", kind, href });
   const steps = [
     step("settings", "Store Settings: name, contact email and opening hours", Boolean(settings?.hours && Object.keys(settings.hours).length && settings?.email && !String(settings.email).endsWith(".invalid")), "/dashboard/platform/store-settings"),
     step("location", "At least one open location", locations > 0, "/dashboard/platform/locations"),
     step("plans", "Membership plans", plans > 0, "/dashboard/platform/membership-plans"),
-    step("checkout", chargesOn ? "At least one plan sellable online (Stripe product and price above zero)" : "Online checkout is off; plans are sold at the front desk", !chargesOn || purchasablePlans > 0, "/dashboard/platform/membership-plans", chargesOn),
-    step("payments", "Stripe payment provider record", Boolean(provider), "/dashboard/platform/billing", chargesOn),
+    checkoutOpen ? step("checkout", "Online checkout is on: at least one plan has a Stripe product and price ID above zero (IDs are format-checked only, not verified with Stripe)", purchasable > 0, "/dashboard/platform/membership-plans") : step("checkout", "Online checkout is off, so no plan can be bought online; members join at the front desk", true, "/dashboard/platform/membership-plans", "optional"),
     step("classes", "Class types", classTypes > 0, "/dashboard/platform/class-catalog"),
-    step("coaches", "Active coaches (send each a setup link from Instructors)", coaches > 0, "/dashboard/platform/instructors"),
-    step("schedule", "Weekly class schedule with upcoming sessions", schedules > 0 && sessions > 0, "/dashboard/platform/scheduling"),
-    step("terms", "Your participation terms (replace the setup placeholder)", Boolean(policy?.documentText) && policy?.enforceWaiver === true, "/dashboard/platform/store-settings", false),
-    step("resources", "Rooms and equipment for scheduling (optional)", resources > 0, "/dashboard/gym-resources", false),
-    step("availability", "Personal-training availability (optional)", availability > 0, "/dashboard/platform/training", false),
-    step("retail", "Front-desk retail items (optional)", retailItems > 0, "/dashboard/platform/retail", false)
+    step("coaches", "Active coaches", coaches > 0, "/dashboard/platform/instructors"),
+    step("schedule", "Weekly schedule with an active coach and site, and upcoming sessions", liveSchedules.length > 0 && sessions > 0, "/dashboard/platform/scheduling"),
+    step("terms", "Your reviewed participation terms, published from Store Settings", reviewedTerms, "/dashboard/platform/store-settings", "optional"),
+    step("resources", "Rooms and equipment for scheduling", resources > 0, "/dashboard/gym-resources", "optional"),
+    step("availability", "Personal-training availability", availability > 0, "/dashboard/platform/training", "optional"),
+    step("retail", "Front-desk retail items", retailItems > 0, "/dashboard/platform/retail", "optional"),
+    step("exercises", "Exercise catalog for workout logs", exercises > 0, "/dashboard/exercises", "optional"),
+    step("integrations", "Partner integration credentials", credentials > 0, "/dashboard/platform/operations", "optional"),
+    step("members", "Members: invite or import them, or let them sign up", members > 0, "/dashboard/platform/members", "first-use"),
+    step("imports", "Contact imports, if you are moving from another system", false, "/dashboard/platform/imports", "first-use"),
+    step("coaching", "Coaching assignments and trial follow-up start with real members", false, "/dashboard/platform/training", "first-use"),
+    step("privacy", "Consent, privacy requests and acceptances are recorded by members themselves", false, "/dashboard/platform/operations", "first-use")
   ];
-  return { ready: steps.every((item) => !item.required || item.done), steps };
+  if (legacyWaitlist > 0) steps.push(step("legacy-waitlist", `${legacyWaitlist} older schedule-level waitlist entries exist; live booking uses each session's own waitlist`, false, "/dashboard/waitlists", "optional"));
+  return { ready: steps.every((item) => !item.required || item.done), steps, records: await manifestRecords(tx, manifest) };
 }
 async function runDeterministicOnboarding(_root, args, context) {
   const template = args.template;
@@ -13547,20 +15895,25 @@ async function runDeterministicOnboarding(_root, args, context) {
     throw new Error("Onboarding management permission required");
   }
   if (actorUser.onboardingStatus === "dismissed") throw new Error("Dismissed onboarding must be restarted from the dashboard");
-  const configHash = import_node_crypto9.default.createHash("sha256").update(JSON.stringify({ template, seed: onboardingSeed })).digest("hex");
-  const timeZone = normalizeTimeZone(onboardingSeed.gymSettings.timezone || "UTC");
+  const configHash = import_node_crypto14.default.createHash("sha256").update(JSON.stringify({ template, seed: onboardingSeed })).digest("hex");
   return context.transaction(async (txContext) => {
     const tx = guardKeystonePrismaResults(txContext.prisma);
     const sudo = txContext.sudo();
     await lockTransactionKey(tx, `onboarding:${organizationId}`);
+    await lockCurrentActor(tx, userId, organizationId, ["canManageOnboarding"]);
+    const current = await tx.user.findUnique({ where: { id: userId }, select: { onboardingStatus: true } });
+    if (current?.onboardingStatus === "dismissed") throw new Error("Dismissed onboarding must be restarted from the dashboard");
     const run = await tx.onboardingRun.findUnique({ where: { organizationId } });
     const previous = run?.manifest || null;
     if (run?.status === "completed") {
-      if (previous?.configHash && previous.configHash !== configHash) {
+      if (!previous?.configHash) {
+        throw new Error("Setup was completed before its configuration was recorded, so this request can't be checked against it. Change plans, classes and coaches from their pages instead of rerunning setup.");
+      }
+      if (previous.configHash !== configHash) {
         throw new Error("Setup already completed with a different starter configuration. Change plans, classes and coaches from their pages instead of rerunning setup.");
       }
       await tx.user.updateMany({ where: { id: userId, organizationId }, data: { onboardingStatus: "completed" } });
-      const readiness2 = await onboardingReadiness(tx, organizationId);
+      const readiness2 = await onboardingReadiness(txContext, tx, organizationId, previous);
       const instanceCount2 = await tx.classInstance.count({ where: { organizationId } });
       return { success: true, organizationId, runId: run.id, instanceCount: instanceCount2, readiness: readiness2 };
     }
@@ -13573,28 +15926,21 @@ async function runDeterministicOnboarding(_root, args, context) {
       manifest.adopted.push(`${kind}:${id}`);
       return id;
     };
-    const existingSettings = await tx.gymSettings.findFirst({ where: { organizationId }, select: { id: true, logoIcon: true, participationTerms: true } });
+    const existingSettings = await tx.gymSettings.findFirst({ where: { organizationId }, select: { id: true, logoIcon: true } });
     if (existingSettings) {
       manifest.records.settings = adopted("settings", existingSettings.id);
-      if (!existingSettings.logoIcon) await tx.gymSettings.update({ where: { id: existingSettings.id }, data: { logoIcon: DEFAULT_GYM_LOGO_ICON, logoColor: DEFAULT_LIBRARY_LOGO_COLOR } });
+      const logoPatch = adoptedSettingsLogoPatch(existingSettings);
+      if (logoPatch) await tx.gymSettings.update({ where: { id: existingSettings.id }, data: logoPatch });
     } else {
       const { participationTerms: _terms, ...seedSettings } = onboardingSeed.gymSettings;
-      const values = normalizeGymSettingsInput({
-        logoIcon: DEFAULT_GYM_LOGO_ICON,
-        logoColor: DEFAULT_LIBRARY_LOGO_COLOR,
+      const values = normalizeGymSettingsInput(starterSettingsValues({
         ...seedSettings,
         ...seedSettings.hours ? { hours: editorWeeklyHours(seedSettings.hours) } : {}
-      });
+      }));
       const row = await sudo.db.GymSettings.createOne({ data: { ...values, organization: { connect: { id: organizationId } } } });
       manifest.records.settings = created("settings", String(row.id));
     }
-    const policy = await tx.participationPolicy.findFirst({ where: { organizationId }, select: { id: true } });
-    if (!policy) {
-      const terms = String(onboardingSeed.gymSettings.participationTerms || "").trim() || PARTICIPATION_TERMS_PLACEHOLDER;
-      const settingsId = manifest.records.settings;
-      await tx.gymSettings.update({ where: { id: settingsId }, data: { participationTerms: terms } });
-      await publishParticipationTerms(tx, organizationId, terms, userId);
-    }
+    const timeZone = await businessTimeZone(tx, organizationId);
     const locationSeed = onboardingSeed.location;
     const existingLocation = await tx.location.findFirst({ where: { organizationId, name: locationSeed.name }, select: { id: true } });
     const locationId = existingLocation ? adopted("location", existingLocation.id) : created("location", String((await sudo.query.Location.createOne({ data: { ...locationSeed, organization: { connect: { id: organizationId } } }, query: "id" })).id));
@@ -13635,7 +15981,7 @@ async function runDeterministicOnboarding(_root, args, context) {
       if (existingUser) {
         instructorUserId = adopted("user", existingUser.id);
       } else {
-        const user = await sudo.db.User.createOne({ data: { name: fullName, email: tenantEmail, password: import_node_crypto9.default.randomBytes(32).toString("base64url"), organization: { connect: { id: organizationId } } } });
+        const user = await sudo.db.User.createOne({ data: { name: fullName, email: tenantEmail, password: import_node_crypto14.default.randomBytes(32).toString("base64url"), organization: { connect: { id: organizationId } } } });
         instructorUserId = created("user", String(user.id));
         await tx.user.update({ where: { id: instructorUserId }, data: { roleId: instructorRoleId } });
         manifest.placeholderUsers[instructorUserId] = { handle: instructor.handle, seedEmail: tenantEmail };
@@ -13706,47 +16052,14 @@ async function runDeterministicOnboarding(_root, args, context) {
     const runData = { status: "completed", completedAt: /* @__PURE__ */ new Date(), lastError: "", leaseUntil: null, leaseToken: "", startedAt: now, manifest };
     const saved = run ? await tx.onboardingRun.update({ where: { id: run.id }, data: { ...runData, attempts: { increment: 1 } } }) : await tx.onboardingRun.create({ data: { ...runData, organizationId, attempts: 1 } });
     await tx.user.updateMany({ where: { id: userId, organizationId }, data: { onboardingStatus: "completed" } });
-    const readiness = await onboardingReadiness(tx, organizationId);
+    const readiness = await onboardingReadiness(txContext, tx, organizationId, manifest);
     return { success: true, organizationId, runId: saved.id, instanceCount, readiness, skippedSessions: manifest.skippedSessions };
   }, { maxWait: 3e4, timeout: 12e4 });
 }
 
-// lib/clientSource.ts
-var import_node_crypto10 = require("node:crypto");
-var CLIENT_SOURCE_HEADER = "x-gym-client-source";
-function header(headers, name) {
-  if (!headers) return "";
-  if (typeof headers.get === "function") return String(headers.get(name) || "");
-  const value = headers[name];
-  return Array.isArray(value) ? value[0] || "" : value || "";
-}
-function normalizeSource(value) {
-  const trimmed = value.trim().slice(0, 64);
-  return /^[0-9A-Fa-f:.]{2,64}$/.test(trimmed) ? trimmed : "";
-}
-function clientSourceFromHeaders(headers, remoteAddress = "") {
-  const forwarded = header(headers, "x-forwarded-for").split(",").map((entry) => entry.trim()).filter(Boolean);
-  return normalizeSource(forwarded.at(-1) || "") || normalizeSource(header(headers, "x-real-ip")) || normalizeSource(remoteAddress) || "unknown";
-}
-function signature(source) {
-  const secret = process.env.SESSION_SECRET || "";
-  if (secret.length < 32) return "";
-  return (0, import_node_crypto10.createHmac)("sha256", secret).update(`client-source:${source}`).digest("base64url").slice(0, 32);
-}
-function requestClientSource(req) {
-  const headers = req?.headers;
-  const claimed = header(headers, CLIENT_SOURCE_HEADER);
-  const separator = claimed.lastIndexOf(".");
-  if (separator > 0) {
-    const source = claimed.slice(0, separator);
-    const expected = signature(source);
-    const supplied = claimed.slice(separator + 1);
-    if (expected && supplied.length === expected.length && (0, import_node_crypto10.timingSafeEqual)(Buffer.from(supplied), Buffer.from(expected))) return source;
-  }
-  return clientSourceFromHeaders(headers, req?.socket?.remoteAddress || "");
-}
-
 // features/keystone/mutations/memberRegistration.ts
+var import_graphql2 = require("graphql");
+init_clientSource();
 init_prisma_result();
 
 // features/keystone/mutations/memberRole.ts
@@ -13800,28 +16113,31 @@ async function ensureBoundedMemberRole(context, organizationId) {
 }
 
 // features/keystone/mutations/memberRegistration.ts
-var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+var emailPattern2 = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function signupError(code, message) {
+  return new import_graphql2.GraphQLError(message, { extensions: { code } });
+}
 async function registerMember(_root, args, context) {
   if (process.env.PUBLIC_MEMBER_SIGNUPS_ALLOWED !== "true") {
-    throw new Error("Public signup is not enabled");
+    throw signupError("SIGNUP_UNAVAILABLE", "Public signup is not enabled");
   }
   const input = args.data;
   const email = normalizeAuthIdentity(input.email);
   const name = typeof input.name === "string" ? input.name.trim() : "";
   const password2 = typeof input.password === "string" ? input.password : "";
   const phone = typeof input.phone === "string" ? input.phone.trim() : "";
-  if (!emailPattern.test(email) || email.length > 254) throw new Error("Enter a valid email address");
-  if (name.length < 1 || name.length > 120) throw new Error("Name must be between 1 and 120 characters");
-  if (password2.length < 12 || password2.length > 128) throw new Error("Password must be between 12 and 128 characters");
-  if (phone.length > 40) throw new Error("Phone number is too long");
-  if (!await consumeAuthAttempt(context.prisma, `signup-source:${requestClientSource(context.req)}`, 20, 60 * 60 * 1e3) || !await consumeAuthAttempt(context.prisma, `signup:${email}:${requestClientSource(context.req)}`, 5, 60 * 60 * 1e3)) {
-    throw new Error("Too many signup attempts. Try again later");
+  if (!emailPattern2.test(email) || email.length > 254) throw signupError("INVALID_EMAIL", "Enter a valid email address");
+  if (name.length < 1 || name.length > 120) throw signupError("INVALID_NAME", "Name must be between 1 and 120 characters");
+  if (password2.length < 12 || password2.length > 128) throw signupError("INVALID_PASSWORD", "Password must be between 12 and 128 characters");
+  if (phone.length > 40) throw signupError("INVALID_PHONE", "Phone number is too long");
+  if (isKnownSource(requestClientSource(context.req)) && !await consumeAuthAttempt(context.prisma, budgetKey("signup-source", requestClientSource(context.req)), 20, 60 * 60 * 1e3) || !await consumeAuthAttempt(context.prisma, budgetKey("signup", email, requestClientSource(context.req)), 5, 60 * 60 * 1e3)) {
+    throw signupError("RATE_LIMITED", "Too many signup attempts. Try again later");
   }
   const organizationId = process.env.PUBLIC_MEMBER_SIGNUP_ORGANIZATION_ID?.trim();
-  if (!organizationId) throw new Error("Public signup is not configured for an organization");
+  if (!organizationId) throw signupError("SIGNUP_UNAVAILABLE", "Public signup is not available");
   const storefrontOrganizationId = process.env.STOREFRONT_ORGANIZATION_ID?.trim();
   if (!storefrontOrganizationId || storefrontOrganizationId !== organizationId) {
-    throw new Error("Public signup organization must match the configured storefront organization");
+    throw signupError("SIGNUP_UNAVAILABLE", "Public signup is not available");
   }
   return context.transaction(async (transactionContext) => {
     const prisma = guardKeystonePrismaResults(transactionContext.prisma);
@@ -13840,13 +16156,13 @@ async function registerMember(_root, args, context) {
       take: 1,
       query: "id"
     });
-    if (!organizations[0]) throw new Error("Public signup organization is not available");
+    if (!organizations[0]) throw signupError("SIGNUP_UNAVAILABLE", "Public signup is not available");
     const existing = await sudo.query.User.findMany({
       where: { email: { equals: email } },
       take: 1,
       query: "id"
     });
-    if (existing[0]) throw new Error("An account with that email already exists");
+    if (existing[0]) throw signupError("ACCOUNT_EXISTS", "An account with that email already exists");
     const role = await ensureBoundedMemberRole(transactionContext, organizationId);
     const user = await sudo.query.User.createOne({
       data: {
@@ -13875,9 +16191,9 @@ async function registerMember(_root, args, context) {
 }
 
 // features/keystone/mutations/memberInvitation.ts
-var import_node_crypto11 = __toESM(require("node:crypto"));
+var import_node_crypto15 = __toESM(require("node:crypto"));
 init_prisma_result();
-var emailPattern2 = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+var emailPattern3 = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 async function inviteMember(_root, { data }, context) {
   const session = context.session;
   const organizationId = session?.data?.organization?.id;
@@ -13888,7 +16204,7 @@ async function inviteMember(_root, { data }, context) {
   const email = normalizeAuthIdentity(data.email);
   const phone = typeof data.phone === "string" ? data.phone.trim() : "";
   if (!name || name.length > 120) throw new Error("Name is required and must be 120 characters or fewer");
-  if (!emailPattern2.test(email) || email.length > 254) throw new Error("Enter a valid email address");
+  if (!emailPattern3.test(email) || email.length > 254) throw new Error("Enter a valid email address");
   if (phone.length > 40) throw new Error("Phone number is too long");
   return context.transaction(async (transactionContext) => {
     const prisma = guardKeystonePrismaResults(transactionContext.prisma);
@@ -13920,7 +16236,8 @@ async function inviteMember(_root, { data }, context) {
       return {
         userId: existing[0].id,
         memberId: members[0].id,
-        email: existing[0].email
+        email: existing[0].email,
+        created: false
       };
     }
     const role = await ensureBoundedMemberRole(transactionContext, organizationId);
@@ -13931,7 +16248,7 @@ async function inviteMember(_root, { data }, context) {
         name,
         email,
         phone,
-        password: import_node_crypto11.default.randomBytes(32).toString("base64url")
+        password: import_node_crypto15.default.randomBytes(32).toString("base64url")
       },
       query: "id email"
     });
@@ -13947,7 +16264,7 @@ async function inviteMember(_root, { data }, context) {
       },
       query: "id"
     });
-    return { userId: user.id, memberId: member.id, email };
+    return { userId: user.id, memberId: member.id, email, created: true };
   });
 }
 
@@ -13978,6 +16295,7 @@ async function setMemberAccountStatus(_root, { memberId, status }, context) {
       throw new Error("A cancelled member account cannot be reactivated from this workflow");
     }
     if (member.status === status) return member;
+    assertTransition(MEMBER_ACCOUNT_MACHINE, "member account", member.status, status);
     if (status === "cancelled") {
       const [bookings, payments, checkIns, subscriptions, memberships, paymentSessions] = await Promise.all([
         transaction.classBooking.count({ where: { memberId: member.id, organizationId } }),
@@ -14012,195 +16330,10 @@ async function setMemberAccountStatus(_root, { memberId, status }, context) {
   });
 }
 
-// features/keystone/mutations/instructorAccount.ts
-var import_node_crypto12 = __toESM(require("node:crypto"));
-
-// features/keystone/lib/mail.ts
-var import_nodemailer = require("nodemailer");
-function mailDeliveryEnabled() {
-  const flag = process.env.MAIL_ENABLED;
-  const enabled = flag === "true" || flag === void 0 && process.env.NODE_ENV !== "production";
-  return enabled && Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM);
-}
-function mailTransport() {
-  if (!mailDeliveryEnabled()) throw new Error("Email delivery is turned off for this Gym deployment");
-  const port = Number(process.env.SMTP_PORT || 587);
-  return (0, import_nodemailer.createTransport)({
-    host: process.env.SMTP_HOST,
-    port,
-    secure: port === 465,
-    auth: process.env.SMTP_USER && process.env.SMTP_PASSWORD ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : void 0
-  });
-}
-function escapeHtml(value) {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-}
-function passwordLinkEmail({ url, heading }) {
-  const href = escapeHtml(url);
-  return `
-    <body style="background: #f9f9f9;">
-      <table width="100%" border="0" cellspacing="20" cellpadding="0" style="background: #ffffff; max-width: 600px; margin: auto; border-radius: 10px;">
-        <tr>
-          <td align="center" style="padding: 10px 0px 0px 0px; font-size: 18px; font-family: Helvetica, Arial, sans-serif; color: #444444;">
-            ${escapeHtml(heading)}
-          </td>
-        </tr>
-        <tr>
-          <td align="center" style="padding: 20px 0;">
-            <table border="0" cellspacing="0" cellpadding="0">
-              <tr>
-                <td align="center" style="border-radius: 5px;" bgcolor="#346df1"><a href="${href}" target="_blank" style="font-size: 18px; font-family: Helvetica, Arial, sans-serif; color: #ffffff; text-decoration: none; border-radius: 5px; padding: 10px 20px; border: 1px solid #346df1; display: inline-block; font-weight: bold;">Set password</a></td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td align="center" style="padding: 0px 0px 10px 0px; font-size: 16px; line-height: 22px; font-family: Helvetica, Arial, sans-serif; color: #444444;">
-            The link works once and expires soon. If you did not request it, you can ignore this email.
-          </td>
-        </tr>
-      </table>
-    </body>
-  `;
-}
-function passwordResetUrl(resetToken, identity, audience) {
-  const origin = resolvePublicBaseUrl();
-  if (audience === "dashboard") return `${origin}/dashboard/reset?token=${encodeURIComponent(resetToken)}`;
-  return `${origin}/reset-password?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(identity)}`;
-}
-async function sendPasswordResetEmail(resetToken, to, audience = "storefront") {
-  const info = await mailTransport().sendMail({
-    to,
-    from: process.env.SMTP_FROM,
-    subject: "Set your password",
-    html: passwordLinkEmail({ url: passwordResetUrl(resetToken, to, audience), heading: "Use this link to set your password." })
-  });
-  if (process.env.MAIL_USER?.includes("ethereal.email")) {
-    console.log(`\u{1F4E7} Message Sent!  Preview it at ${(0, import_nodemailer.getTestMessageUrl)(info)}`);
-  }
-}
-
-// features/keystone/mutations/instructorAccount.ts
-init_prisma_result();
-init_classCapacity();
-var emailPattern3 = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-var LINK_MINUTES = 60;
-async function peopleActor(context) {
-  const session = context.session;
-  const organizationId = session?.data?.organization?.id;
-  if (!session?.itemId || !organizationId) throw new Error("Organization session required");
-  const user = await context.sudo().query.User.findOne({ where: { id: session.itemId }, query: "id organization { id } role { canAccessDashboard canManagePeople canManageAllRecords organization { id } }" });
-  if (!user || user.organization?.id !== organizationId || user.role?.organization?.id !== organizationId) throw new Error("Actor organization mismatch");
-  if (!user.role?.canAccessDashboard || !user.role?.canManagePeople) throw new Error("People management permission required");
-  return { userId: session.itemId, organizationId, canManageAllRecords: Boolean(user.role.canManageAllRecords) };
-}
-function parseDelivery(value) {
-  if (value === "email" || value === "inPerson") return value;
-  return mailDeliveryEnabled() ? "email" : "inPerson";
-}
-async function issueAccessLink(context, input) {
-  const prisma = guardKeystonePrismaResults(context.prisma);
-  if (!await consumeAuthAttempt(context.prisma, `access-link:${input.user.id}`, 5, 60 * 60 * 1e3)) {
-    throw new Error("Too many links were issued for this account in the last hour; try again later");
-  }
-  if (input.delivery === "email" && !mailDeliveryEnabled()) throw new Error("Email delivery is turned off; issue the link for an in-person handoff instead");
-  const token = import_node_crypto12.default.randomBytes(24).toString("base64url");
-  const issuedAt = /* @__PURE__ */ new Date();
-  await context.sudo().db.User.updateOne({ where: { id: input.user.id }, data: { passwordResetToken: token, passwordResetIssuedAt: issuedAt, passwordResetRedeemedAt: null } });
-  if (input.memberId) {
-    await prisma.operationalNotice.create({ data: {
-      organizationId: input.actor.organizationId,
-      memberId: input.memberId,
-      key: import_node_crypto12.default.createHash("sha256").update(`${input.actor.organizationId}:access-link:${input.user.id}:${issuedAt.toISOString()}`).digest("hex"),
-      kind: "account",
-      status: "pending",
-      message: "Staff issued a one-use password link for your account. If you did not ask for it, contact the club.",
-      history: [{ at: issuedAt.toISOString(), userId: input.actor.userId, action: `issued-${input.purpose}-link`, delivery: input.delivery }]
-    } });
-  }
-  const expiresAt = new Date(issuedAt.getTime() + LINK_MINUTES * 6e4).toISOString();
-  if (input.delivery === "email") {
-    try {
-      await sendPasswordResetEmail(token, input.user.email, input.audience);
-    } catch {
-      return { delivered: "failed", email: input.user.email, url: null, expiresAt };
-    }
-    return { delivered: "email", email: input.user.email, url: null, expiresAt };
-  }
-  return { delivered: "inPerson", email: input.user.email, url: passwordResetUrl(token, input.user.email, input.audience), expiresAt };
-}
-async function issueMemberAccessLink(_root, { memberId, delivery }, context) {
-  const actor2 = await peopleActor(context);
-  const prisma = guardKeystonePrismaResults(context.prisma);
-  const member = await prisma.member.findFirst({ where: { id: memberId, organizationId: actor2.organizationId }, select: { id: true, userId: true, status: true } });
-  if (!member?.userId) throw new Error("This member has no account yet; send an invitation instead");
-  if (member.status === "cancelled") throw new Error("Closed member accounts can't be recovered");
-  if (member.userId === actor2.userId) throw new Error("Use Reset password for your own account");
-  const user = await prisma.user.findFirst({ where: { id: member.userId, organizationId: actor2.organizationId }, select: { id: true, email: true, role: { select: Object.fromEntries(roleCapabilityFields.map((field) => [field, true])) } } });
-  if (!user?.email) throw new Error("Member account not found");
-  const staffCapabilities = user.role ? roleCapabilityFields.filter((field) => user.role[field]) : [];
-  if (staffCapabilities.length && !actor2.canManageAllRecords) throw new Error("This account has staff access; an administrator must recover it");
-  return issueAccessLink(context, { actor: actor2, user, audience: staffCapabilities.includes("canAccessDashboard") ? "dashboard" : "storefront", delivery: parseDelivery(delivery), memberId: member.id, purpose: "recovery" });
-}
-async function prepareInstructorAccount(_root, { instructorId, email, delivery }, context) {
-  const actor2 = await peopleActor(context);
-  const normalizedEmail = normalizeAuthIdentity(email);
-  if (!emailPattern3.test(normalizedEmail) || normalizedEmail.length > 254 || normalizedEmail.endsWith(".invalid")) {
-    throw new Error("Enter the coach's real email address");
-  }
-  const prisma = guardKeystonePrismaResults(context.prisma);
-  const claimed = await prisma.$transaction(async (tx) => {
-    await lockTransactionKey(tx, `instructor-claim:${actor2.organizationId}:${instructorId}`);
-    const instructor = await tx.instructor.findFirst({ where: { id: instructorId, organizationId: actor2.organizationId }, select: { id: true, userId: true } });
-    if (!instructor?.userId) throw new Error("Instructor account was not found in this organization");
-    const run = await tx.onboardingRun.findUnique({ where: { organizationId: actor2.organizationId }, select: { id: true, manifest: true } });
-    const placeholders = run?.manifest?.placeholderUsers || {};
-    const provenance = placeholders[instructor.userId];
-    if (!provenance) throw new Error("Only coach accounts created as onboarding placeholders can be claimed here; existing coaches manage their own sign-in");
-    const user = await tx.user.findFirst({ where: { id: instructor.userId, organizationId: actor2.organizationId }, select: { id: true, email: true, passwordResetRedeemedAt: true, role: { select: Object.fromEntries(roleCapabilityFields.map((field) => [field, true])) } } });
-    if (!user) throw new Error("Instructor account was not found in this organization");
-    if (user.passwordResetRedeemedAt || provenance.claimedAt) throw new Error("This coach has already claimed the account; they manage their own email and password");
-    const extra = roleCapabilityFields.filter((field) => field !== "canAccessDashboard" && field !== "isInstructor" && user.role?.[field]);
-    if (!user.role?.isInstructor || extra.length) throw new Error("This account no longer has the bounded instructor role; an administrator must handle it");
-    if (user.email !== provenance.seedEmail && user.email !== provenance.claimEmail) throw new Error("This account's email was changed outside the claim workflow; an administrator must review it");
-    const owner = await tx.user.findFirst({ where: { email: normalizedEmail }, select: { id: true } });
-    if (owner && owner.id !== user.id) throw new Error("Another account already uses that email");
-    await tx.user.update({ where: { id: user.id }, data: { email: normalizedEmail } });
-    await tx.onboardingRun.update({ where: { id: run.id }, data: { manifest: { ...run.manifest, placeholderUsers: { ...placeholders, [user.id]: { ...provenance, claimEmail: normalizedEmail, claimIssuedAt: (/* @__PURE__ */ new Date()).toISOString(), claimIssuedBy: actor2.userId } } } } });
-    return { id: user.id, email: normalizedEmail };
-  });
-  const issued = await issueAccessLink(context, { actor: actor2, user: claimed, audience: "dashboard", delivery: parseDelivery(delivery), memberId: null, purpose: "claim" });
-  return { userId: claimed.id, ...issued };
-}
-async function instructorClaimQueue(_root, _args, context) {
-  const actor2 = await peopleActor(context);
-  const prisma = guardKeystonePrismaResults(context.prisma);
-  const run = await prisma.onboardingRun.findUnique({ where: { organizationId: actor2.organizationId }, select: { manifest: true } });
-  const placeholders = run?.manifest?.placeholderUsers || {};
-  const userIds = Object.keys(placeholders).slice(0, 200);
-  if (!userIds.length) return [];
-  const instructors = await prisma.instructor.findMany({
-    where: { organizationId: actor2.organizationId, userId: { in: userIds } },
-    select: { id: true, isActive: true, userId: true, user: { select: { name: true, email: true, passwordResetRedeemedAt: true } } },
-    orderBy: [{ id: "asc" }]
-  });
-  return instructors.map((row) => {
-    const provenance = placeholders[row.userId] || {};
-    const claimed = Boolean(row.user?.passwordResetRedeemedAt || provenance.claimedAt);
-    return {
-      instructorId: row.id,
-      name: row.user?.name || "Coach",
-      isActive: row.isActive,
-      email: claimed || provenance.claimEmail ? row.user?.email || "" : "",
-      status: claimed ? "claimed" : provenance.claimIssuedAt ? "link_issued" : "unclaimed",
-      claimIssuedAt: provenance.claimIssuedAt || null
-    };
-  });
-}
-
 // features/keystone/mutations/onboardingStatus.ts
 init_prisma_result();
 init_classCapacity();
+init_current_actor();
 var allowed = {
   not_started: /* @__PURE__ */ new Set(["in_progress", "dismissed"]),
   in_progress: /* @__PURE__ */ new Set(["in_progress", "dismissed"]),
@@ -14217,6 +16350,7 @@ async function transitionOnboardingStatus(_root, { status }, context) {
   const prisma = guardKeystonePrismaResults(context.prisma);
   return prisma.$transaction(async (tx) => {
     await lockTransactionKey(tx, `onboarding:${organizationId}`);
+    await lockCurrentActor(tx, String(session.itemId), String(organizationId), ["canManageOnboarding"], { requireActiveOrganization: false });
     const user = await tx.user.findFirst({ where: { id: session.itemId, organizationId }, select: { onboardingStatus: true } });
     const current = user?.onboardingStatus ?? "not_started";
     if (!allowed[current]?.has(status)) {
@@ -14236,6 +16370,36 @@ init_prisma_result();
 init_membership_credits();
 init_operational_policy();
 init_classCapacity();
+init_current_actor();
+
+// features/keystone/lib/class-schedule-delete.ts
+var plural = (count, one, many) => `${count} ${count === 1 ? one : many}`;
+function classScheduleDeleteBlockedReason(blockers) {
+  if (blockers.openBookings > 0) return `Has ${plural(blockers.openBookings, "booking", "bookings")}. Cancel bookings first.`;
+  if (blockers.attendanceRecords > 0) return `Has ${plural(blockers.attendanceRecords, "attendance record", "attendance records")}. Templates with attendance history are kept; pause it instead.`;
+  if (blockers.waitlistEntries > 0) return `Has ${plural(blockers.waitlistEntries, "waitlist entry", "waitlist entries")}. Clear the waitlist first.`;
+  return null;
+}
+async function deleteClassScheduleInTransaction(tx, organizationId, scheduleId, { dryRun = false } = {}) {
+  const schedule = await tx.classSchedule.findFirst({ where: { id: scheduleId, organizationId }, select: { id: true, name: true } });
+  if (!schedule) throw new Error("Template not found");
+  const instanceWhere = { organizationId, classScheduleId: schedule.id };
+  const [sessionCount, openBookings, attendanceRecords, waitlistEntries] = await Promise.all([
+    tx.classInstance.count({ where: instanceWhere }),
+    tx.classBooking.count({ where: { organizationId, status: { not: "cancelled" }, classInstance: { is: instanceWhere } } }),
+    tx.attendanceRecord.count({ where: { organizationId, OR: [{ classScheduleId: schedule.id }, { booking: { is: { classInstance: { is: instanceWhere } } } }] } }),
+    tx.waitlist.count({ where: { organizationId, classScheduleId: schedule.id, status: { in: ["waiting", "notified"] } } })
+  ]);
+  const blockedReason = classScheduleDeleteBlockedReason({ openBookings, attendanceRecords, waitlistEntries });
+  const result = { scheduleId: schedule.id, name: schedule.name, sessionCount, blockedReason, deleted: false };
+  if (dryRun) return result;
+  if (blockedReason) throw new Error(blockedReason);
+  await tx.classInstance.deleteMany({ where: instanceWhere });
+  await tx.classSchedule.delete({ where: { id: schedule.id } });
+  return { ...result, deleted: true };
+}
+
+// features/keystone/mutations/scheduling.ts
 init_classCapacity();
 var DAY_MAP = {
   sunday: 0,
@@ -14274,17 +16438,7 @@ async function generateUpcomingClassInstances(_root, { weeks }, context) {
   const { organizationId } = await schedulingManager(context);
   const prisma = guardKeystonePrismaResults(context.prisma);
   const sudo = context.sudo();
-  const [settings, organization3] = await Promise.all([
-    prisma.gymSettings.findUnique({
-      where: { organizationId },
-      select: { timezone: true }
-    }),
-    prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { timezone: true }
-    })
-  ]);
-  const timeZone = resolveGymTimeZone(settings?.timezone, organization3?.timezone);
+  const timeZone = await businessTimeZone(prisma, organizationId);
   const schedules = await sudo.query.ClassSchedule.findMany({
     where: {
       AND: [
@@ -14348,10 +16502,10 @@ async function saveGymClassSchedule(_root, { id, data }, context) {
     if (id && !existing) throw new Error("Schedule not found");
     const next = { organizationId };
     for (const key of ["name", "description", "dayOfWeek", "startTime", "endTime", "maxCapacity", "isActive"]) if (data[key] !== void 0) next[key] = data[key];
-    for (const [field, list46] of [["instructor", "instructor"], ["classType", "classType"], ["location", "location"], ["resource", "gymResource"]]) {
+    for (const [field, list48] of [["instructor", "instructor"], ["classType", "classType"], ["location", "location"], ["resource", "gymResource"]]) {
       if (data[field] === void 0) continue;
       const relatedId = data[field]?.disconnect ? null : data[field]?.connect?.id;
-      if (relatedId !== null && (typeof relatedId !== "string" || !await tx[list46].findFirst({ where: { id: relatedId, organizationId } }))) throw new Error(`${field} is not in this organization`);
+      if (relatedId !== null && (typeof relatedId !== "string" || !await tx[list48].findFirst({ where: { id: relatedId, organizationId } }))) throw new Error(`${field} is not in this organization`);
       next[`${field}Id`] = relatedId;
     }
     const merged = { ...existing, ...next };
@@ -14382,8 +16536,23 @@ async function saveGymClassSchedule(_root, { id, data }, context) {
       const conflicts = await tx.classSchedule.findMany({ where: { organizationId, isActive: true, dayOfWeek: merged.dayOfWeek, ...id ? { id: { not: id } } : {} } });
       if (conflicts.some((other) => other.startTime < merged.endTime && other.endTime > merged.startTime && (merged.instructorId && other.instructorId === merged.instructorId || merged.resourceId && other.resourceId === merged.resourceId))) throw new Error("Recurring instructor or resource allocation overlaps another schedule");
     }
-    return existing ? tx.classSchedule.update({ where: { id: existing.id }, data: next }) : tx.classSchedule.create({ data: next });
+    const saved = existing ? await tx.classSchedule.update({ where: { id: existing.id }, data: next }) : await tx.classSchedule.create({ data: next });
+    if (existing && merged.maxCapacity > (existing.maxCapacity ?? 0)) {
+      const inheriting = await tx.classInstance.findMany({ where: { organizationId, classScheduleId: existing.id, maxCapacity: null, isCancelled: false, date: { gt: /* @__PURE__ */ new Date() } }, select: { id: true }, orderBy: { id: "asc" } });
+      for (const instance of inheriting) await fillReleasedSeats(tx, instance.id, organizationId);
+    }
+    return saved;
   });
+}
+async function deleteGymClassSchedule(_root, { id, dryRun }, context) {
+  const { organizationId } = await schedulingManager(context);
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  return prisma.$transaction(async (tx) => {
+    await lockParticipationPolicy(tx, organizationId);
+    await lockTransactionKey(tx, `gym-scheduling:${organizationId}`);
+    await lockTransactionKey(tx, `class-schedule:${id}`);
+    return deleteClassScheduleInTransaction(tx, organizationId, id, { dryRun: Boolean(dryRun) });
+  }, { timeout: 3e4 });
 }
 async function saveGymClassInstance(_root, { id, data }, context) {
   const { organizationId } = await schedulingManager(context);
@@ -14411,7 +16580,10 @@ async function reconcileGymEntitlements(_root, { afterId, limit = 50 }, context)
   return { processed: results.length, nextAfterId: rows.length > limit ? rows[limit - 1].id : null, results };
 }
 async function updateGymResource(_root, { id, data }, context) {
-  const { organizationId, userId } = await schedulingManager(context);
+  const session = context.session;
+  const organizationId = session?.data?.organization?.id ? String(session.data.organization.id) : "";
+  const userId = session?.itemId ? String(session.itemId) : "";
+  if (!organizationId || !userId) throw new Error("Authentication required");
   const prisma = guardKeystonePrismaResults(context.prisma);
   const reason = typeof data?.reason === "string" ? data.reason.trim() : "";
   if (reason.length < 3 || reason.length > 1e3) throw new Error("Resource change reason must be 3 to 1000 characters");
@@ -14428,6 +16600,8 @@ async function updateGymResource(_root, { id, data }, context) {
   return prisma.$transaction(async (tx) => {
     await lockParticipationPolicy(tx, organizationId);
     await lockTransactionKey(tx, `gym-scheduling:${organizationId}`);
+    const actor2 = await lockCurrentActor(tx, userId, organizationId, []);
+    if (!actor2.role.canManageFacilities && !actor2.role.canManageAllRecords) throw new Error("Facilities management permission required");
     const resource = await tx.gymResource.findFirst({ where: { id, organizationId } });
     if (!resource) throw new Error("Resource not found in this organization");
     const changed = Object.keys(values).some((key) => resource[key] !== values[key]);
@@ -14461,7 +16635,7 @@ async function updateGymResource(_root, { id, data }, context) {
       ]
     }, select: { id: true } });
     if (classDependency || trainingDependency) throw new Error("Cancel or reassign upcoming/in-progress classes and appointments before changing this resource");
-    const history2 = Array.isArray(resource.allocationHistory) && resource.allocationHistory.length ? resource.allocationHistory : Array.isArray(resource.metadata?.allocationHistory) ? resource.metadata.allocationHistory : [];
+    const history2 = Array.isArray(resource.allocationHistory) ? resource.allocationHistory : [];
     if (history2.length >= 500) throw new Error("Resource allocation history requires archival review");
     const before = Object.fromEntries(Object.keys(values).map((key) => [key, resource[key]]));
     await tx.gymResource.update({ where: { id }, data: { ...values, allocationHistory: [...history2, { at: now.toISOString(), actorId: userId, reason, before, after: values }] } });
@@ -14470,7 +16644,7 @@ async function updateGymResource(_root, { id, data }, context) {
 }
 
 // features/kiosk/auth.ts
-var import_node_crypto13 = require("node:crypto");
+var import_node_crypto16 = require("node:crypto");
 var KIOSK_SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
 function kioskApiToken() {
   const token = process.env.KIOSK_API_TOKEN?.trim();
@@ -14480,19 +16654,20 @@ function getKioskOrganizationId() {
   const organizationId = process.env.KIOSK_ORGANIZATION_ID?.trim();
   return organizationId && organizationId.length > 0 ? organizationId : null;
 }
-function safeEqual(left, right) {
+function safeEqual2(left, right) {
   const leftBytes = Buffer.from(left);
   const rightBytes = Buffer.from(right);
-  return leftBytes.length === rightBytes.length && (0, import_node_crypto13.timingSafeEqual)(leftBytes, rightBytes);
+  return leftBytes.length === rightBytes.length && (0, import_node_crypto16.timingSafeEqual)(leftBytes, rightBytes);
 }
 function isKioskTokenValid(suppliedToken) {
   const requiredToken = kioskApiToken();
   return Boolean(
-    requiredToken && typeof suppliedToken === "string" && safeEqual(suppliedToken.trim(), requiredToken)
+    requiredToken && typeof suppliedToken === "string" && safeEqual2(suppliedToken.trim(), requiredToken)
   );
 }
 
 // features/keystone/mutations/kiosk.ts
+init_clientSource();
 function kioskTenant(credential, organizationId) {
   if (!isKioskTokenValid(credential)) throw new Error("Kiosk operation authorization failed");
   const configuredOrganizationId = getKioskOrganizationId();
@@ -14502,14 +16677,11 @@ function kioskTenant(credential, organizationId) {
   return configuredOrganizationId;
 }
 async function authorizeKioskSession(_root, { credential, organizationId }, context) {
-  const budget = `kiosk-fail:${requestClientSource(context.req)}`;
-  if (!await authAttemptAvailable(context.prisma, budget, 30)) throw new Error("Too many kiosk unlock attempts from this device; wait 15 minutes");
-  try {
-    kioskTenant(credential, organizationId);
-  } catch (error) {
-    await consumeAuthAttempt(context.prisma, budget, 30, 15 * 60 * 1e3);
-    throw error;
-  }
+  const source = requestClientSource(context.req);
+  const budget = isKnownSource(source) ? budgetKey("kiosk-fail", source) : "";
+  if (budget && !await reserveAuthAttempt(context.prisma, budget, 30, 15 * 60 * 1e3)) throw new Error("Too many kiosk unlock attempts from this device; wait 15 minutes");
+  kioskTenant(credential, organizationId);
+  if (budget) await releaseAuthAttempt(context.prisma, budget);
   await assertActiveOrganization(context, organizationId);
   return true;
 }
@@ -14648,10 +16820,46 @@ async function kioskRecordGuestCheckIn(_root, args, context) {
 }
 
 // features/keystone/mutations/discovery.ts
-var import_node_crypto14 = require("node:crypto");
-var import_graphql2 = require("graphql");
+var import_node_crypto17 = require("node:crypto");
+var import_graphql3 = require("graphql");
+init_clientSource();
 init_classCapacity();
 init_prisma_result();
+
+// features/keystone/lib/class-calendar.ts
+function escapeText(value) {
+  return String(value ?? "").replace(/\\/g, "\\\\").replace(/\r\n|\r|\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,");
+}
+function instant(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error("Calendar event date is invalid");
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+function fold(line) {
+  const lines = [];
+  let current = "";
+  for (const char of line) {
+    if (Buffer.byteLength(current + char, "utf8") > 75) {
+      lines.push(current);
+      current = " ";
+    }
+    current += char;
+  }
+  lines.push(current);
+  return lines.join("\r\n");
+}
+function serializeClassCalendar(feed, now = /* @__PURE__ */ new Date()) {
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Openfront Gym//Class Calendar//EN", "CALSCALE:GREGORIAN"];
+  for (const entry of feed.classes.slice(0, 200)) {
+    if (!entry.endsAt || new Date(entry.endsAt) <= new Date(entry.startsAt)) continue;
+    lines.push("BEGIN:VEVENT", `UID:${escapeText(`${feed.organizationId}-${entry.instanceId}@openfront-gym`)}`, `DTSTAMP:${instant(now.toISOString())}`, `DTSTART:${instant(entry.startsAt)}`, `DTEND:${instant(entry.endsAt)}`, `SUMMARY:${escapeText(entry.schedule?.name || "Gym class")}`, `DESCRIPTION:${escapeText(entry.schedule?.description || "")}`, `LOCATION:${escapeText(entry.location?.name || "")}`, "END:VEVENT");
+  }
+  lines.push("END:VCALENDAR");
+  return `${lines.map(fold).join("\r\n")}\r
+`;
+}
+
+// features/keystone/mutations/discovery.ts
 function resolveWindow(from, to) {
   const now = /* @__PURE__ */ new Date();
   const requestedStart = from ? new Date(from) : now;
@@ -14860,25 +17068,29 @@ async function createDiscoveryBooking(context, input) {
   };
 }
 async function authorizeDiscovery(context, credential, partner, requiredScope) {
-  const failureBudget = `discovery-fail:${requestClientSource(context.req)}`;
-  if (!await authAttemptAvailable(context.prisma, failureBudget, 100)) throw new Error("Too many failed discovery authentication attempts");
+  const source = requestClientSource(context.req);
+  const failureBudget = isKnownSource(source) ? budgetKey("discovery-fail", source) : "";
+  if (failureBudget && !await reserveAuthAttempt(context.prisma, failureBudget, 100, 60 * 1e3)) throw new Error("Too many failed discovery authentication attempts");
   const rejectCredential = async (message) => {
-    await consumeAuthAttempt(context.prisma, failureBudget, 100, 60 * 1e3);
     throw new Error(message);
   };
+  const accepted = async () => {
+    if (failureBudget) await releaseAuthAttempt(context.prisma, failureBudget);
+  };
   if (credential.startsWith("gym_")) {
-    const digest2 = (0, import_node_crypto14.createHash)("sha256").update(credential).digest("hex");
+    const digest = (0, import_node_crypto17.createHash)("sha256").update(credential).digest("hex");
     const prisma = guardKeystonePrismaResults(context.prisma);
-    const stored = await prisma.integrationCredential.findUnique({ where: { digest: digest2 }, include: { organization: true } });
+    const stored = await prisma.integrationCredential.findUnique({ where: { digest }, include: { organization: true } });
     if (!stored || stored.revokedAt || !stored.expiresAt || stored.expiresAt <= /* @__PURE__ */ new Date() || stored.organization?.status !== "active") return rejectCredential("Unauthorized discovery request");
+    await accepted();
     if (stored.partner !== partner.trim() || !Array.isArray(stored.scopes) || !stored.scopes.includes(requiredScope)) throw new Error("Unauthorized discovery scope or partner");
-    if (!await consumeAuthAttempt(context.prisma, `discovery-key:${stored.id}`, 120, 60 * 1e3)) throw new Error("Too many discovery requests");
+    if (!await consumeAuthAttempt(context.prisma, budgetKey("discovery-key", stored.id), 120, 60 * 1e3)) throw new Error("Too many discovery requests");
     return { organizationId: stored.organizationId, partner: stored.partner, mode: "managed-key" };
   }
   const configuredKey = process.env.DISCOVERY_API_KEY?.trim();
   const organizationId = process.env.DISCOVERY_ORGANIZATION_ID?.trim();
   if (!configuredKey || configuredKey.length < 32 || !organizationId) {
-    throw new import_graphql2.GraphQLError("Discovery API is not configured", {
+    throw new import_graphql3.GraphQLError("Discovery API is not configured", {
       extensions: {
         code: "DISCOVERY_NOT_CONFIGURED",
         http: { status: 503 }
@@ -14891,11 +17103,12 @@ async function authorizeDiscovery(context, credential, partner, requiredScope) {
   const allowlist = new Set((process.env.DISCOVERY_PARTNER_ALLOWLIST || "").split(",").map((value) => value.trim()).filter(Boolean));
   if (allowlist.size && !allowlist.has(normalizedPartner)) throw new Error("Discovery partner is not authorized");
   const supplied = Buffer.from(credential || "");
-  const configured = Buffer.from(configuredKey);
-  if (supplied.length !== configured.length || !(0, import_node_crypto14.timingSafeEqual)(supplied, configured)) {
+  const configured2 = Buffer.from(configuredKey);
+  if (supplied.length !== configured2.length || !(0, import_node_crypto17.timingSafeEqual)(supplied, configured2)) {
     return rejectCredential("Unauthorized discovery request");
   }
-  if (!await consumeAuthAttempt(context.prisma, `discovery:${normalizedPartner}`, 120, 60 * 1e3)) {
+  await accepted();
+  if (!await consumeAuthAttempt(context.prisma, budgetKey("discovery", normalizedPartner), 120, 60 * 1e3)) {
     throw new Error("Too many discovery requests");
   }
   const organization3 = await context.sudo().query.Organization.findMany({
@@ -14939,8 +17152,21 @@ async function bookDiscoveryClass(_root, args, context) {
   });
   return { success: true, ...access3, booking };
 }
+async function getDiscoveryClassCalendar(_root, args, context) {
+  const access3 = await authorizeDiscovery(context, args.credential, args.partner || "", "classes:read");
+  const classes = [];
+  for (let skip = 0, page = 0; page < 5; page += 1) {
+    const rows = await getDiscoveryClassFeed(context, { organizationId: access3.organizationId, from: args.from, to: args.to, locationId: args.locationId, limit: 201, skip });
+    classes.push(...rows.slice(0, 200));
+    if (rows.length <= 200) break;
+    skip += 200;
+  }
+  return serializeClassCalendar({ organizationId: access3.organizationId, classes });
+}
 
 // features/keystone/mutations/contact.ts
+init_mail();
+init_clientSource();
 var referencePattern = /^GYM-\d{8}-[A-F0-9]{8}$/;
 function sourcePathOf(value) {
   const path = value?.trim() || "";
@@ -14981,10 +17207,10 @@ async function submitContactForm(_root, { data }, context) {
     throw new Error("Contact form details are invalid or too long");
   }
   const source = requestClientSource(context.req);
-  if (!await consumeAuthAttempt(context.prisma, `contact-source:${source}`, 10, 15 * 60 * 1e3) || !await consumeAuthAttempt(context.prisma, `contact:${email}:${source}`, 5, 15 * 60 * 1e3)) {
+  if (isKnownSource(source) && !await consumeAuthAttempt(context.prisma, budgetKey("contact-source", source), 10, 15 * 60 * 1e3) || !await consumeAuthAttempt(context.prisma, budgetKey("contact", email, source), 5, 15 * 60 * 1e3)) {
     throw new Error("Too many contact form submissions");
   }
-  const organizationId = await publicOrganizationId(context);
+  const organizationId = (await configuredStorefrontOrganization(context))?.id ?? null;
   if (!organizationId) throw new Error("Contact form is not available");
   const senderName = `${firstName} ${lastName}`;
   const subject = `${topic} \u2014 ${senderName}`;
@@ -15007,25 +17233,14 @@ async function submitContactForm(_root, { data }, context) {
 }
 
 // features/keystone/mutations/operations.ts
-var import_node_crypto15 = require("node:crypto");
+var import_node_crypto18 = require("node:crypto");
 init_operational_notices();
 init_operational_policy();
 init_prisma_result();
-
-// features/keystone/lib/participation-evidence.ts
-function isEffectiveEvidence(entry, policyId, now = Date.now()) {
-  if (!entry || entry.policyId !== policyId || entry.revokedAt) return false;
-  if (entry.acceptedAt && new Date(entry.acceptedAt).getTime() > now) return false;
-  return !entry.expiresAt || new Date(entry.expiresAt).getTime() > now;
-}
-function evidenceState(entry, now = Date.now()) {
-  if (entry.revokedAt) return "withdrawn";
-  if (entry.expiresAt && new Date(entry.expiresAt).getTime() <= now) return "expired";
-  if (entry.acceptedAt && new Date(entry.acceptedAt).getTime() > now) return "pending";
-  return "current";
-}
-
-// features/keystone/mutations/operations.ts
+init_participation_evidence();
+init_participation_terms();
+var EVIDENCE_PAGE = 20;
+var SUSPENDED_MEMBER_COMMANDS = ["privacy.request", "waiver.revoke"];
 function operationsActor(context, manager = true) {
   const session = context.session;
   const organizationId = session?.data?.organization?.id;
@@ -15052,49 +17267,134 @@ async function memberInTenant(tx, organizationId, id, userId) {
 function history(row, userId, action, note) {
   return [...Array.isArray(row.history) ? row.history : [], { at: (/* @__PURE__ */ new Date()).toISOString(), userId, action, note }];
 }
-async function operationsWorkspace(_root, { caseAfterId }, context) {
+async function operationsWorkspace(_root, args, context) {
   const { organizationId } = operationsActor(context);
   const tx = guardKeystonePrismaResults(context.prisma);
   const where = { organizationId };
-  const [notices, cases, policies, credentials, members, locations, paymentEvents, resources] = await Promise.all([
-    tx.operationalNotice.findMany({ where: { ...where, status: { not: "resolved" } }, take: 100, orderBy: { createdAt: "asc" }, include: { member: { select: { id: true, name: true, email: true, phone: true } } } }),
-    tx.operationsCase.findMany({ where: { ...where, status: { not: "resolved" }, ...caseAfterId ? { id: { gt: caseAfterId } } : {} }, take: 101, orderBy: { id: "asc" } }),
-    tx.participationPolicy.findMany({ where, take: 10, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
-    tx.integrationCredential.findMany({ where: { ...where, revokedAt: null, expiresAt: { gt: /* @__PURE__ */ new Date() } }, take: 100, orderBy: { expiresAt: "asc" }, select: { id: true, label: true, partner: true, scopes: true, expiresAt: true, revokedAt: true } }),
-    tx.member.findMany({ where, take: 200, orderBy: { name: "asc" }, select: { id: true, name: true, email: true } }),
-    tx.location.findMany({ where, take: 100, select: { id: true, name: true } }),
-    tx.paymentEvent.findMany({ where: { ...where, OR: [{ status: "failed" }, { status: "processing", lockedUntil: { lt: /* @__PURE__ */ new Date() } }] }, take: 100, orderBy: { createdAt: "asc" }, select: { id: true, providerEventId: true, eventType: true, status: true, attempts: true } }),
-    tx.gymResource.findMany({ where, take: 100, orderBy: { name: "asc" }, select: { id: true, name: true, capacity: true, isActive: true, isExclusive: true, setupBufferMinutes: true, cleanupBufferMinutes: true } })
-  ]);
+  const page = (value) => Number.isSafeInteger(value) && value > 0 ? Math.min(value, 1e6) : 0;
+  const skips = { notices: page(args.noticeSkip), events: page(args.eventSkip), resources: page(args.resourceSkip), credentials: page(args.credentialSkip) };
   const asOf = /* @__PURE__ */ new Date();
+  const credentialHistory = args.credentialScope === "history";
+  const search = String(args.memberQuery || "").trim().slice(0, 100);
+  const [notices, cases, policies, credentials, members, locations, paymentEvents, resources] = await Promise.all([
+    tx.operationalNotice.findMany({ where: { ...where, status: { not: "resolved" } }, skip: skips.notices, take: QUEUE_PAGE + 1, orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { member: { select: { id: true, name: true, email: true, phone: true } } } }),
+    tx.operationsCase.findMany({ where: { ...where, status: { not: "resolved" }, ...args.caseAfterId ? { id: { gt: args.caseAfterId } } : {} }, take: 101, orderBy: { id: "asc" } }),
+    tx.participationPolicy.findMany({ where, take: 10, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
+    tx.integrationCredential.findMany({
+      where: { ...where, ...credentialHistory ? { OR: [{ revokedAt: { not: null } }, { expiresAt: { lte: asOf } }] } : { revokedAt: null, expiresAt: { gt: asOf } } },
+      skip: skips.credentials,
+      take: QUEUE_PAGE + 1,
+      orderBy: [{ expiresAt: credentialHistory ? "desc" : "asc" }, { id: "asc" }],
+      select: { id: true, label: true, partner: true, scopes: true, expiresAt: true, revokedAt: true }
+    }),
+    tx.member.findMany({ where: { ...where, ...search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { email: { contains: search, mode: "insensitive" } }] } : {} }, take: 201, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, email: true } }),
+    tx.location.findMany({ where, take: 501, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true } }),
+    tx.paymentEvent.findMany({ where: { ...where, OR: [{ status: "failed" }, { status: "processing", lockedUntil: { lt: asOf } }] }, skip: skips.events, take: QUEUE_PAGE + 1, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true, providerEventId: true, eventType: true, status: true, attempts: true } }),
+    tx.gymResource.findMany({ where, skip: skips.resources, take: QUEUE_PAGE + 1, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, capacity: true, isActive: true, isExclusive: true, setupBufferMinutes: true, cleanupBufferMinutes: true } })
+  ]);
   const credentialState = (credential) => credential.revokedAt ? "revoked" : !credential.expiresAt || !Number.isFinite(new Date(credential.expiresAt).getTime()) || new Date(credential.expiresAt) <= asOf ? "expired" : "active";
-  return { notices, cases: cases.slice(0, 100), nextCaseAfterId: cases.length > 100 ? cases[99].id : null, policies, credentials: credentials.map((credential) => ({ ...credential, state: credentialState(credential) })), credentialsAsOf: asOf.toISOString(), members, locations, paymentEvents, resources, caseRequestKey: (0, import_node_crypto15.randomBytes)(24).toString("hex"), evidenceRequestKey: (0, import_node_crypto15.randomBytes)(24).toString("hex"), limits: { queue: 100, memberSelector: 200 }, waiverConfigured: policies.length > 0 };
+  const trim = (rows) => rows.slice(0, QUEUE_PAGE);
+  return {
+    notices: trim(notices),
+    cases: cases.slice(0, 100),
+    nextCaseAfterId: cases.length > 100 ? cases[99].id : null,
+    policies,
+    credentials: trim(credentials).map((credential) => ({ ...credential, state: credentialState(credential) })),
+    credentialsAsOf: asOf.toISOString(),
+    credentialScope: credentialHistory ? "history" : "active",
+    members: members.slice(0, 200),
+    membersHasMore: members.length > 200,
+    memberQuery: search,
+    locations: locations.slice(0, 500),
+    locationsTruncated: locations.length > 500,
+    paymentEvents: trim(paymentEvents),
+    resources: trim(resources),
+    pages: {
+      size: QUEUE_PAGE,
+      notices: { skip: skips.notices, hasMore: notices.length > QUEUE_PAGE },
+      events: { skip: skips.events, hasMore: paymentEvents.length > QUEUE_PAGE },
+      resources: { skip: skips.resources, hasMore: resources.length > QUEUE_PAGE },
+      credentials: { skip: skips.credentials, hasMore: credentials.length > QUEUE_PAGE }
+    },
+    caseRequestKey: (0, import_node_crypto18.randomBytes)(24).toString("hex"),
+    evidenceRequestKey: (0, import_node_crypto18.randomBytes)(24).toString("hex"),
+    limits: { queue: QUEUE_PAGE, memberSelector: 200 },
+    waiverConfigured: policies.length > 0
+  };
 }
-async function participationWorkspace(_root, _args, context) {
+var QUEUE_PAGE = 100;
+async function openConsentWithdrawalCase(tx, organizationId, memberId, userId, now) {
+  const caseKey = operationKey(organizationId, `consent-withdrawal:${memberId}:${now.toISOString()}`);
+  await tx.operationsCase.upsert({ where: { key: caseKey }, update: {}, create: {
+    organizationId,
+    memberId,
+    key: caseKey,
+    kind: "privacy",
+    status: "open",
+    openedBy: userId,
+    history: [],
+    summary: "Member withdrew optional health consent. Review purpose and retention; clear health fields when appropriate."
+  } });
+}
+async function withdrawHealthConsent(tx, organizationId, memberId, currentPolicyId, userId, now, reason) {
+  const healthOnly = await tx.participationEvidence.updateMany({ where: { organizationId, memberId, healthConsent: true, kind: HEALTH_CONSENT_EVIDENCE, revokedAt: null }, data: { revokedAt: now, revocationReason: reason } });
+  const combined = await tx.participationEvidence.findMany({ where: { organizationId, memberId, healthConsent: true, kind: ACCEPTANCE_EVIDENCE, revokedAt: null } });
+  for (const row of combined) {
+    await tx.participationEvidence.update({ where: { id: row.id }, data: { revokedAt: now, revocationReason: `${reason}; acceptance continues without health consent` } });
+    if (!isEffectiveEvidence(row, currentPolicyId, now.getTime())) continue;
+    const key = operationKey(organizationId, `health-consent-withdrawn:${row.id}`);
+    await tx.participationEvidence.upsert({ where: { key }, update: {}, create: {
+      organizationId,
+      memberId,
+      policyId: row.policyId,
+      key,
+      kind: ACCEPTANCE_EVIDENCE,
+      requestHash: operationKey(organizationId, JSON.stringify({ continues: row.id, healthConsent: false })),
+      documentReference: row.documentReference,
+      verifiedBy: row.verifiedBy,
+      acceptedAt: row.acceptedAt,
+      expiresAt: row.expiresAt,
+      healthConsent: false
+    } });
+  }
+  const withdrawn = healthOnly.count + combined.length;
+  if (!withdrawn) return { reused: true };
+  await openConsentWithdrawalCase(tx, organizationId, memberId, userId, now);
+  return { withdrawn };
+}
+async function participationWorkspace(_root, { evidenceAfterId }, context) {
   const { organizationId, userId } = operationsActor(context, false);
   const member = await memberInTenant(context.prisma, organizationId, null, userId);
   const prisma = guardKeystonePrismaResults(context.prisma);
+  const now = /* @__PURE__ */ new Date();
+  const after = typeof evidenceAfterId === "string" && evidenceAfterId ? await prisma.participationEvidence.findFirst({ where: { id: evidenceAfterId, organizationId, memberId: member.id }, select: { id: true } }) : null;
   const [policy, evidence, requests] = await Promise.all([
     prisma.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
-    prisma.participationEvidence.findMany({ where: { organizationId, memberId: member.id }, take: 20, orderBy: { createdAt: "desc" } }),
+    prisma.participationEvidence.findMany({ where: { organizationId, memberId: member.id }, take: EVIDENCE_PAGE + 1, orderBy: [{ createdAt: "desc" }, { id: "desc" }], ...after ? { cursor: { id: after.id }, skip: 1 } : {} }),
     prisma.operationsCase.findMany({ where: { organizationId, memberId: member.id, kind: "privacy" }, take: 20, orderBy: { createdAt: "desc" }, select: { id: true, summary: true, status: true, createdAt: true, closedAt: true } })
   ]);
-  const now = Date.now();
+  const healthPurpose = disclosedHealthPurpose(policy);
+  const [acceptances, consents] = policy ? await Promise.all([
+    prisma.participationEvidence.count({ where: effectiveAcceptanceWhere(organizationId, member.id, policy.id, now) }),
+    healthPurpose ? prisma.participationEvidence.count({ where: effectiveHealthConsentWhere(organizationId, member.id, policy.id, now) }) : 0
+  ]) : [0, 0];
   const publicPolicy = policy && isParticipationTermsPlaceholder(String(policy.documentText || "")) ? { ...policy, documentText: "", enforceWaiver: false, placeholder: true } : policy;
-  const effective = policy ? evidence.filter((entry) => isEffectiveEvidence(entry, policy.id, now)) : [];
   return {
-    policy: publicPolicy,
-    evidence: evidence.map((entry) => ({ ...entry, state: evidenceState(entry, now) })),
-    acceptedCurrent: effective.length > 0,
-    healthConsentCurrent: effective.some((entry) => entry.healthConsent),
+    policy: publicPolicy ? { ...publicPolicy, healthPurpose: healthPurpose ?? "" } : publicPolicy,
+    evidence: evidence.slice(0, EVIDENCE_PAGE).map((entry) => ({ ...entry, state: evidenceState(entry, now.getTime()) })),
+    evidenceNextAfterId: evidence.length > EVIDENCE_PAGE ? evidence[EVIDENCE_PAGE - 1].id : null,
+    acceptedCurrent: acceptances > 0,
+    healthConsentCurrent: consents > 0,
     requests,
-    requestKey: (0, import_node_crypto15.randomBytes)(24).toString("hex")
+    requestKey: (0, import_node_crypto18.randomBytes)(24).toString("hex")
   };
 }
 async function runOperationsCommand(_root, { command, data }, context) {
   if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Command data is required");
   const memberCommand = ["privacy.request", "waiver.accept", "waiver.revoke", "health.consent"].includes(command);
   const { organizationId, userId } = operationsActor(context, !memberCommand);
+  const withdrawal = SUSPENDED_MEMBER_COMMANDS.includes(command) || command === "health.consent" && data.grant !== true;
+  if (!withdrawal) await assertActiveOrganization(context, organizationId);
   return context.transaction(async (tc) => {
     const tx = guardKeystonePrismaResults(tc.prisma);
     if (command.startsWith("waiver.") || command.startsWith("policy.") || command.startsWith("case.") || command.startsWith("privacy.") || command === "health.consent") await lockParticipationPolicy(tx, organizationId);
@@ -15102,59 +17402,27 @@ async function runOperationsCommand(_root, { command, data }, context) {
       const member = await memberInTenant(tx, organizationId, null, userId);
       const policy = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
       if (!policy || policy.id !== data.policyId) throw new Error("Review the current participation policy first");
-      if (!policy.healthPurpose) throw new Error("This club does not collect optional health information");
       const now = /* @__PURE__ */ new Date();
-      const rows = await tx.participationEvidence.findMany({ where: { organizationId, memberId: member.id, policyId: policy.id, revokedAt: null }, orderBy: { createdAt: "desc" }, take: 50 });
-      const effective = rows.filter((entry) => isEffectiveEvidence(entry, policy.id, now.getTime()));
-      if (!effective.length) throw new Error("Accept the current participation terms before changing optional health consent");
       const requestKey = boundedText(data.requestKey, "Request key", 200);
-      const grant = data.grant === true;
-      if (grant) {
-        if (effective.some((entry) => entry.healthConsent)) return { reused: true };
+      if (data.grant === true) {
+        if (!disclosedHealthPurpose(policy)) throw new Error("This club does not collect optional health information");
+        if (await tx.participationEvidence.findFirst({ where: effectiveHealthConsentWhere(organizationId, member.id, policy.id, now) })) return { reused: true };
         const key = operationKey(organizationId, `health-consent:${member.id}:${policy.id}:${requestKey}`);
         return tx.participationEvidence.upsert({ where: { key }, update: {}, create: {
           organizationId,
           memberId: member.id,
           policyId: policy.id,
           key,
+          kind: HEALTH_CONSENT_EVIDENCE,
           requestHash: operationKey(organizationId, JSON.stringify({ memberId: member.id, policyId: policy.id, healthConsent: true })),
           documentReference: policy.documentReference,
           verifiedBy: userId,
           acceptedAt: now,
-          expiresAt: effective[0].expiresAt ?? null,
+          expiresAt: null,
           healthConsent: true
         } });
       }
-      const consenting = effective.filter((entry) => entry.healthConsent);
-      if (!consenting.length) return { reused: true };
-      for (const row of consenting) await tx.participationEvidence.update({ where: { id: row.id }, data: { revokedAt: now, revocationReason: "Member withdrew optional health consent" } });
-      if (!effective.some((entry) => !entry.healthConsent)) {
-        const key = operationKey(organizationId, `health-consent-withdrawn:${member.id}:${policy.id}:${requestKey}`);
-        await tx.participationEvidence.upsert({ where: { key }, update: {}, create: {
-          organizationId,
-          memberId: member.id,
-          policyId: policy.id,
-          key,
-          requestHash: operationKey(organizationId, JSON.stringify({ memberId: member.id, policyId: policy.id, healthConsent: false })),
-          documentReference: policy.documentReference,
-          verifiedBy: userId,
-          acceptedAt: consenting[0].acceptedAt ?? now,
-          expiresAt: consenting[0].expiresAt ?? null,
-          healthConsent: false
-        } });
-      }
-      const caseKey = operationKey(organizationId, `consent-withdrawal:${member.id}:${now.toISOString()}`);
-      await tx.operationsCase.upsert({ where: { key: caseKey }, update: {}, create: {
-        organizationId,
-        memberId: member.id,
-        key: caseKey,
-        kind: "privacy",
-        status: "open",
-        openedBy: userId,
-        history: [],
-        summary: "Member withdrew optional health consent. Review purpose and retention; clear health fields when appropriate."
-      } });
-      return { withdrawn: consenting.length };
+      return withdrawHealthConsent(tx, organizationId, member.id, policy.id, userId, now, "Member withdrew optional health consent");
     }
     if (command === "policy.publish") {
       if (data.adultOnly === false) throw new Error("Guardian-supported participation is not implemented; this workflow supports adults only");
@@ -15178,42 +17446,55 @@ async function runOperationsCommand(_root, { command, data }, context) {
       const policy = await tx.participationPolicy.findFirst({ where: { organizationId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
       if (!policy || policy.id !== data.policyId) throw new Error("Review the current participation policy before accepting");
       if (data.accepted !== true) throw new Error("Explicit acceptance or staff verification is required");
+      const healthConsent = data.healthConsent === true;
+      if (healthConsent && !disclosedHealthPurpose(policy)) throw new Error("This club does not collect optional health information");
       const expiresAt = command === "waiver.verify" ? dateValue(data.expiresAt) : null;
       if (expiresAt && expiresAt <= /* @__PURE__ */ new Date()) throw new Error("Verification expiry must be in the future");
       const documentReference = command === "waiver.verify" ? boundedText(data.documentReference, "External signed document reference", 1e3) : policy.documentReference;
       const key = operationKey(organizationId, `waiver:${member.id}:${policy.id}:${boundedText(data.requestKey, "Request key", 200)}`);
-      const requestHash = operationKey(organizationId, JSON.stringify({ memberId: member.id, policyId: policy.id, documentReference, expiresAt, healthConsent: data.healthConsent === true }));
+      const requestHash = operationKey(organizationId, JSON.stringify({ memberId: member.id, policyId: policy.id, documentReference, expiresAt, healthConsent }));
       const existing = await tx.participationEvidence.findUnique({ where: { key } });
       if (existing && existing.requestHash !== requestHash) throw new Error("This request key was already used for different waiver evidence");
-      return tx.participationEvidence.upsert({ where: { key }, update: {}, create: {
+      const acceptedAt = existing?.acceptedAt ?? /* @__PURE__ */ new Date();
+      const acceptance = await tx.participationEvidence.upsert({ where: { key }, update: {}, create: {
         organizationId,
         memberId: member.id,
         policyId: policy.id,
         key,
         requestHash,
         documentReference,
+        kind: ACCEPTANCE_EVIDENCE,
         verifiedBy: userId,
-        acceptedAt: /* @__PURE__ */ new Date(),
+        acceptedAt,
         expiresAt,
-        healthConsent: data.healthConsent === true
+        healthConsent: false
       } });
+      if (healthConsent) {
+        const healthKey = operationKey(organizationId, `waiver-health:${member.id}:${policy.id}:${String(data.requestKey)}`);
+        await tx.participationEvidence.upsert({ where: { key: healthKey }, update: {}, create: {
+          organizationId,
+          memberId: member.id,
+          policyId: policy.id,
+          key: healthKey,
+          requestHash,
+          documentReference,
+          kind: HEALTH_CONSENT_EVIDENCE,
+          verifiedBy: userId,
+          acceptedAt,
+          expiresAt,
+          healthConsent: true
+        } });
+      }
+      return acceptance;
     }
     if (command === "waiver.revoke") {
       const member = await memberInTenant(tx, organizationId, null, userId);
-      const row = await tx.participationEvidence.findFirst({ where: { id: String(data.id), organizationId, memberId: member.id } });
-      if (!row) throw new Error("Evidence not found");
-      if (row.revokedAt) return { id: row.id, reused: true };
-      if (row.healthConsent) await tx.operationsCase.upsert({ where: { key: operationKey(organizationId, `consent-withdrawal:${row.id}`) }, update: {}, create: {
-        organizationId,
-        memberId: member.id,
-        key: operationKey(organizationId, `consent-withdrawal:${row.id}`),
-        kind: "privacy",
-        summary: "Member withdrew optional health consent. Review purpose and retention; clear health fields when appropriate.",
-        status: "open",
-        openedBy: userId,
-        history: []
-      } });
-      return tx.participationEvidence.update({ where: { id: row.id }, data: { revokedAt: /* @__PURE__ */ new Date(), revocationReason: boundedText(data.reason, "Reason", 500) } });
+      const now = /* @__PURE__ */ new Date();
+      const reason = boundedText(data.reason, "Reason", 500);
+      const acceptances = await tx.participationEvidence.updateMany({ where: { organizationId, memberId: member.id, kind: ACCEPTANCE_EVIDENCE, healthConsent: false, revokedAt: null }, data: { revokedAt: now, revocationReason: reason } });
+      const health = await tx.participationEvidence.updateMany({ where: { organizationId, memberId: member.id, healthConsent: true, revokedAt: null }, data: { revokedAt: now, revocationReason: reason } });
+      if (health.count) await openConsentWithdrawalCase(tx, organizationId, member.id, userId, now);
+      return { withdrawnAcceptances: acceptances.count, withdrawnHealthConsents: health.count };
     }
     if (command === "privacy.request" || command === "case.open") {
       const allowed2 = ["incident", "inspection", "closure", "finance", "integration", "privacy"];
@@ -15259,7 +17540,8 @@ async function runOperationsCommand(_root, { command, data }, context) {
       const row = await tx.operationsCase.findFirst({ where: { id: String(data.id), organizationId, kind: "privacy", status: { not: "resolved" } } });
       if (!row?.memberId) throw new Error("Open member privacy case required");
       const note = boundedText(data.note, "Retention review and clearing reason");
-      await tx.member.update({ where: { id: row.memberId }, data: { healthNotes: { conditions: [], injuries: [], notes: "" }, emergencyContactName: "", emergencyContactPhone: "" } });
+      const cleared = await tx.member.update({ where: { id: row.memberId }, data: { healthNotes: { conditions: [], injuries: [], notes: "" }, emergencyContactName: "", emergencyContactPhone: "" } });
+      if (cleared.userId) await tx.user.updateMany({ where: { id: cleared.userId, organizationId }, data: { emergencyContact: "" } });
       return tx.operationsCase.update({ where: { id: row.id }, data: {
         status: "resolved",
         assignedTo: userId,
@@ -15288,7 +17570,7 @@ async function runOperationsCommand(_root, { command, data }, context) {
       if (await tx.integrationCredential.count({ where: { organizationId, revokedAt: null, expiresAt: { gt: /* @__PURE__ */ new Date() } } }) >= 100) throw new Error("Revoke an active credential before creating another; the tenant limit is 100");
       const scopes = Array.isArray(data.scopes) ? [...new Set(data.scopes)] : [];
       if (!scopes.length || scopes.some((s) => !["classes:read", "bookings:create"].includes(String(s)))) throw new Error("Choose supported integration scopes");
-      const token = `gym_${(0, import_node_crypto15.randomBytes)(32).toString("base64url")}`;
+      const token = `gym_${(0, import_node_crypto18.randomBytes)(32).toString("base64url")}`;
       const expiresAt = dateValue(data.expiresAt, true);
       if (expiresAt <= /* @__PURE__ */ new Date() || expiresAt.getTime() > Date.now() + 366 * 864e5) throw new Error("Credential expiry must be within one year");
       const row = await tx.integrationCredential.create({ data: {
@@ -15296,7 +17578,7 @@ async function runOperationsCommand(_root, { command, data }, context) {
         label: boundedText(data.label, "Label", 120),
         partner: boundedText(data.partner, "Partner", 120),
         scopes,
-        digest: (0, import_node_crypto15.createHash)("sha256").update(token).digest("hex"),
+        digest: (0, import_node_crypto18.createHash)("sha256").update(token).digest("hex"),
         expiresAt,
         createdBy: userId
       } });
@@ -15363,6 +17645,7 @@ init_operational_policy();
 init_operational_notices();
 init_prisma_result();
 init_classCapacity();
+init_current_actor();
 
 // features/keystone/mutations/trainerAppointmentPolicy.ts
 var ACTIVE_APPOINTMENT_STATUSES = ["scheduled", "confirmed", "checked_in"];
@@ -15375,7 +17658,8 @@ var APPOINTMENT_STATUSES = [
 var TRANSITIONS = {
   scheduled: ["confirmed", "checked_in", "completed", "cancelled", "no_show"],
   confirmed: ["checked_in", "completed", "cancelled", "no_show"],
-  checked_in: ["completed", "cancelled"],
+  // A started appointment can't be cancelled (its credit is closed); it ends completed.
+  checked_in: ["completed"],
   completed: [],
   cancelled: [],
   no_show: []
@@ -15454,12 +17738,12 @@ async function createAtomicTrainerAppointment(prisma, input, now = /* @__PURE__ 
       return { appointment: appointmentProjection(existing), reused: true };
     }
     if (startTime <= now || startTime.getTime() > now.getTime() + 366 * 864e5) throw new Error("Appointment must start within the next year");
-    const [instructor, location2, resource, pack, organization3] = await Promise.all([
+    const [instructor, location2, resource, pack, timeZone] = await Promise.all([
       tx.instructor.findUnique({ where: { id: input.instructorId } }),
       tx.location.findUnique({ where: { id: input.locationId } }),
       input.resourceId ? tx.gymResource.findUnique({ where: { id: input.resourceId } }) : null,
       tx.trainingPackage.findUnique({ where: { id: input.trainingPackageId } }),
-      tx.organization.findUnique({ where: { id: actor2.organizationId }, select: { timezone: true } })
+      businessTimeZone(tx, actor2.organizationId)
     ]);
     assertTrainingTenant(instructor, actor2, "Instructor");
     assertTrainingTenant(location2, actor2, "Location");
@@ -15472,7 +17756,7 @@ async function createAtomicTrainerAppointment(prisma, input, now = /* @__PURE__ 
     await assertParticipationAllowed(tx, actor2.organizationId, member.id, window.startTime, location2.id);
     const rows = await tx.trainerAvailability.findMany({ where: { organizationId: actor2.organizationId, instructorId: instructor.id, locationId: location2.id }, take: 500 });
     if (rows.length >= 500) throw new Error("Instructor availability requires operator review");
-    assertTrainerAvailable(rows, window.startTime, window.endTime, organization3?.timezone || "UTC");
+    assertTrainerAvailable(rows, window.startTime, window.endTime, timeZone);
     const overlap = buildActiveAppointmentOverlapWhere(window.startTime, window.endTime);
     const conflict = await tx.trainerAppointment.findFirst({ where: { organizationId: actor2.organizationId, OR: [{ instructorId: instructor.id }, { memberId: member.id }], ...overlap }, select: { id: true } });
     if (conflict) throw new Error("Instructor or member already has an overlapping appointment");
@@ -15494,8 +17778,8 @@ async function createAtomicTrainerAppointment(prisma, input, now = /* @__PURE__ 
     for (const instance of classes) {
       const schedule = instance.classSchedule;
       const minutes = (value) => {
-        const [h, m] = value.split(":").map(Number);
-        return h * 60 + m;
+        const [h, m2] = value.split(":").map(Number);
+        return h * 60 + m2;
       };
       const duration = schedule ? minutes(schedule.endTime) - minutes(schedule.startTime) : 480;
       const end = instance.endsAt ? new Date(instance.endsAt) : new Date(new Date(instance.date).getTime() + duration * 6e4);
@@ -15512,13 +17796,14 @@ async function createAtomicTrainerAppointment(prisma, input, now = /* @__PURE__ 
       const instance = booking.classInstance;
       if (!instance) continue;
       const minutes = (value) => {
-        const [h, m] = value.split(":").map(Number);
-        return h * 60 + m;
+        const [h, m2] = value.split(":").map(Number);
+        return h * 60 + m2;
       };
       const duration = instance.classSchedule ? minutes(instance.classSchedule.endTime) - minutes(instance.classSchedule.startTime) : 480;
       const end = instance.endsAt ? new Date(instance.endsAt) : new Date(new Date(instance.date).getTime() + duration * 6e4);
       if (end > window.startTime) throw new Error("Member already has an overlapping class booking");
     }
+    await lockActiveOrganization(tx, actor2.organizationId);
     const appointment = await tx.trainerAppointment.create({ data: { organizationId: actor2.organizationId, memberId: member.id, instructorId: instructor.id, locationId: location2.id, resourceId: resource?.id || null, trainingPackageId: pack.id, ...window, resourceStartsAt, resourceEndsAt, status: "confirmed", serviceName: pack.serviceName, priceAmount: Math.floor(pack.amount / pack.totalCredits), currencyCode: pack.currencyCode, memberNotes, idempotencyKey: key, requestHash: hashTrainerAppointmentRequest(request) } });
     await debitTrainingPackage(tx, pack, appointment.id, actor2);
     throwOnKeystonePrismaError3(await enqueueOperationalNotice(tx, { organizationId: actor2.organizationId, memberId: member.id, key: `training-booked:${appointment.id}`, kind: "training", message: `${pack.serviceName} is confirmed for ${window.startTime.toISOString()}. One credit was reserved from your training package. Cancel before the start to restore that credit.` }));
@@ -15538,7 +17823,7 @@ async function transitionAtomicTrainerAppointment(prisma, input, now = /* @__PUR
     await lockTransactionKey(tx, `member:${appointment.memberId}`);
     appointment.member = await tx.member.findUnique({ where: { id: appointment.memberId }, include: { user: { select: { id: true } } } });
     const owner = appointment.member?.user?.id === actor2.userId;
-    const instructor = actor2.isInstructor && appointment.instructor?.user?.id === actor2.userId;
+    const instructor = actor2.isInstructor && appointment.instructor?.isActive === true && appointment.instructor?.user?.id === actor2.userId;
     if (!actor2.canManageAppointments && !instructor && !(owner && input.status === "cancelled")) throw new Error("Appointment transition is not permitted");
     assertAppointmentTransition(appointment.status, input.status);
     if (appointment.status === input.status) return { appointment: appointmentProjection(appointment), reused: true };
@@ -15615,31 +17900,39 @@ async function rescheduleTrainerAppointment(_root, { data }, context) {
 // features/keystone/mutations/trainingWorkspace.ts
 init_operational_notices();
 init_prisma_result();
-async function getTrainingWorkspace(_root, { skip = 0 }, context) {
+async function getTrainingWorkspace(_root, { skip = 0, cardSkip = 0, availabilitySkip = 0, memberQuery }, context) {
   const actor2 = trainingActorFromContext(context);
-  if (!Number.isInteger(skip) || skip < 0 || skip > 1e4) throw new Error("Invalid page");
+  for (const value of [skip, cardSkip, availabilitySkip]) if (!Number.isInteger(value) || value < 0 || value > 1e5) throw new Error("Invalid page");
   const tx = guardKeystonePrismaResults(context.prisma);
   const member = await tx.member.findFirst({ where: { organizationId: actor2.organizationId, userId: actor2.userId }, select: { id: true } });
   const where = { organizationId: actor2.organizationId };
   const memberScope = { ...where, ...actor2.canManageAppointments ? {} : { memberId: member?.id || "__no_member__" } };
-  const [packages, appointments, instructors, locations, resources, availability, members, assignments, leads, organization3] = await Promise.all([
+  const ownInstructor = actor2.isInstructor ? await tx.instructor.findFirst({ where: { ...where, userId: actor2.userId, isActive: true }, select: { id: true, userId: true, user: { select: { name: true } } } }) : null;
+  const search = String(memberQuery || "").trim().slice(0, 100);
+  const memberSearch = search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { email: { contains: search, mode: "insensitive" } }] } : {};
+  const [packages, appointments, instructorRows, locationRows, resourceRows, availabilityRows, memberRows, assignments, leads, timeZone] = await Promise.all([
     tx.trainingPackage.findMany({ where: memberScope, orderBy: [{ purchasedAt: "desc" }, { id: "asc" }], take: 51, skip, select: { id: true, memberId: true, locationId: true, serviceName: true, durationMinutes: true, totalCredits: true, creditsRemaining: true, amount: true, currencyCode: true, expiresAt: true, status: true, terms: true, refundAmount: true } }),
-    tx.trainerAppointment.findMany({ where: { ...where, ...actor2.canManageAppointments ? {} : { OR: [{ memberId: member?.id || "__no_member__" }, ...actor2.isInstructor ? [{ instructor: { userId: actor2.userId } }] : []] } }, orderBy: [{ startTime: "desc" }, { id: "asc" }], take: 51, skip, include: { instructor: { select: { userId: true } } } }),
-    tx.instructor.findMany({ where: { ...where, isActive: true }, take: 100, orderBy: { id: "asc" }, select: { id: true, userId: true, user: { select: { name: true } } } }),
-    tx.location.findMany({ where: { ...where, isActive: true }, take: 100, orderBy: { id: "asc" }, select: { id: true, name: true } }),
-    tx.gymResource.findMany({ where: { ...where, isActive: true }, take: 100, orderBy: { id: "asc" }, select: { id: true, name: true, locationId: true } }),
-    tx.trainerAvailability.findMany({ where, take: 200, orderBy: [{ instructorId: "asc" }, { id: "asc" }], select: { id: true, instructorId: true, locationId: true, type: true, date: true, dayOfWeek: true, startTime: true, endTime: true, effectiveFrom: true, effectiveTo: true, isAvailable: true, reason: true } }),
-    // Managers choose from the directory; a coach only from members they already train.
-    actor2.canManageAppointments || actor2.canManagePrograms || actor2.canManagePeople ? tx.member.findMany({ where, take: 200, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, email: true } }) : actor2.isInstructor ? tx.member.findMany({ where: { ...where, status: "active", trainerAppointments: { some: { instructor: { userId: actor2.userId }, status: { in: ["confirmed", "checked_in", "completed"] } } } }, take: 200, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, email: true } }) : [],
-    tx.coachingAssignment.findMany({ where: { ...where, ...actor2.canManagePrograms ? {} : { OR: [{ memberId: member?.id || "__no_member__" }, ...actor2.isInstructor ? [{ instructor: { userId: actor2.userId } }] : []] } }, take: 51, skip, orderBy: [{ dueAt: "desc" }, { id: "asc" }], select: { id: true, title: true, instructions: true, dueAt: true, status: true, memberId: true, instructorId: true, memberEvidence: true, review: true, submittedAt: true, reviewedAt: true } }),
+    tx.trainerAppointment.findMany({ where: { ...where, ...actor2.canManageAppointments ? {} : { OR: [{ memberId: member?.id || "__no_member__" }, ...actor2.isInstructor ? [{ instructor: { userId: actor2.userId, isActive: true } }] : []] } }, orderBy: [{ startTime: "desc" }, { id: "asc" }], take: 51, skip, include: { instructor: { select: { userId: true } } } }),
+    tx.instructor.findMany({ where: { ...where, isActive: true }, take: 501, orderBy: { id: "asc" }, select: { id: true, userId: true, user: { select: { name: true } } } }),
+    tx.location.findMany({ where: { ...where, isActive: true }, take: 501, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true } }),
+    tx.gymResource.findMany({ where: { ...where, isActive: true }, take: 501, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, locationId: true } }),
+    tx.trainerAvailability.findMany({ where, skip: availabilitySkip, take: 201, orderBy: [{ instructorId: "asc" }, { id: "asc" }], select: { id: true, instructorId: true, locationId: true, type: true, date: true, dayOfWeek: true, startTime: true, endTime: true, effectiveFrom: true, effectiveTo: true, isAvailable: true, reason: true } }),
+    // Managers search the directory; a coach chooses only from members they already train.
+    actor2.canManageAppointments || actor2.canManagePrograms || actor2.canManagePeople ? tx.member.findMany({ where: { ...where, ...memberSearch }, take: 201, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, email: true } }) : ownInstructor ? tx.member.findMany({ where: { ...where, ...memberSearch, status: "active", trainerAppointments: { some: { instructorId: ownInstructor.id, status: { in: ["confirmed", "checked_in", "completed"] } } } }, take: 201, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, email: true } }) : [],
+    // Each assignment carries the member and coach it concerns, read through the assignment itself.
+    tx.coachingAssignment.findMany({ where: { ...where, ...actor2.canManagePrograms ? {} : { OR: [{ memberId: member?.id || "__no_member__" }, ...ownInstructor ? [{ instructorId: ownInstructor.id }] : []] } }, take: 51, skip, orderBy: [{ dueAt: "desc" }, { id: "asc" }], select: { id: true, title: true, instructions: true, dueAt: true, status: true, memberId: true, instructorId: true, memberEvidence: true, review: true, submittedAt: true, reviewedAt: true, member: { select: { name: true } }, instructor: { select: { user: { select: { name: true } } } } } }),
     actor2.canManagePeople ? tx.trainingLead.findMany({ where, take: 51, skip, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], select: { id: true, name: true, email: true, source: true, status: true, trialAt: true, nextActionAt: true, memberId: true, history: true } }) : [],
-    tx.organization.findUnique({ where: { id: actor2.organizationId }, select: { timezone: true } })
+    businessTimeZone(tx, actor2.organizationId)
   ]);
-  const cardPayments = actor2.canManageAppointments ? await counterAttemptsForWorkspace(tx, actor2.organizationId, "training") : [];
+  const cardPayments = actor2.canManageAppointments ? await counterAttemptsForWorkspace(tx, actor2.organizationId, "training", cardSkip) : { rows: [], hasMore: false, skip: 0 };
+  const instructors = instructorRows.slice(0, 500);
+  if (ownInstructor && !instructors.some((row) => row.id === ownInstructor.id)) instructors.push(ownInstructor);
+  const locations = locationRows.slice(0, 500), resources = resourceRows.slice(0, 500);
+  const availability = availabilityRows.slice(0, 200), members = memberRows.slice(0, 200);
   const peopleIds = [...new Set([...appointments.map((row) => row.memberId), ...packages.map((row) => row.memberId)].filter(Boolean))];
   const people = peopleIds.length && (actor2.canManageAppointments || actor2.isInstructor) ? await tx.member.findMany({ where: { ...where, id: { in: peopleIds } }, select: { id: true, name: true } }) : [];
   const personName = new Map(people.map((row) => [row.id, row.name]));
-  const ownCoach = new Map(instructors.map((row) => [row.id, row.userId === actor2.userId]));
+  const ownCoach = new Map(instructors.map((row) => [row.id, row.id === ownInstructor?.id]));
   const hasMore = appointments.length > 50 || packages.length > 50 || assignments.length > 50 || leads.length > 50;
   return {
     memberId: member?.id,
@@ -15647,10 +17940,17 @@ async function getTrainingWorkspace(_root, { skip = 0 }, context) {
     canManagePrograms: actor2.canManagePrograms,
     canManagePeople: actor2.canManagePeople,
     isInstructor: actor2.isInstructor,
-    ownInstructorId: instructors.find((row) => row.userId === actor2.userId)?.id ?? null,
-    timeZone: organization3?.timezone || "UTC",
+    ownInstructorId: ownInstructor?.id ?? null,
+    timeZone,
     skip,
     hasMore,
+    optionsTruncated: { instructors: instructorRows.length > 500, locations: locationRows.length > 500, resources: resourceRows.length > 500 },
+    availabilitySkip,
+    availabilityHasMore: availabilityRows.length > 200,
+    memberQuery: search,
+    membersHasMore: memberRows.length > 200,
+    cardPaymentsHasMore: cardPayments.hasMore,
+    cardSkip: cardPayments.skip,
     packages: packages.slice(0, 50).map((row) => ({ ...row, memberName: personName.get(row.memberId) ?? null })),
     appointments: appointments.slice(0, 50).map((row) => ({
       ...appointmentProjection(row),
@@ -15662,9 +17962,16 @@ async function getTrainingWorkspace(_root, { skip = 0 }, context) {
     resources,
     availability,
     members: members.map((row) => ({ id: row.id, name: row.name, email: row.email })),
-    assignments: assignments.slice(0, 50),
+    assignments: assignments.slice(0, 50).map((row) => ({
+      ...row,
+      member: void 0,
+      instructor: void 0,
+      memberName: row.member?.name || "Member",
+      memberRef: String(row.memberId).slice(-6),
+      coachName: row.instructor?.user?.name || "Coach"
+    })),
     leads: leads.slice(0, 50),
-    cardPayments
+    cardPayments: cardPayments.rows
   };
 }
 async function saveTrainerAvailabilityAtomic(prisma, data, actor2) {
@@ -15702,6 +18009,8 @@ async function saveTrainerAvailabilityAtomic(prisma, data, actor2) {
   return prisma.$transaction(async (tx) => {
     await lockParticipationPolicy(tx, actor2.organizationId);
     await lockTransactionKey(tx, `gym-scheduling:${actor2.organizationId}`);
+    const confirmed = await confirmedIntentResult(tx, actor2.organizationId, data.requestKey);
+    if (confirmed?.availabilityId) return { id: confirmed.availabilityId, reused: true };
     const instructor = await tx.instructor.findUnique({ where: { id: data.instructorId } });
     const location2 = await tx.location.findUnique({ where: { id: data.locationId } });
     assertTrainingTenant(instructor, actor2, "Instructor");
@@ -15719,9 +18028,10 @@ async function saveTrainerAvailabilityAtomic(prisma, data, actor2) {
     const next = [...rows.filter((row2) => row2.id !== data.id), values];
     const appointments = await tx.trainerAppointment.findMany({ where: { organizationId: actor2.organizationId, instructorId: instructor.id, locationId: location2.id, endTime: { gt: /* @__PURE__ */ new Date() }, status: { in: ["scheduled", "confirmed", "checked_in"] } }, take: 1e3 });
     if (appointments.length >= 1e3) throw new Error("Upcoming appointments require review before availability changes");
-    const organization3 = await tx.organization.findUnique({ where: { id: actor2.organizationId } });
-    for (const appointment of appointments) assertTrainerAvailable(next, new Date(appointment.startTime), new Date(appointment.endTime), organization3.timezone);
+    const timeZone = await businessTimeZone(tx, actor2.organizationId);
+    for (const appointment of appointments) assertTrainerAvailable(next, new Date(appointment.startTime), new Date(appointment.endTime), timeZone);
     const row = data.id ? await tx.trainerAvailability.update({ where: { id: data.id }, data: values }) : await tx.trainerAvailability.create({ data: { ...values, organizationId: actor2.organizationId } });
+    await recordIntentResult(tx, actor2.organizationId, data.requestKey, { availabilityId: row.id });
     return { id: row.id };
   });
 }
@@ -15759,28 +18069,28 @@ async function assignCoachingAtomic(prisma, data, actor2) {
 async function transitionCoachingAtomic(prisma, data, actor2) {
   prisma = guardKeystonePrismaResults(prisma);
   assertTrainingActor(actor2);
-  const text45 = trainingText(data.text, "Progress or review", 8e3);
+  const text47 = trainingText(data.text, "Progress or review", 8e3);
   return prisma.$transaction(async (tx) => {
     await lockTransactionKey(tx, `coaching-assignment:${data.id}`);
     const row = await tx.coachingAssignment.findUnique({ where: { id: data.id }, include: { member: true, instructor: true } });
     assertTrainingTenant(row, actor2, "Coaching assignment");
     const own = row.member?.userId === actor2.userId;
-    const coach = actor2.canManagePrograms || actor2.isInstructor && row.instructor?.userId === actor2.userId;
+    const coach = actor2.canManagePrograms || actor2.isInstructor && row.instructor?.isActive === true && row.instructor?.userId === actor2.userId;
     if (data.status === "submitted") {
       if (!own) throw new Error("Only the assigned member can submit progress");
-      if (row.status === "submitted" && row.memberEvidence === text45) return { id: row.id, reused: true };
-      if (row.status !== "assigned") throw new Error("Only an assigned task can be submitted");
-      const log = await tx.workoutLog.create({ data: { organizationId: actor2.organizationId, memberId: row.memberId, title: row.title, date: /* @__PURE__ */ new Date(), notes: text45 } });
-      await tx.coachingAssignment.update({ where: { id: row.id }, data: { status: "submitted", memberEvidence: text45, submittedAt: /* @__PURE__ */ new Date(), workoutLogId: log.id } });
+      if (row.status === "submitted" && row.memberEvidence === text47) return { id: row.id, reused: true };
+      if (row.status === "submitted" || !canTransition(COACHING_MACHINE, row.status, "submitted")) throw new Error("Only an assigned task can be submitted");
+      const log = await tx.workoutLog.create({ data: { organizationId: actor2.organizationId, memberId: row.memberId, title: row.title, date: /* @__PURE__ */ new Date(), notes: text47 } });
+      await tx.coachingAssignment.update({ where: { id: row.id }, data: { status: "submitted", memberEvidence: text47, submittedAt: /* @__PURE__ */ new Date(), workoutLogId: log.id } });
     } else if (data.status === "reviewed") {
       if (!coach) throw new Error("Only the assigned coach or program manager can review");
-      if (row.status === "reviewed" && row.review === text45) return { id: row.id, reused: true };
-      if (row.status !== "submitted") throw new Error("Progress must be submitted before review");
-      await tx.coachingAssignment.update({ where: { id: row.id }, data: { status: "reviewed", review: text45, reviewedAt: /* @__PURE__ */ new Date() } });
+      if (row.status === "reviewed" && row.review === text47) return { id: row.id, reused: true };
+      if (row.status === "reviewed" || !canTransition(COACHING_MACHINE, row.status, "reviewed")) throw new Error("Progress must be submitted before review");
+      await tx.coachingAssignment.update({ where: { id: row.id }, data: { status: "reviewed", review: text47, reviewedAt: /* @__PURE__ */ new Date() } });
       await enqueueOperationalNotice(tx, { organizationId: actor2.organizationId, memberId: row.memberId, key: `coaching-reviewed:${row.id}`, kind: "coaching", message: `Your coach reviewed ${row.title}. Open Account \u2192 Training for feedback.` });
     } else if (data.status === "cancelled") {
-      if (!coach || row.status !== "assigned") throw new Error("Only unsubmitted coaching work can be cancelled by its coach");
-      await tx.coachingAssignment.update({ where: { id: row.id }, data: { status: "cancelled", review: text45 } });
+      if (!coach || row.status === "cancelled" || !canTransition(COACHING_MACHINE, row.status, "cancelled")) throw new Error("Only unsubmitted coaching work can be cancelled by its coach");
+      await tx.coachingAssignment.update({ where: { id: row.id }, data: { status: "cancelled", review: text47 } });
     } else throw new Error("Unknown coaching transition");
     return { id: row.id };
   });
@@ -15791,15 +18101,14 @@ async function saveTrainingLeadAtomic(prisma, data, actor2) {
   if (!actor2.canManagePeople) throw new Error("People management permission required");
   const email = trainingText(data.email, "Email", 254).toLowerCase(), name = trainingText(data.name, "Name", 200), note = trainingText(data.note, "Follow-up note", 2e3);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Email is invalid");
-  const allowed2 = { new: ["contacted", "closed"], contacted: ["trial_booked", "converted", "closed"], trial_booked: ["trial_attended", "contacted", "closed"], trial_attended: ["converted", "contacted", "closed"], converted: [], closed: [] };
-  if (!Object.hasOwn(allowed2, data.status)) throw new Error("Unknown lead status");
+  if (!Object.hasOwn(TRAINING_LEAD_MACHINE, data.status)) throw new Error("Unknown lead status");
   const trialAt = data.trialAt ? new Date(data.trialAt) : null, nextActionAt = data.nextActionAt ? new Date(data.nextActionAt) : null;
   if (trialAt && !Number.isFinite(trialAt.getTime()) || nextActionAt && !Number.isFinite(nextActionAt.getTime())) throw new Error("Follow-up date is invalid");
   return prisma.$transaction(async (tx) => {
     await lockTransactionKey(tx, `training-lead:${actor2.organizationId}:${email}`);
     const row = await tx.trainingLead.findFirst({ where: { organizationId: actor2.organizationId, email } });
     if (!row && data.status !== "new") throw new Error("New inquiries must begin as new");
-    if (row && row.status !== data.status && !allowed2[row.status]?.includes(data.status)) throw new Error("Lead transition is not allowed");
+    if (row && !canTransition(TRAINING_LEAD_MACHINE, row.status, data.status)) throw new Error("Lead transition is not allowed");
     if (data.status === "trial_booked" && (!trialAt || trialAt <= /* @__PURE__ */ new Date())) throw new Error("Choose a future trial appointment");
     if (data.status === "trial_attended" && (!row?.trialAt || new Date(row.trialAt) > /* @__PURE__ */ new Date())) throw new Error("Trial attendance cannot precede its appointment");
     if (data.status === "converted") {
@@ -15823,7 +18132,7 @@ async function saveTrainingLeadAtomic(prisma, data, actor2) {
   });
 }
 var trainingWorkspaceTypeDefs = `
-  extend type Query { trainingWorkspace(skip: Int = 0): JSON! }
+  extend type Query { trainingWorkspace(skip: Int = 0, cardSkip: Int = 0, availabilitySkip: Int = 0, memberQuery: String): JSON! }
   extend type Mutation {
     bookTrainerAppointment(data: JSON!): JSON!
     rescheduleTrainerAppointment(data: JSON!): JSON!
@@ -15863,7 +18172,7 @@ async function saveTrainingLead(_r, { data }, ctx) {
 }
 
 // features/keystone/mutations/portableData.ts
-var import_node_crypto16 = require("node:crypto");
+var import_node_crypto19 = require("node:crypto");
 init_classCapacity();
 init_prisma_result();
 function normalizeMemberImportRows(value) {
@@ -15888,8 +18197,8 @@ async function importMemberContacts(_root, args, context) {
   const prisma = guardKeystonePrismaResults(context.prisma);
   const results = [];
   for (const row of rows) {
-    const key = (0, import_node_crypto16.createHash)("sha256").update(JSON.stringify([organizationId, source, row.externalId])).digest("hex");
-    const payloadHash = (0, import_node_crypto16.createHash)("sha256").update(JSON.stringify(row)).digest("hex");
+    const key = (0, import_node_crypto19.createHash)("sha256").update(JSON.stringify([organizationId, source, row.externalId])).digest("hex");
+    const payloadHash = (0, import_node_crypto19.createHash)("sha256").update(JSON.stringify(row)).digest("hex");
     const existing = await prisma.memberImportRecord.findUnique({ where: { key } });
     if (existing && existing.payloadHash !== payloadHash) {
       results.push({ externalId: row.externalId, status: "conflict", message: "External ID was previously used for different contact details; review the existing record" });
@@ -15917,14 +18226,14 @@ async function importMemberContacts(_root, args, context) {
       continue;
     }
     try {
-      const record = await prisma.$transaction(async (tx) => {
+      const record2 = await prisma.$transaction(async (tx) => {
         await lockTransactionKey(tx, `member-import:${key}`);
         const current = await tx.memberImportRecord.findUnique({ where: { key } });
         if (current && current.payloadHash !== payloadHash) throw new Error("Import identity changed concurrently");
         return current || tx.memberImportRecord.create({ data: { organizationId, key, source, externalId: row.externalId, payloadHash, status: "processing" } });
       });
       const member = await inviteMember(null, { data: row }, context);
-      await prisma.memberImportRecord.update({ where: { id: record.id }, data: { memberId: member.memberId, status: "completed", completedAt: /* @__PURE__ */ new Date(), lastError: "" } });
+      await prisma.memberImportRecord.update({ where: { id: record2.id }, data: { memberId: member.memberId, status: "completed", completedAt: /* @__PURE__ */ new Date(), lastError: "" } });
       results.push({ externalId: row.externalId, status: "imported", memberId: member.memberId });
     } catch {
       await prisma.memberImportRecord.updateMany({ where: { key, payloadHash, status: { not: "completed" } }, data: { status: "failed", lastError: "Import could not complete; review the identity and retry the same source and external ID" } });
@@ -15935,8 +18244,11 @@ async function importMemberContacts(_root, args, context) {
 }
 
 // features/keystone/mutations/retailLifecycle.ts
+var import_node_crypto20 = __toESM(require("node:crypto"));
 init_prisma_result();
+init_operational_notices();
 init_classCapacity();
+init_current_actor();
 function replay(row, hash) {
   if (row.requestHash !== hash) throw new Error("Request key was already used with different details");
   return { id: row.id, reused: true };
@@ -15963,40 +18275,97 @@ async function saveRetailItemAtomic(prisma, data, actor2) {
     return { id: item.id, reused: false };
   });
 }
+var QUOTE_MINUTES = 30;
+function quoteSecret() {
+  const secret = process.env.SESSION_SECRET || "";
+  if (secret.length < 32) throw new Error("Price review is unavailable on this deployment");
+  return secret;
+}
+var quoteMac = (body) => import_node_crypto20.default.createHmac("sha256", quoteSecret()).update(`retail-quote:v1:${body}`).digest("base64url");
+function readQuote(token, actor2, locationId) {
+  const [body, mac] = typeof token === "string" ? token.split(".") : [];
+  if (!body || !mac || body.length > 2e4) throw new Error("Review the sale's prices before recording it");
+  const expected = Buffer.from(quoteMac(body)), supplied = Buffer.from(mac);
+  if (expected.length !== supplied.length || !import_node_crypto20.default.timingSafeEqual(expected, supplied)) throw new Error("Review the sale's prices before recording it");
+  const quote = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  if (quote.v !== 1 || quote.organizationId !== actor2.organizationId || quote.userId !== actor2.userId || quote.locationId !== locationId) throw new Error("This price review belongs to another sale; review the prices again");
+  return quote;
+}
+async function quoteRetailSaleAtomic(prisma, data, actor2, now = /* @__PURE__ */ new Date()) {
+  assertRetailActor(actor2);
+  const locationId = trainingText(data?.locationId, "Location", 200);
+  const lines = requestLines(data?.lines).map(({ itemId, quantity }) => ({ itemId, quantity }));
+  const tx = guardKeystonePrismaResults(prisma);
+  const site = await tx.location.findUnique({ where: { id: locationId } });
+  sameTenant(site, actor2, "Location");
+  if (!site.isActive) throw new Error("This location is closed for sales");
+  const quoted = [];
+  let totalAmount = 0;
+  for (const line of lines) {
+    const item = await tx.retailItem.findUnique({ where: { id: line.itemId } });
+    sameTenant(item, actor2, "Retail item");
+    if (item.locationId !== locationId || !item.isActive || item.currencyCode !== "USD") throw new Error(`${item.name} isn't for sale at this location`);
+    if (item.stockOnHand < line.quantity) throw new Error(`Only ${item.stockOnHand} of ${item.sku} in stock`);
+    const lineAmount = item.unitAmount * line.quantity;
+    totalAmount += lineAmount;
+    if (!Number.isSafeInteger(totalAmount) || totalAmount > 2e9) throw new Error("Sale amount exceeds supported bounds");
+    quoted.push({ itemId: item.id, sku: item.sku, name: item.name, unitAmount: item.unitAmount, quantity: line.quantity, lineAmount });
+  }
+  const quote = { v: 1, organizationId: actor2.organizationId, userId: actor2.userId, locationId, lines: quoted, totalAmount, currencyCode: "USD", issuedAt: now.toISOString(), expiresAt: new Date(now.getTime() + QUOTE_MINUTES * 6e4).toISOString() };
+  const body = Buffer.from(JSON.stringify(quote)).toString("base64url");
+  return { quoteToken: `${body}.${quoteMac(body)}`, lines: quoted, totalAmount, currencyCode: "USD", expiresAt: quote.expiresAt };
+}
 async function sellRetailAtomic(prisma, data, actor2, now = /* @__PURE__ */ new Date()) {
   assertRetailActor(actor2);
-  const lines = requestLines(data.lines).map(({ itemId, quantity }) => ({ itemId, quantity }));
   const requestKey = trainingText(data.requestKey, "Request key", 200), tender = trainingText(data.tender, "Tender", 20);
   if (!["cash", "external"].includes(tender)) throw new Error("Tender must be cash received or an externally settled payment; use Take card payment for cards");
   const paymentReference = trainingText(data.paymentReference || "", "External settled payment reference", 200, tender !== "cash");
   const settledAmount = trainingInteger(data.settledAmount, "Confirmed received amount in cents", 0, 2e9);
-  const requestHash = hashTrainerAppointmentRequest({ locationId: data.locationId, lines, tender, paymentReference, settledAmount });
+  const locationId = trainingText(data.locationId, "Location", 200);
+  const quote = readQuote(data.quoteToken, actor2, locationId);
+  if (settledAmount !== quote.totalAmount) throw new Error("The amount received must be the reviewed total");
+  const requested = requestLines(data.lines).map(({ itemId, quantity }) => `${itemId}:${quantity}`).sort().join(",");
+  if (requested !== quote.lines.map((line) => `${line.itemId}:${line.quantity}`).sort().join(",")) throw new Error("The cart changed after its prices were reviewed; review it again");
+  const requestHash = hashTrainerAppointmentRequest({ locationId, lines: quote.lines, tender, paymentReference, settledAmount, quoteIssuedAt: quote.issuedAt });
+  const reconciliationKey = `retail-received:${requestKey}`;
   return withKeystonePrismaTransaction(prisma, async (tx) => {
     await lockTransactionKey(tx, `retail-request:${actor2.organizationId}:${requestKey}`);
     if (tender !== "cash") await lockTransactionKey(tx, `retail-payment:${actor2.organizationId}:${paymentReference}`);
-    await siteLock(tx, actor2, data.locationId);
+    await siteLock(tx, actor2, locationId);
     const existing = await tx.retailSale.findFirst({ where: { organizationId: actor2.organizationId, requestKey } });
     if (existing) return replay(existing, requestHash);
     if (tender !== "cash" && await tx.retailSale.findFirst({ where: { organizationId: actor2.organizationId, paymentReference, tender } })) throw new Error("This payment is already recorded on another sale");
-    if (await tx.retailClose.findFirst({ where: { organizationId: actor2.organizationId, locationId: data.locationId, periodStart: { lte: now }, periodEnd: { gt: now } } })) throw new Error("The receipt instant is already closed; retry with a current receipt");
-    const snapshot = [];
-    let totalAmount = 0;
-    for (const line of lines) {
+    let problem = new Date(quote.expiresAt) <= now ? "the reviewed prices expired before the sale was recorded" : null;
+    if (!problem && await tx.retailClose.findFirst({ where: { organizationId: actor2.organizationId, locationId, periodStart: { lte: now }, periodEnd: { gt: now } } })) problem = "the cash drawer period for this moment is already closed";
+    const items = /* @__PURE__ */ new Map();
+    for (const line of quote.lines) {
+      if (problem) break;
       const item = await tx.retailItem.findUnique({ where: { id: line.itemId } });
-      sameTenant(item, actor2, "Retail item");
-      if (item.locationId !== data.locationId || !item.isActive || item.currencyCode !== "USD") throw new Error("Item is unavailable at this site/currency");
-      if (item.stockOnHand < line.quantity) throw new Error(`Insufficient stock for ${item.sku}`);
-      const lineAmount = item.unitAmount * line.quantity;
-      totalAmount += lineAmount;
-      if (!Number.isSafeInteger(totalAmount) || totalAmount > 2e9) throw new Error("Sale amount exceeds supported bounds");
-      snapshot.push({ itemId: item.id, sku: item.sku, name: item.name, unitAmount: item.unitAmount, quantity: line.quantity, lineAmount, currencyCode: "USD", priceBasis: "operator-entered gross amount; tax accounting external" });
+      if (!item || item.organizationId !== actor2.organizationId || item.locationId !== locationId || !item.isActive) problem = `${line.sku} is no longer for sale here`;
+      else if (item.stockOnHand < line.quantity) problem = `only ${item.stockOnHand} of ${line.sku} is in stock now`;
+      else items.set(item.id, item);
+    }
+    if (problem) {
+      const received = `${(settledAmount / 100).toFixed(2)} USD ${tender === "cash" ? "in cash" : `by external payment ${paymentReference}`}`;
+      const exception = await createFinanceException(tx, {
+        organizationId: actor2.organizationId,
+        key: reconciliationKey,
+        kind: "retail-payment-received",
+        reference: paymentReference || requestKey,
+        summary: `Received ${received} for ${quote.lines.map((line) => `${line.quantity} \xD7 ${line.sku}`).join(", ")} at the reviewed prices, but ${problem}. Record the sale once resolved, or refund the customer through the original tender.`
+      });
+      return { id: exception.id, reconciliation: true, reason: problem, totalAmount: settledAmount, reused: false };
+    }
+    await lockActiveOrganization(tx, actor2.organizationId);
+    const snapshot = quote.lines.map((line) => ({ ...line, currencyCode: "USD", priceBasis: "reviewed quote accepted before payment; operator-entered gross amount; tax accounting external" }));
+    for (const line of quote.lines) {
+      const item = items.get(line.itemId);
       const balanceAfter = item.stockOnHand - line.quantity;
       await tx.retailItem.update({ where: { id: item.id }, data: { stockOnHand: balanceAfter } });
-      await tx.retailStockEntry.create({ data: { organizationId: actor2.organizationId, locationId: data.locationId, itemId: item.id, eventKey: `sale:${requestKey}:${item.id}`, quantity: -line.quantity, balanceAfter, reason: `Retail sale ${requestKey}`, recordedById: actor2.userId } });
+      await tx.retailStockEntry.create({ data: { organizationId: actor2.organizationId, locationId, itemId: item.id, eventKey: `sale:${requestKey}:${item.id}`, quantity: -line.quantity, balanceAfter, reason: `Retail sale ${requestKey}`, recordedById: actor2.userId } });
     }
-    if (totalAmount !== settledAmount) throw new Error("Received amount does not match current server prices; review before recording");
-    const sale = await tx.retailSale.create({ data: { organizationId: actor2.organizationId, locationId: data.locationId, requestKey, requestHash, lines: snapshot, totalAmount, currencyCode: "USD", tender, paymentReference, soldAt: now, recordedById: actor2.userId } });
-    return { id: sale.id, totalAmount, lines: snapshot, reused: false };
+    const sale = await tx.retailSale.create({ data: { organizationId: actor2.organizationId, locationId, requestKey, requestHash, lines: snapshot, totalAmount: quote.totalAmount, currencyCode: "USD", tender, paymentReference, soldAt: now, recordedById: actor2.userId } });
+    return { id: sale.id, totalAmount: sale.totalAmount, lines: snapshot, reused: false };
   });
 }
 async function returnRetailAtomic(prisma, data, actor2, now = /* @__PURE__ */ new Date()) {
@@ -16068,25 +18437,59 @@ async function closeRetailAtomic(prisma, data, actor2, now = /* @__PURE__ */ new
     return { id: row.id, expectedAmount, countedAmount, varianceAmount };
   });
 }
-async function retailWorkspace(_r, { skip = 0 }, context) {
+async function retailWorkspace(_r, { skip = 0, cardSkip = 0, itemSkip = 0, itemSite }, context) {
   const actor2 = retailActorFromContext(context);
-  if (!Number.isInteger(skip) || skip < 0 || skip > 1e4) throw new Error("Invalid page");
+  for (const value of [skip, cardSkip, itemSkip]) if (!Number.isInteger(value) || value < 0 || value > 1e5) throw new Error("Invalid page");
   const tx = guardKeystonePrismaResults(context.prisma), where = { organizationId: actor2.organizationId };
   const page = { take: 51, skip };
-  const [items, sales, returns, closes, locations, stockEntries, cardPayments] = await Promise.all([
-    tx.retailItem.findMany({ where, take: 100, orderBy: [{ sku: "asc" }, { id: "asc" }], select: { id: true, locationId: true, sku: true, name: true, unitAmount: true, currencyCode: true, stockOnHand: true, isActive: true } }),
+  const [itemRows, sales, returns, closes, locationRows, stockEntries, cardPayments] = await Promise.all([
+    // The catalog list is filtered by site in the query, then paged, so a later site's items are reachable.
+    tx.retailItem.findMany({ where: { ...where, ...itemSite ? { locationId: String(itemSite) } : {} }, skip: itemSkip, take: 101, orderBy: [{ sku: "asc" }, { id: "asc" }], select: { id: true, locationId: true, sku: true, name: true, unitAmount: true, currencyCode: true, stockOnHand: true, isActive: true } }),
     tx.retailSale.findMany({ where, ...page, orderBy: [{ soldAt: "desc" }, { id: "asc" }], select: { id: true, locationId: true, lines: true, totalAmount: true, tender: true, paymentReference: true, soldAt: true } }),
     tx.retailReturn.findMany({ where, ...page, orderBy: [{ returnedAt: "desc" }, { id: "asc" }], select: { id: true, saleId: true, locationId: true, lines: true, refundAmount: true, tender: true, refundReference: true, reason: true, returnedAt: true } }),
     tx.retailClose.findMany({ where, ...page, orderBy: [{ periodEnd: "desc" }, { id: "asc" }], select: { id: true, locationId: true, periodStart: true, periodEnd: true, openingAmount: true, expectedAmount: true, countedAmount: true, varianceAmount: true, reason: true, evidence: true } }),
-    tx.location.findMany({ where, take: 100, select: { id: true, name: true, isActive: true } }),
-    tx.retailStockEntry.findMany({ where, ...page, orderBy: [{ createdAt: "desc" }, { id: "asc" }], select: { id: true, itemId: true, quantity: true, balanceAfter: true, reason: true, createdAt: true } }),
-    counterAttemptsForWorkspace(tx, actor2.organizationId, "retail")
+    tx.location.findMany({ where, take: 501, orderBy: [{ name: "asc" }, { id: "asc" }], select: { id: true, name: true, isActive: true } }),
+    tx.retailStockEntry.findMany({ where, ...page, orderBy: [{ createdAt: "desc" }, { id: "asc" }], select: { id: true, itemId: true, quantity: true, balanceAfter: true, reason: true, createdAt: true, item: { select: { sku: true } } } }),
+    counterAttemptsForWorkspace(tx, actor2.organizationId, "retail", cardSkip)
   ]);
   const hasMore = [sales, returns, closes, stockEntries].some((rows) => rows.length > 50);
   const trim = (rows) => rows.slice(0, 50);
-  return { items, sales: trim(sales), returns: trim(returns), closes: trim(closes), locations, stockEntries: trim(stockEntries), cardPayments, skip, hasMore };
+  return {
+    items: itemRows.slice(0, 100),
+    itemsHasMore: itemRows.length > 100,
+    itemSkip,
+    itemSite: itemSite || null,
+    sales: trim(sales),
+    returns: trim(returns),
+    closes: trim(closes),
+    locations: locationRows.slice(0, 500),
+    locationsTruncated: locationRows.length > 500,
+    stockEntries: trim(stockEntries),
+    cardPayments: cardPayments.rows,
+    cardPaymentsHasMore: cardPayments.hasMore,
+    cardSkip: cardPayments.skip,
+    skip,
+    hasMore
+  };
 }
-var retailTypeDefs = `extend type Query { retailWorkspace(skip: Int = 0): JSON! } extend type Mutation { saveRetailItem(data: JSON!): JSON! sellRetail(data: JSON!): JSON! returnRetail(data: JSON!): JSON! closeRetail(data: JSON!): JSON! }`;
+var retailTypeDefs = `extend type Query { retailWorkspace(skip: Int = 0, cardSkip: Int = 0, itemSkip: Int = 0, itemSite: ID): JSON! retailSaleItems(locationId: ID!, q: String, skip: Int = 0): JSON! } extend type Mutation { saveRetailItem(data: JSON!): JSON! quoteRetailSale(data: JSON!): JSON! sellRetail(data: JSON!): JSON! returnRetail(data: JSON!): JSON! closeRetail(data: JSON!): JSON! }`;
+async function quoteRetailSale(_r, { data }, context) {
+  return quoteRetailSaleAtomic(context.prisma, data, retailActorFromContext(context));
+}
+async function retailSaleItems(_r, { locationId, q, skip = 0 }, context) {
+  const actor2 = retailActorFromContext(context);
+  if (!Number.isInteger(skip) || skip < 0 || skip > 1e5) throw new Error("Invalid page");
+  const tx = guardKeystonePrismaResults(context.prisma);
+  const search = String(q || "").trim().slice(0, 100);
+  const rows = await tx.retailItem.findMany({
+    where: { organizationId: actor2.organizationId, locationId: String(locationId), isActive: true, ...search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { sku: { contains: search, mode: "insensitive" } }] } : {} },
+    orderBy: [{ sku: "asc" }, { id: "asc" }],
+    skip,
+    take: 101,
+    select: { id: true, locationId: true, sku: true, name: true, unitAmount: true, currencyCode: true, stockOnHand: true, isActive: true }
+  });
+  return { items: rows.slice(0, 100), hasMore: rows.length > 100, skip };
+}
 async function saveRetailItem(_r, { data }, context) {
   return saveRetailItemAtomic(context.prisma, data, retailActorFromContext(context));
 }
@@ -16107,28 +18510,65 @@ async function closeRetail(_r, { data }, context) {
   return closeRetailAtomic(context.prisma, data, retailActorFromContext(context));
 }
 
+// features/keystone/mutations/coachProfiles.ts
+init_prisma_result();
+var PAGE = 25;
+async function eligibleCoachAccounts(_root, { q, skip = 0 }, context) {
+  const actor2 = await currentRoleActor(context);
+  if (!actor2.canManageAllRecords) throw new Error("Coach management permission required");
+  const offset = Number.isSafeInteger(skip) && skip > 0 ? Math.min(skip, 1e6) : 0;
+  const search = String(q || "").trim().slice(0, 100);
+  const prisma = guardKeystonePrismaResults(context.prisma);
+  const linked = await prisma.instructor.findMany({ where: { organizationId: actor2.organizationId, userId: { not: null } }, select: { userId: true } });
+  const rows = await prisma.user.findMany({
+    where: {
+      organizationId: actor2.organizationId,
+      role: { isInstructor: true, organizationId: actor2.organizationId },
+      id: { notIn: linked.map((row) => row.userId).filter(Boolean) },
+      ...search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { email: { contains: search, mode: "insensitive" } }] } : {}
+    },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    skip: offset,
+    take: PAGE + 1,
+    select: { id: true, name: true, email: true }
+  });
+  return { accounts: rows.slice(0, PAGE), hasMore: rows.length > PAGE, skip: offset, pageSize: PAGE, q: search };
+}
+async function createCoachProfile(_root, { userId }, context) {
+  const actor2 = await currentRoleActor(context);
+  if (!actor2.canManageAllRecords) throw new Error("Coach management permission required");
+  const created = await context.db.Instructor.createOne({
+    data: { user: { connect: { id: String(userId) } }, organization: { connect: { id: actor2.organizationId } }, isActive: true }
+  });
+  return { id: created.id };
+}
+var coachProfileTypeDefs = `
+  extend type Query { eligibleCoachAccounts(q: String, skip: Int): JSON! }
+  extend type Mutation { createCoachProfile(userId: ID!): JSON! }
+`;
+
 // features/keystone/mutations/index.ts
-var graphql7 = String.raw;
+var graphql10 = String.raw;
 function extendGraphqlSchema(baseSchema) {
   return (0, import_schema.mergeSchemas)({
     schemas: [baseSchema],
-    typeDefs: [graphql7`
+    typeDefs: [graphql10`
       type Query {
         gymSettingsEditor: JSON!
-        operationsWorkspace(caseAfterId: ID): JSON!
-        participationWorkspace: JSON!
+        operationsWorkspace(caseAfterId: ID, noticeSkip: Int, eventSkip: Int, resourceSkip: Int, credentialScope: String, credentialSkip: Int, memberQuery: String): JSON!
+        participationWorkspace(evidenceAfterId: ID): JSON!
         exportOperatingData(kind: String!, from: String!, to: String!): JSON!
         redirectToInit: Boolean
         checkClassAvailability(classInstanceId: ID!): ClassAvailabilityResult!
         getBillingStats: BillingStats!
-        billingWorkspace(q: String, recoverySkip: Int, failedSkip: Int, planSkip: Int, refundSkip: Int): JSON!
+        billingWorkspace(q: String, recoverySkip: Int, failedSkip: Int, planSkip: Int, refundSkip: Int, tierQuery: String, tierSkip: Int, pinnedTierId: ID): JSON!
         memberProfile: MemberProfileProjection!
         memberCheckInCode: MemberCheckInCode!
+        myUpcomingBookingPage(status: String!, skip: Int = 0, take: Int = 20, before: DateTime): JSON!
         schedulingWorkspace(start: DateTime!, end: DateTime!, userId: ID): JSON!
         instructorAccount: JSON
-        instructorClaimQueue: JSON!
         rosterSessions(q: String, state: String, from: String, to: String, sort: String, skip: Int): JSON!
-        rosterDetail(classInstanceId: ID!): JSON
+        rosterDetail(classInstanceId: ID!, confirmedSkip: Int, waitlistSkip: Int, otherSkip: Int): JSON
         frontDeskWorkspace(query: String, visitQuery: String, visitLocationId: ID, visitOrder: String, visitSkip: Int): JSON!
         reportsDashboard: JSON!
         kioskSearchMembers(query: String!, organizationId: ID!, credential: String!): [KioskSearchMember!]!
@@ -16143,10 +18583,11 @@ function extendGraphqlSchema(baseSchema) {
           limit: Int
           skip: Int
         ): JSON!
+        discoveryClassCalendar(credential: String!, partner: String, from: String, to: String, locationId: ID): String!
 
         publicGymSettings: PublicGymSettings
         storefrontOrganization: ID
-        publicGymClassTypes(limit: Int = 50, skip: Int = 0): [PublicGymClassType!]!
+        publicGymClassTypes(limit: Int = 50, skip: Int = 0, after: ID, q: String, difficulty: String, duration: String): [PublicGymClassType!]!
         publicGymClassType(id: ID!): PublicGymClassType
         publicGymSchedules(dayOfWeek: String, instructorId: ID, limit: Int = 50): [PublicGymSchedule!]!
         publicGymSchedule(id: ID!): PublicGymSchedule
@@ -16157,18 +18598,27 @@ function extendGraphqlSchema(baseSchema) {
           instructorId: ID
           classTypeId: ID
           locationId: ID
+          search: String
           skip: Int = 0
           limit: Int = 50
         ): [PublicGymClassInstance!]!
         publicGymClassInstance(id: ID!): PublicGymClassInstance
-        publicGymInstructors(limit: Int = 50, skip: Int = 0): [PublicGymInstructor!]!
+        publicGymInstructors(limit: Int = 50, skip: Int = 0, after: ID): [PublicGymInstructor!]!
         publicGymInstructor(id: ID!): PublicGymInstructor
-        publicGymMembershipTiers(limit: Int = 50, skip: Int = 0): [PublicGymMembershipTier!]!
+        publicGymMembershipTiers(limit: Int = 50, skip: Int = 0, after: ID): [PublicGymMembershipTier!]!
         publicGymMembershipTier(id: ID!): PublicGymMembershipTier
+      }
+
+      type PublicGymClubPhoto {
+        id: ID!
+        name: String!
+        address: String
+        url: String!
       }
 
       type PublicGymSettings {
         id: ID!
+        salesOpen: Boolean!
         name: String!
         tagline: String
         logoIcon: String
@@ -16179,6 +18629,8 @@ function extendGraphqlSchema(baseSchema) {
         phone: String
         email: String
         currencyCode: String
+        dropInPrice: Int!
+        lateCancelHours: Int!
         locale: String
         timezone: String
         countryCode: String
@@ -16187,6 +18639,7 @@ function extendGraphqlSchema(baseSchema) {
         heroHeadline: String
         heroSubheadline: String
         heroImagePath: String
+        clubPhotos: [PublicGymClubPhoto!]!
         heroPrimaryCtaLabel: String
         heroPrimaryCtaHref: String
         heroSecondaryCtaLabel: String
@@ -16210,6 +18663,7 @@ function extendGraphqlSchema(baseSchema) {
         duration: Int!
         caloriesBurn: Int
         equipmentNeeded: [String!]!
+        imageUrl: String
       }
 
       type PublicGymInstructor {
@@ -16279,6 +18733,7 @@ function extendGraphqlSchema(baseSchema) {
         reconcileGymEntitlements(afterId: ID, limit: Int): JSON!
         refreshMyEntitlement: JSON!
         saveGymClassSchedule(id: ID, data: JSON!): ClassSchedule
+        deleteGymClassSchedule(id: ID!, dryRun: Boolean): JSON!
         saveGymClassInstance(id: ID, data: JSON!): ClassInstance
         replayPaymentEvent(eventId: ID!): JSON!
         runOperationsCommand(command: String!, data: JSON!): JSON!
@@ -16292,6 +18747,8 @@ function extendGraphqlSchema(baseSchema) {
           minutesLate: Int
           notes: String
         ): AttendanceRecord!
+        undoClassAttendance(bookingId: ID!): JSON!
+        cancelPastClassBooking(bookingId: ID!, reason: String!): JSON!
         recordMemberCheckIn(memberId: ID!, locationId: ID, method: String!): CheckInTransitionResult!
         checkOutMember(checkInId: ID!): CheckInTransitionResult!
         upsertGymSettings(data: GymSettingsUpdateInput!, expectedUpdatedAt: String): GymSettings!
@@ -16300,10 +18757,10 @@ function extendGraphqlSchema(baseSchema) {
         registerMember(data: RegisterMemberInput!): User
         inviteMember(data: InviteMemberInput!): InviteMemberResult!
         setMemberAccountStatus(memberId: ID!, status: String!): Member!
-        prepareInstructorAccount(instructorId: ID!, email: String!, delivery: String): AccessLinkResult!
-        issueMemberAccessLink(memberId: ID!, delivery: String): AccessLinkResult!
         updateMemberProfile(data: MemberProfileUpdateInput!): MemberProfileProjection!
         changeMemberPassword(currentPassword: String!, newPassword: String!, confirmPassword: String!): Boolean!
+        requestEmailChange(newEmail: String!, currentPassword: String!, surface: String): EmailChangeRequest!
+        confirmEmailChange(token: String!): Boolean!
         transitionOnboardingStatus(status: String!): User!
         generateUpcomingClassInstances(weeks: Int!): SchedulingGenerationResult!
         updateClassScheduleCapacity(classScheduleId: ID!, maxCapacity: Int!): ClassSchedule!
@@ -16341,6 +18798,8 @@ function extendGraphqlSchema(baseSchema) {
         createStripeSetupIntent(userId: ID!): SetupIntentResult!
 
         cancelMembership(membershipId: ID!, reason: String, idempotencyKey: String!): MembershipActionResult!
+
+        cancelMembershipNow(membershipId: ID!, reason: String, idempotencyKey: String!): MembershipActionResult!
 
         freezeMembership(
           membershipId: ID!
@@ -16424,7 +18883,6 @@ function extendGraphqlSchema(baseSchema) {
       input MemberProfileUpdateInput {
         name: String
         email: String
-        currentPassword: String
         expectedUpdatedAt: String
         phone: String
         dateOfBirth: String
@@ -16445,18 +18903,16 @@ function extendGraphqlSchema(baseSchema) {
         phone: String
       }
 
+      type EmailChangeRequest {
+        pendingEmail: String!
+        mail: String!
+      }
+
       type InviteMemberResult {
         userId: ID!
         memberId: ID!
         email: String!
-      }
-
-      type AccessLinkResult {
-        userId: ID
-        email: String!
-        delivered: String!
-        url: String
-        expiresAt: String!
+        created: Boolean!
       }
 
       type SchedulingGenerationResult {
@@ -16560,10 +19016,11 @@ function extendGraphqlSchema(baseSchema) {
         activeMemberships: Int!
         pastDueCount: Int!
       }
-    `, trainingWorkspaceTypeDefs, retailTypeDefs, counterPaymentTypeDefs],
+    `, trainingWorkspaceTypeDefs, retailTypeDefs, counterPaymentTypeDefs, dropInTypeDefs, giftCardTypeDefs, staffIntentTypeDefs, coachProfileTypeDefs],
     resolvers: {
       Query: {
         retailWorkspace,
+        retailSaleItems,
         gymSettingsEditor,
         trainingWorkspace: getTrainingWorkspace,
         operationsWorkspace,
@@ -16575,17 +19032,25 @@ function extendGraphqlSchema(baseSchema) {
         billingWorkspace: getBillingWorkspace,
         memberProfile: getMemberProfile,
         memberCheckInCode: getMemberCheckInCode,
+        myUpcomingBookingPage: getMyUpcomingBookingPage,
+        myStaffIntent: getStaffIntent,
+        myPendingStaffIntents: getMyPendingStaffIntents,
+        eligibleCoachAccounts,
         schedulingWorkspace: getSchedulingWorkspace,
         instructorAccount: getInstructorAccount,
-        instructorClaimQueue,
         rosterSessions: getRosterSessions,
         rosterDetail: getRosterDetail,
         frontDeskWorkspace: getFrontDeskWorkspace,
         reportsDashboard: getReportsDashboard,
         kioskSearchMembers,
         discoveryClasses: getDiscoveryClasses,
+        discoveryClassCalendar: getDiscoveryClassCalendar,
         publicGymSettings: getPublicGymSettings,
-        storefrontOrganization: (_root, _args, context) => publicOrganizationId(context),
+        giftCardOptions,
+        lookupGiftCard,
+        giftCardsWorkspace,
+        // Accounts, history and recovery bind to the configured tenant even while its sales are paused.
+        storefrontOrganization: async (_root, _args, context) => (await configuredStorefrontOrganization(context))?.id ?? null,
         publicGymClassTypes: getPublicGymClassTypes,
         publicGymClassType: getPublicGymClassType,
         publicGymSchedules: getPublicGymSchedules,
@@ -16600,10 +19065,20 @@ function extendGraphqlSchema(baseSchema) {
       Mutation: {
         updateGymResourceAllocation: updateGymResource,
         saveRetailItem,
+        quoteRetailSale,
         sellRetail,
         returnRetail,
         closeRetail,
         reconcileCounterPayment,
+        startDropInCheckout,
+        completeDropInCheckout,
+        startGiftCardCheckout,
+        confirmGiftCardOrder,
+        redeemGiftCard,
+        refundGiftCard,
+        beginStaffIntent,
+        settleStaffIntent,
+        createCoachProfile,
         importMemberContacts,
         bookTrainerAppointment,
         transitionTrainerAppointment,
@@ -16617,6 +19092,7 @@ function extendGraphqlSchema(baseSchema) {
         reconcileGymEntitlements,
         refreshMyEntitlement,
         saveGymClassSchedule,
+        deleteGymClassSchedule,
         saveGymClassInstance,
         replayPaymentEvent,
         runOperationsCommand,
@@ -16625,6 +19101,8 @@ function extendGraphqlSchema(baseSchema) {
         cancelClassBooking,
         cancelClassInstance,
         markClassAttendance,
+        undoClassAttendance,
+        cancelPastClassBooking,
         recordMemberCheckIn,
         checkOutMember,
         upsertGymSettings,
@@ -16633,10 +19111,10 @@ function extendGraphqlSchema(baseSchema) {
         registerMember,
         inviteMember,
         setMemberAccountStatus,
-        prepareInstructorAccount,
-        issueMemberAccessLink,
         updateMemberProfile,
         changeMemberPassword,
+        requestEmailChange,
+        confirmEmailChange,
         transitionOnboardingStatus,
         generateUpcomingClassInstances,
         updateClassScheduleCapacity,
@@ -16651,6 +19129,7 @@ function extendGraphqlSchema(baseSchema) {
         refundGymPayment,
         createStripeSetupIntent,
         cancelMembership,
+        cancelMembershipNow,
         freezeMembership,
         unfreezeMembership,
         changeMembershipTier,
@@ -16661,8 +19140,11 @@ function extendGraphqlSchema(baseSchema) {
   });
 }
 
+// features/keystone/index.ts
+init_mail();
+
 // features/keystone/security/graphql-limits.ts
-var import_graphql3 = require("graphql");
+var import_graphql4 = require("graphql");
 
 // lib/list-pagination.ts
 var MAX_GRAPHQL_LIST_TAKE = 5001;
@@ -16684,14 +19166,223 @@ function withGraphqlListMaxTake(models2) {
   }));
 }
 
+// features/keystone/security/filter-access.ts
+var NEVER = /(token|secret|hash|credential|password|digest)/i;
+var CATALOG = /* @__PURE__ */ new Set(["ClassSchedule", "ClassInstance", "ClassType", "Instructor", "Location", "MembershipTier", "GymResource", "Exercise"]);
+var PEOPLE = /* @__PURE__ */ new Set(["Member", "User"]);
+var NEVER_DATA = /* @__PURE__ */ new Set(["data", "providerData", "manifest"]);
+function sameJson(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+async function evaluate(rule, args) {
+  if (rule === void 0 || rule === null) return true;
+  if (typeof rule === "boolean") return rule;
+  if (typeof rule !== "function") return false;
+  try {
+    return Boolean(await rule(args));
+  } catch {
+    return false;
+  }
+}
+function readRule(access3) {
+  if (typeof access3 === "function") return access3;
+  if (access3 && typeof access3 === "object") return access3.read;
+  return void 0;
+}
+async function listScope(models2, listKey, session, context) {
+  if (listKey === "Organization") return session ? "tenant" : "none";
+  const list48 = models2[listKey];
+  if (!list48) return "none";
+  const args = { session, context, listKey, operation: "query" };
+  const access3 = list48.access;
+  const operation = typeof access3 === "function" ? access3 : access3?.operation?.query;
+  if (!await evaluate(operation, args)) return "none";
+  const filter = access3 && typeof access3 === "object" ? access3.filter?.query : void 0;
+  if (filter === void 0) return "tenant";
+  const resolved = typeof filter === "function" ? await filter(args) : filter;
+  if (resolved === false) return "none";
+  if (resolved === true) return "tenant";
+  return sameJson(resolved, tenantFilter({ session })) ? "tenant" : "row";
+}
+function withReadScopedFilters(models2) {
+  return Object.fromEntries(Object.entries(models2).map(([listKey, config2]) => {
+    const fields = Object.fromEntries(Object.entries(config2.fields ?? {}).map(([fieldKey, field]) => {
+      if (typeof field !== "function") return [fieldKey, field];
+      const wrapped = (meta) => {
+        const resolved = field(meta);
+        const read = readRule(resolved.access);
+        const never = NEVER.test(fieldKey) || NEVER_DATA.has(fieldKey);
+        const relatedList = resolved.dbField?.kind === "relation" ? String(resolved.dbField.list) : null;
+        const relatedMany = resolved.dbField?.kind === "relation" && resolved.dbField.mode === "many";
+        const allowed2 = never ? async () => false : async ({ session, context }) => {
+          const own = await listScope(models2, listKey, session, context);
+          if (own === "none") return false;
+          if (fieldKey === "id") return true;
+          if (read !== void 0) {
+            const tenant = getTenantId(session);
+            const other = { id: "__other__", userId: "__other__", organizationId: tenant, organization: { id: tenant } };
+            if (!await evaluate(read, { session, context, listKey, fieldKey, item: other, operation: "read" })) return false;
+          }
+          if (relatedList) {
+            const target = await listScope(models2, relatedList, session, context);
+            if (target === "none") return false;
+            if (target === "tenant") return true;
+            return !relatedMany && !(CATALOG.has(listKey) && !CATALOG.has(relatedList));
+          }
+          return !(PEOPLE.has(listKey) && own === "row");
+        };
+        return {
+          ...resolved,
+          isFilterable: resolved.isFilterable ?? allowed2,
+          isOrderable: resolved.isOrderable ?? allowed2
+        };
+      };
+      return [fieldKey, wrapped];
+    }));
+    return [listKey, { ...config2, fields }];
+  }));
+}
+
+// features/keystone/security/list-ui-access.ts
+var STAFF_LIST_CAPABILITIES = {
+  Member: ["canSeeOtherPeople", "canEditOtherPeople", "canManagePeople"],
+  User: ["canSeeOtherPeople", "canEditOtherPeople", "canManagePeople"],
+  MemberImportRecord: ["canManagePeople"],
+  TrainingLead: ["canManagePeople"],
+  Role: ["canManageRoles"],
+  Organization: ["canManageSettings"],
+  CheckIn: ["canManageCheckIns", "canManageFacilities"],
+  GymResource: ["canManageFacilities"],
+  ContactMessage: ["canManageCommunications"],
+  GiftCard: ["canManageRetail"],
+  RetailItem: ["canManageRetail"],
+  RetailSale: ["canManageRetail"],
+  RetailReturn: ["canManageRetail"],
+  RetailStockEntry: ["canManageRetail"],
+  RetailClose: ["canManageRetail"],
+  TrainerAppointment: ["canManageAppointments", "isInstructor"],
+  TrainerAvailability: ["canManageAppointments", "isInstructor"],
+  TrainingPackage: ["canManageAppointments"],
+  TrainingCreditEntry: ["canManageAppointments"],
+  CoachingAssignment: ["canManagePrograms", "isInstructor"],
+  ClassSchedule: ["isInstructor"],
+  ClassInstance: ["isInstructor"],
+  ClassBooking: ["isInstructor"],
+  AttendanceRecord: ["isInstructor"]
+};
+function staffCanUseList(listKey, role) {
+  if (!role) return false;
+  if (role.canManageAllRecords === true) return true;
+  return (STAFF_LIST_CAPABILITIES[listKey] ?? []).some((flag) => role[flag] === true);
+}
+async function operationAllowed(listKey, access3, operation, args) {
+  const check = typeof access3 === "function" ? access3 : access3?.operation?.[operation];
+  if (typeof check !== "function") return true;
+  return Boolean(await check({ ...args, listKey, operation }));
+}
+async function configured(value, args) {
+  return typeof value === "function" ? Boolean(await value(args)) : Boolean(value);
+}
+function withSessionListUi(models2) {
+  return Object.fromEntries(Object.entries(models2).map(([listKey, config2]) => {
+    const ui = config2.ui ?? {};
+    return [listKey, {
+      ...config2,
+      ui: {
+        ...ui,
+        isHidden: async (args) => await configured(ui.isHidden, args) || !staffCanUseList(listKey, args.session?.data?.role) || !await operationAllowed(listKey, config2.access, "query", args),
+        hideCreate: async (args) => await configured(ui.hideCreate, args) || !await operationAllowed(listKey, config2.access, "create", args),
+        hideDelete: async (args) => await configured(ui.hideDelete, args) || !await operationAllowed(listKey, config2.access, "delete", args)
+      }
+    }];
+  }));
+}
+
+// features/keystone/database-url.ts
+var POOL_SIZES = { web: 15, worker: 5 };
+var OVERRIDE_ENV = {
+  web: "DATABASE_CONNECTION_LIMIT",
+  worker: "DATABASE_CONNECTION_LIMIT_WORKER"
+};
+function pooledDatabaseUrl(url, role = "web") {
+  if (!url || !/^postgres(ql)?:\/\//.test(url)) return url;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+  if (parsed.searchParams.has("connection_limit")) return url;
+  const override = Number(process.env[OVERRIDE_ENV[role]]);
+  parsed.searchParams.set("connection_limit", String(Number.isInteger(override) && override > 0 ? override : POOL_SIZES[role]));
+  return parsed.toString();
+}
+
+// features/keystone/lib/keystonePrismaErrors.ts
+var RAW_METHOD = /^\$(queryRaw|executeRaw|queryRawUnsafe|executeRawUnsafe|queryRawTyped|runCommandRaw)$/;
+var clients = /* @__PURE__ */ new WeakMap();
+var delegates = /* @__PURE__ */ new WeakMap();
+function isKeystonePrismaError(value) {
+  return value instanceof Error && value.extensions?.code === "KS_PRISMA_ERROR";
+}
+function rethrowKeystonePrismaError(value) {
+  if (!isKeystonePrismaError(value)) return value;
+  const prisma = value.extensions.prisma ?? {};
+  throw Object.assign(value, { code: prisma.code, meta: prisma.meta, clientVersion: prisma.clientVersion });
+}
+function throwing(result) {
+  if (!result || typeof result.then !== "function") return rethrowKeystonePrismaError(result);
+  const settled = () => result.then(rethrowKeystonePrismaError);
+  return new Proxy(result, {
+    get(target, key) {
+      if (key === "then") return (ok, fail) => settled().then(ok, fail);
+      if (key === "catch") return (fail) => settled().catch(fail);
+      if (key === "finally") return (done) => settled().finally(done);
+      const value = Reflect.get(target, key, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    }
+  });
+}
+function throwingDelegate(delegate) {
+  const cached = delegates.get(delegate);
+  if (cached) return cached;
+  const wrapped = new Proxy(delegate, {
+    get(target, key) {
+      const value = Reflect.get(target, key, target);
+      return typeof value === "function" ? (...args) => throwing(value.apply(target, args)) : value;
+    }
+  });
+  delegates.set(delegate, wrapped);
+  return wrapped;
+}
+function throwKeystonePrismaErrors(client) {
+  const cached = clients.get(client);
+  if (cached) return cached;
+  const wrapped = new Proxy(client, {
+    get(target, key) {
+      const value = Reflect.get(target, key, target);
+      if (key === "$transaction" && typeof value === "function") {
+        return (work, ...options) => {
+          if (typeof work === "function") return value.call(target, (tx) => work(throwKeystonePrismaErrors(tx)), ...options);
+          return Promise.resolve(value.call(target, work, ...options)).then((results) => Array.isArray(results) ? results.map(rethrowKeystonePrismaError) : results);
+        };
+      }
+      if (key === "$extends" && typeof value === "function") return (...args) => throwKeystonePrismaErrors(value.apply(target, args));
+      if (typeof key === "string" && RAW_METHOD.test(key) && typeof value === "function") return (...args) => throwing(value.apply(target, args));
+      if (typeof value === "function") return value.bind(target);
+      if (typeof key === "string" && !key.startsWith("$") && value && typeof value === "object" && typeof value.findFirst === "function") return throwingDelegate(value);
+      return value;
+    }
+  });
+  clients.set(client, wrapped);
+  return wrapped;
+}
+
 // features/keystone/index.ts
 var isNextBuild = process.env.NEXT_PHASE === "phase-production-build";
 var strictConfig = !isNextBuild && process.env.NODE_ENV === "production" || process.env.GYM_STRICT_CONFIG === "true";
 if (process.env.PUBLIC_SIGNUPS_ALLOWED === "true") {
   console.error("PUBLIC_SIGNUPS_ALLOWED=true is not supported for Gym; dashboard signup stays refused. Set it to false.");
-}
-if (strictConfig && process.env.PAYMENT_TEST_MODE === "true") {
-  throw new Error("PAYMENT_TEST_MODE must be disabled in strict/production mode.");
 }
 function requiredSecret(name) {
   const value = process.env[name];
@@ -16700,11 +19391,8 @@ function requiredSecret(name) {
   }
   return value;
 }
-var DEVELOPMENT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/openfront_gym_dev";
-if (strictConfig && !process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL must be configured in strict mode.");
-}
-var databaseURL = process.env.DATABASE_URL || DEVELOPMENT_DATABASE_URL;
+var databaseURL = process.env.DATABASE_URL || "";
+if (!databaseURL) throw new Error("DATABASE_URL is required (a postgresql:// connection URL).");
 if (!/^postgres(ql)?:\/\//.test(databaseURL)) {
   throw new Error("DATABASE_URL must be a PostgreSQL connection URL (postgresql://\u2026).");
 }
@@ -16763,6 +19451,7 @@ var { withAuth } = (0, import_auth2.createAuth)({
           canManageOnboarding: true,
           canManageSettings: true,
           canManageAppointments: true,
+          canManageCheckIns: true,
           canManageFacilities: true,
           canManagePrograms: true,
           canManageCommunications: true,
@@ -16776,8 +19465,15 @@ var { withAuth } = (0, import_auth2.createAuth)({
   passwordResetLink: {
     tokensValidForMins: 60,
     async sendToken(args) {
-      const user = await args.context.sudo().query.User.findOne({ where: { id: String(args.itemId) }, query: "role { canAccessDashboard }" });
-      await sendPasswordResetEmail(args.token, args.identity, user?.role?.canAccessDashboard ? "dashboard" : "storefront");
+      try {
+        const user = await args.context.sudo().query.User.findOne({ where: { id: String(args.itemId) }, query: "id organization { id } role { canAccessDashboard }" });
+        const members = user ? await args.context.sudo().query.Member.count({ where: { AND: [{ user: { id: { equals: user.id } } }, { organization: { id: { equals: user.organization?.id ?? "" } } }] } }) : 0;
+        if (!mailDeliveryEnabled()) return;
+        const outcome = await sendPasswordResetEmail(args.token, args.identity, { storefront: members > 0, dashboard: Boolean(user?.role?.canAccessDashboard) });
+        if (outcome !== "accepted") console.warn(`Password link mail ${outcome} by the mail server`);
+      } catch {
+        console.warn("Password link mail could not be sent");
+      }
     }
   },
   sessionData: `
@@ -16814,12 +19510,14 @@ var { withAuth } = (0, import_auth2.createAuth)({
   `
 });
 var keystone_default = withAuth(
-  (0, import_core45.config)({
+  (0, import_core47.config)({
     db: {
       provider: "postgresql",
-      url: databaseURL
+      url: pooledDatabaseUrl(databaseURL),
+      // Keystone returns failed queries as values; this makes them throw so transactions roll back.
+      extendPrismaClient: throwKeystonePrismaErrors
     },
-    lists: withGraphqlListMaxTake(models),
+    lists: withGraphqlListMaxTake(withSessionListUi(withReadScopedFilters(models))),
     storage: {
       my_images: {
         kind: "s3",
@@ -16830,7 +19528,7 @@ var keystone_default = withAuth(
         secretAccessKey,
         endpoint,
         signed: { expiry: 5e3 },
-        forcePathStyle: true
+        forcePathStyle: s3ForcePathStyle(endpoint)
       }
     },
     ui: {

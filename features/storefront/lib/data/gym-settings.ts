@@ -26,6 +26,8 @@ export type GymSettingsData = {
   heroHeadline?: string | null;
   heroSubheadline?: string | null;
   heroImageUrl?: string | null;
+  /** Uploaded photos of the club's sites (Location.photo), main site first. */
+  clubPhotos?: { id: string; name: string; address?: string | null; url: string }[];
   heroPrimaryCtaLabel?: string | null;
   heroPrimaryCtaHref?: string | null;
   heroSecondaryCtaLabel?: string | null;
@@ -47,7 +49,7 @@ export async function getGymSettings(): Promise<GymSettingsData | null> {
     query StorefrontGymSettings {
       publicGymSettings {
         id salesOpen name tagline logoIcon logoColor brandHue description address phone email currencyCode dropInPrice lateCancelHours locale timezone countryCode hours
-        heroEyebrow heroHeadline heroSubheadline heroImagePath
+        heroEyebrow heroHeadline heroSubheadline heroImagePath clubPhotos { id name address url }
         heroPrimaryCtaLabel heroPrimaryCtaHref heroSecondaryCtaLabel heroSecondaryCtaHref
         promoBanner footerTagline copyrightName facilityHeadline facilityDescription
         facilityHighlights heroStats contactTopics participationTerms

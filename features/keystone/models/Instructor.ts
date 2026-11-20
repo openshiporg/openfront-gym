@@ -6,6 +6,7 @@ import {
   relationship,
   checkbox,
   virtual,
+  image,
 } from "@keystone-6/core/fields";
 import { document } from "@keystone-6/fields-document";
 
@@ -144,6 +145,11 @@ export const Instructor = list({
       ui: {
         description: "Descriptive names (\"ACE\") or structured entries. An entry with \"required\": true needs name, evidenceReference, verifiedAt and expiresAt, and blocks coaching once expired or \"revoked\": true.",
       },
+    }),
+
+    portrait: image({
+      storage: "my_images",
+      ui: { description: "Coach portrait shown on the storefront; used before the onboarding photo" },
     }),
 
     photo: text({
