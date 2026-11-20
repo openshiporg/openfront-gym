@@ -1142,17 +1142,17 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
 
   /* Memberships: three columns divided by rules. */
   .sf-home-plans { display: grid; }
-  .sf-home-plans > li { display: grid; align-content: start; gap: 8px; border-bottom: 1px solid var(--sf-line); padding-block: 24px; }
+  .sf-home-plans > li { display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--sf-line); padding-block: 24px; }
   .sf-home-plans h3 { font-size: 1.25rem; font-weight: 600; }
   .sf-home-price { font-size: 0.9375rem; color: var(--sf-ink-2); }
   .sf-home-price strong { margin-right: 4px; color: var(--sf-ink); font-size: 2rem; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
   .sf-home-includes { display: grid; gap: 4px; margin-block: 4px 12px; font-size: 0.9375rem; }
   .sf-home-includes > li { padding-left: 16px; text-indent: -16px; }
   .sf-home-includes > li::before { content: "–"; display: inline-block; width: 16px; text-indent: 0; color: var(--sf-ink-3); }
-  .sf-home-plans .sf-btn { justify-self: start; margin-top: auto; }
+  .sf-home-plans .sf-btn { align-self: flex-start; margin-top: auto; }
   @media (min-width: 900px) {
     .sf-home-plans { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .sf-home-plans > li { grid-template-rows: auto auto auto auto 1fr auto; border-bottom: 0; padding: 24px 28px 8px; }
+    .sf-home-plans > li { border-bottom: 0; padding: 24px 28px 8px; }
     .sf-home-plans > li:first-child { padding-left: 0; }
     .sf-home-plans > li + li { border-left: 1px solid var(--sf-line); }
   }

@@ -83,7 +83,7 @@ export async function ClassDetailPage(props: { params: Promise<{ id: string }> }
             <div><ArrowLink href={`/schedule?format=${encodeURIComponent(classType.id)}`}>All {classType.name} sessions</ArrowLink></div>
           </section>
 
-          <aside className="sf-detail-aside sf-card" aria-label="Class details">
+          <aside className="sf-detail-aside" aria-label="Class details">
             <dl className="sf-facts" data-plain>
               <div><dt>Level</dt><dd>{level || "Not published"}</dd></div>
               <div><dt>Length</dt><dd>{classType.duration} min</dd></div>

@@ -76,7 +76,7 @@ export async function FacilitiesPage() {
                 <Link href="/policies" className="sf-btn" data-variant="ghost">Policies</Link>
               </div>
             </div>
-            <div className="sf-panel">
+            <div className="sf-stack" data-gap="sm">
               <div className="sf-row" data-between>
                 <h3 className="sf-h3">Hours</h3>
                 <span className="sf-meta">{timeZoneLabel(timeZone)}</span>
