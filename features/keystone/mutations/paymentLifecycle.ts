@@ -6,7 +6,29 @@ import { replayDeferredInvoiceEvents } from "./paymentWebhook";
 import { getAdapterForProvider } from "../utils/paymentProviderAdapter";
 import { requirePrismaAffectedCount, withKeystonePrismaTransaction } from "../lib/prisma-result";
 import { assertExactProviderRefund, assertSameRefundReservation, providerRefundOperationKey, readRefundReservation, reconcileProviderRefundCumulative, type RefundReservation } from "../lib/refund-reservation";
+import { cancelCapacityControlledBooking } from "./gymLifecycle";
+import { currentRoleActor } from "../access/currentRoleActor";
 export { reconcileProviderRefundCumulative };
+
+/**
+ * A fully refunded paid drop-in no longer holds its class spot: cancel its upcoming booking through the
+ * normal cancel path (spot released, waitlist promoted, member told). Best effort; the refund already stands.
+ */
+async function releaseRefundedDropInBooking(context: Context, paymentId: string) {
+  try {
+    const payment = await (context.prisma as any).gymPayment.findUnique({ where: { id: paymentId }, select: { status: true, paymentSessionId: true, organizationId: true } });
+    if (payment?.status !== "refunded" || !payment.paymentSessionId) return;
+    const bookings = await (context.prisma as any).classBooking.findMany({
+      where: { organizationId: payment.organizationId, status: { in: ["confirmed", "waitlist"] }, classInstance: { date: { gt: new Date() } }, serviceSnapshot: { path: ["credit", "paymentSessionId"], equals: payment.paymentSessionId } },
+      select: { id: true },
+    });
+    if (!bookings.length) return;
+    const actor = await currentRoleActor(context);
+    for (const booking of bookings) await cancelCapacityControlledBooking(context.prisma, { bookingId: booking.id, actor });
+  } catch (error) {
+    console.error("Refunded drop-in booking could not be released", { paymentId, name: error instanceof Error ? error.name : "UnknownError" });
+  }
+}
 
 const PROVIDER_CODE = "pp_stripe";
 
@@ -292,5 +314,6 @@ export async function refundGymPayment(
     });
     throw error;
   }
+  await releaseRefundedDropInBooking(context, claim.paymentId);
   return context.db.GymPayment.findOne({ where: { id: claim.paymentId } });
 }

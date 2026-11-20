@@ -38,3 +38,11 @@ test("cancelling a drop-in (by the visitor outside the late-cancel window, or by
   const resolvers = source("features/keystone/mutations/gymLifecycleResolvers.ts");
   assert.equal((resolvers.match(/await refundCancelledDropIns\(/g) || []).length, 2);
 });
+
+test("a full refund of a paid drop-in releases its upcoming class booking through the normal cancel path", () => {
+  const lifecycle = source("features/keystone/mutations/paymentLifecycle.ts");
+  assert.match(lifecycle, /await releaseRefundedDropInBooking\(context, claim\.paymentId\);\n  return context\.db\.GymPayment\.findOne/);
+  assert.match(lifecycle, /payment\?\.status !== "refunded" \|\| !payment\.paymentSessionId/);
+  assert.match(lifecycle, /path: \["credit", "paymentSessionId"\]/);
+  assert.match(lifecycle, /cancelCapacityControlledBooking\(context\.prisma, \{ bookingId: booking\.id, actor \}\)/);
+});
