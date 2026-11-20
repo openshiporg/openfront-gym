@@ -44,10 +44,7 @@ export default async function ClassGrid({ difficulty, duration, q, after }: { di
             <article className="sf-class-card" key={classType.id} data-photo={photo ? "" : undefined}>
               {photo ? <span className="sf-class-card-photo"><Image src={photo} alt="" fill sizes="(max-width: 899px) 100vw, 380px" unoptimized /></span> : null}
               <h2 className="sf-h3"><Link href={`/classes/${classType.id}`}>{classType.name}</Link></h2>
-              <div className="sf-list-plain">
-                {level ? <span className="sf-tag">{level}</span> : null}
-                <span className="sf-tag">{classType.duration} min</span>
-              </div>
+              <p className="sf-meta">{level ? `${level} · ` : ""}{classType.duration} min</p>
               {description ? <p>{description}</p> : null}
               {equipment.length ? <p className="sf-meta">Bring: {equipment.map(humanizeLabel).join(", ")}</p> : null}
               <footer>

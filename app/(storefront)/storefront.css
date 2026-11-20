@@ -580,16 +580,13 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
 
   .sf-class-card {
     position: relative; display: flex; min-height: 100%; flex-direction: column; gap: 12px;
-    border: 1px solid var(--sf-line); border-radius: var(--sf-r); padding: 20px; background: var(--sf-raised);
-    transition: border-color 160ms var(--sf-ease), transform 200ms var(--sf-ease);
+    border-top: 1px solid var(--sf-line); padding: 16px 0 8px;
   }
-  .sf-class-card:hover { border-color: var(--sf-line-strong); }
+  .sf-class-card:hover :is(h2, h3) a { text-decoration: underline; text-underline-offset: 4px; }
   .sf-class-card :is(h2, h3) { font-size: 1.375rem; letter-spacing: -0.03em; line-height: 1.15; }
   .sf-class-card :is(h2, h3) a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
   .sf-class-card > p:not(.sf-meta) { color: var(--sf-ink-2); font-size: 0.9375rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .sf-class-card footer { position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 8px; }
-  .sf-class-card .sf-arrow-mark { position: absolute; top: 18px; right: 18px; width: 20px; height: 20px; color: var(--sf-ink-3); transition: transform 200ms var(--sf-ease), color 160ms var(--sf-ease); }
-  .sf-class-card:hover .sf-arrow-mark { color: var(--sf-ink); transform: translate(2px, -2px); }
 
   .sf-coach { position: relative; display: grid; align-content: start; gap: 12px; }
   .sf-coach-photo { position: relative; overflow: hidden; aspect-ratio: 4 / 5; border-radius: var(--sf-r); background: var(--sf-surface); }
@@ -1033,7 +1030,7 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-chip[aria-current="page"], .sf-chip[aria-pressed="true"] { border-color: var(--sf-accent-fill); background: var(--sf-accent-fill); color: var(--sf-accent-on); }
 
   /* ---------- cards: light, raised, soft shadow */
-  .sf-card, .sf-class-card, .sf-week-day, .sf-tile, .sf-member-result { border-color: var(--sf-line); box-shadow: var(--sf-card-shadow); }
+  .sf-card, .sf-week-day, .sf-tile, .sf-member-result { border-color: var(--sf-line); box-shadow: var(--sf-card-shadow); }
   .sf-panel { background: var(--sf-surface); }
 
   /* ---------- header */
@@ -1201,8 +1198,8 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   @media (min-width: 900px) { .sf-portrait:has(> .sf-monogram) { max-width: 320px; } }
 
   /* Class cards: the class's uploaded photo on top when it has one. */
-  .sf-class-card[data-photo] { overflow: hidden; padding-top: 0; }
-  .sf-class-card-photo { position: relative; display: block; aspect-ratio: 3 / 2; margin: 0 -20px 4px; overflow: hidden; background: var(--sf-surface); }
+  .sf-class-card[data-photo] { border-top: 0; padding-top: 0; }
+  .sf-class-card-photo { position: relative; display: block; aspect-ratio: 3 / 2; margin-bottom: 4px; overflow: hidden; background: var(--sf-surface); }
   .sf-class-card-photo img { object-fit: cover; }
 
   @media (max-width: 899px) {
