@@ -49,7 +49,7 @@ export default function PlanComparison({ tiers, currencyCode }: { tiers: Members
               {tier.personalTrainingSessions > 0 ? <div><dt>Personal training</dt><dd>{tier.personalTrainingSessions} sessions</dd></div> : null}
             </dl>
             {tier.features?.length ? (
-              <ul className="sf-list-plain" aria-label={`${tier.name} includes`}>
+              <ul className="sf-stack" data-gap="sm" aria-label={`${tier.name} includes`}>
                 {tier.features.map((feature) => <li key={feature}>{feature}</li>)}
               </ul>
             ) : null}
