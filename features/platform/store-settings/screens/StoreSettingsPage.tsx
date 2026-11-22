@@ -18,7 +18,7 @@ import { editorWeeklyHours, parseDayHours } from '@/features/keystone/lib/gym-ho
 import { SETTINGS_LIMITS, publicCtaHref } from '@/features/keystone/lib/gym-settings-content'
 import { isConfiguredPublicEmail } from '@/features/storefront/lib/contact-config'
 import { loadGymSettingsEditor, publishParticipationTerms, saveGymSettings } from '../actions/store-settings'
-import { isUntouchedWaiverTemplate, waiverTemplate } from '../lib/waiver-template'
+import { waiverTemplate } from '../lib/waiver-template'
 import { LogoMark } from '../components/LogoMark'
 import { StoreSettingsSaveBar } from '../components/StoreSettingsSaveBar'
 import { HUE_PRESETS, LOGO_ICONS } from '../lib/icon-registry'
@@ -579,11 +579,6 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
                         : `Version ${policy.version} is published at /waiver${policy.acceptanceRequired ? ' and members accept it before booking' : ''}.`}
                   {policy ? ` Age rule: ${policy.adultOnly ? 'adults only' : 'none'}. Health data: ${policy.healthPurpose ? policy.healthPurpose : 'not collected'}. Retention: ${policy.retentionDays} days. These carry over to a new version.` : ''}
                 </p>
-                {policy?.source === 'pasted' && isUntouchedWaiverTemplate(policy.text, draft.form.name) ? (
-                  <Notice tone="warning" title="Edit before use">
-                    The published terms are the standard waiver template. Have them checked for your state and change them to fit your club, then publish again.
-                  </Notice>
-                ) : null}
                 {canPublishPolicy && !terms.trim() ? (
                   <div>
                     <Button type="button" variant="outline" size="sm" onClick={() => setTerms(waiverTemplate(draft.form.name))}>

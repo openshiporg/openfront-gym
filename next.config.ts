@@ -8,12 +8,13 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   // Stripe endpoints registered before the Openfront payment-webhook path keep delivering.
   async rewrites() {
-    return [{ source: '/api/stripe/webhook', destination: '/api/payment-webhooks/pp_stripe' }];
-  },
-  // A member opens on the shared item page; the platform path is kept so links to it still work.
-  // An HTTP redirect, not redirect() inside the streamed platform route (that swapped hook trees: React #310).
-  async redirects() {
-    return [{ source: '/dashboard/platform/members/:id', destination: '/dashboard/members/:id', permanent: false }];
+    return [
+      { source: '/api/stripe/webhook', destination: '/api/payment-webhooks/pp_stripe' },
+      // A member opens on the shared item page; the platform path is kept so links to it still work.
+      // A rewrite, not a redirect: the item page answers 404 for an id that doesn't exist, and no
+      // redirect() runs inside the streamed platform route (that swapped hook trees: React #310).
+      { source: '/dashboard/platform/members/:id', destination: '/dashboard/members/:id' },
+    ];
   },
   serverExternalPackages: ['graphql'],
   // Workaround since we diverged from Keystone reltionship and document views
