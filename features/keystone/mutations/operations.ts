@@ -47,6 +47,9 @@ type OperationsWorkspaceArgs = {
  * notice, payment event, resource or credential past the first page stays reachable. Credentials
  * default to the active scope; expired and revoked ones are a separate, read-only history.
  */
+/** A booking the member made and saw confirmed needs no call from staff; it stays in the record, out of the queue. */
+const SELF_SERVED_NOTICE = { kind: 'booking', message: { in: ['Your class booking is confirmed.', 'Your drop-in class is paid and confirmed.'] } };
+
 export async function operationsWorkspace(_root: unknown, args: OperationsWorkspaceArgs, context: any) {
   const { organizationId } = operationsActor(context);
   const tx = guardKeystonePrismaResults(context.prisma as any);
@@ -57,7 +60,7 @@ export async function operationsWorkspace(_root: unknown, args: OperationsWorksp
   const credentialHistory = args.credentialScope === 'history';
   const search = String(args.memberQuery || '').trim().slice(0, 100);
   const [notices, cases, policies, credentials, members, locations, paymentEvents, resources] = await Promise.all([
-    tx.operationalNotice.findMany({ where: { ...where, status: { not: 'resolved' } }, skip: skips.notices, take: QUEUE_PAGE + 1, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], include: { member: { select: { id: true, name: true, email: true, phone: true } } } }),
+    tx.operationalNotice.findMany({ where: { ...where, status: { not: 'resolved' }, NOT: SELF_SERVED_NOTICE }, skip: skips.notices, take: QUEUE_PAGE + 1, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], include: { member: { select: { id: true, name: true, email: true, phone: true } } } }),
     tx.operationsCase.findMany({ where: { ...where, status: { not: 'resolved' }, ...(args.caseAfterId ? { id: { gt: args.caseAfterId } } : {}) }, take: 101, orderBy: { id: 'asc' } }),
     tx.participationPolicy.findMany({ where, take: 10, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
     tx.integrationCredential.findMany({

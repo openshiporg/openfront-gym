@@ -879,6 +879,16 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-account-id h1 { font-size: clamp(1.5rem, 1.2rem + 1.4vw, 2.25rem); letter-spacing: -0.035em; line-height: 1.1; }
   .sf-account-tabs { margin-bottom: -1px; padding-bottom: 16px; }
   .sf-account-body { display: grid; gap: 32px; padding-block: 28px 72px; }
+  /* Phone: one identity row. Sign out lives in the More menu; the email is on Profile. */
+  @media (max-width: 639px) {
+    .sf-account-top { padding-top: 16px; }
+    .sf-account-id { flex-wrap: nowrap; gap: 12px; padding-bottom: 14px; }
+    .sf-account-id > div:first-child { flex: 1 1 auto; gap: 12px; }
+    .sf-account-id .sf-avatar[data-size="lg"] { width: 44px; height: 44px; font-size: 0.875rem; }
+    .sf-account-id .sf-titleline { row-gap: 0; }
+    .sf-account-id .sf-meta, .sf-account-id .sf-actions form { display: none; }
+    .sf-account-id .sf-actions { flex: none; }
+  }
   @media (min-width: 1024px) { .sf-account-top { padding-top: 40px; } .sf-account-body { gap: 40px; padding-block: 40px 112px; } }
 
   .sf-next { display: grid; gap: 20px; border-radius: var(--sf-r-lg); padding: 24px; }

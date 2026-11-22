@@ -24,11 +24,11 @@ function sourcePathOf(value?: string | null) {
 }
 
 /** Optional staff email copy. The stored message is the record, so delivery problems never reject it. */
-async function emailStaffCopy(message: { subject: string; senderName: string; email: string; phone: string; topic: string; reference: string; body: string }) {
-  if (!mailDeliveryEnabled()) return;
+async function emailStaffCopy(to: string | null, message: { subject: string; senderName: string; email: string; phone: string; topic: string; reference: string; body: string }) {
+  if (!to || !mailDeliveryEnabled()) return;
   try {
     await mailTransport().sendMail({
-      to: process.env.CONTACT_FORM_TO || process.env.SMTP_FROM,
+      to,
       from: process.env.SMTP_FROM,
       replyTo: message.email,
       subject: `[Gym Contact] ${message.subject}${message.reference ? ` · ${message.reference}` : ""}`,
@@ -90,6 +90,11 @@ export async function submitContactForm(
     },
     query: "id",
   });
-  await emailStaffCopy({ subject, senderName, email, phone, topic, reference, body: message });
+  // The copy goes to the club's own address from Store Settings; a no-reply sender is never a mailbox.
+  const settings = await context.sudo().query.GymSettings.findMany({ where: { organization: { id: { equals: organizationId } } }, take: 1, query: "email" });
+  const clubEmail = [settings[0]?.email, process.env.CONTACT_FORM_TO]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find((value) => /^\S+@\S+\.\S+$/.test(value) && !/\.(invalid|example|test)$|@example\.(com|net|org)$/i.test(value)) || null;
+  await emailStaffCopy(clubEmail, { subject, senderName, email, phone, topic, reference, body: message });
   return true;
 }
