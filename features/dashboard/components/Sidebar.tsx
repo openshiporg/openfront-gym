@@ -271,7 +271,8 @@ export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
           </SidebarMenu>
         </SidebarGroup>
 
-        {/* Models */}
+        {/* Models: developers only (see visibleSidebarLists) */}
+        {modelLinks.length > 0 ? (
         <SidebarGroup>
           <SidebarGroupLabel>Models</SidebarGroupLabel>
           <SidebarMenu className="group-has-[[data-collapsible=icon]]/sidebar-wrapper:hidden">
@@ -359,6 +360,7 @@ export function Sidebar({ adminMeta, user, onOpenDialog }: SidebarProps) {
             </DropdownMenu>
           </SidebarMenu>
         </SidebarGroup>
+        ) : null}
       </SidebarContent>
       
       <SidebarFooter>

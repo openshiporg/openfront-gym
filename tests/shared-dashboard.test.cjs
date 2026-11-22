@@ -156,7 +156,10 @@ test('sidebar shows only lists and platform pages the session can see', () => {
   const access = sandbox().load('features/dashboard/lib/sidebarAccess.ts');
   const lists = [{ path: 'orders', isHidden: false }, { path: 'roles', isHidden: true }, { path: 'users', isHidden: true }];
   const staff = { role: { canAccessDashboard: true } };
-  assert.deepEqual(plain(access.visibleSidebarLists(lists, staff)).map(list => list.path), ['orders']);
+  // Raw model lists are for developers (a role that can change roles); staff use platform pages.
+  assert.equal(access.visibleSidebarLists(lists, staff).length, 0);
+  const developer = { role: { canAccessDashboard: true, canManageRoles: true } };
+  assert.deepEqual(plain(access.visibleSidebarLists(lists, developer)).map(list => list.path), ['orders']);
   const items = [{ href: '/dashboard/platform/orders' }, { href: '/dashboard/platform/users' },
     { href: '/dashboard/platform/analytics' }, { href: '/platform/users?tab=1' }];
   assert.deepEqual(plain(access.visiblePlatformItems(items, lists, staff)).map(item => item.href),

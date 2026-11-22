@@ -108,6 +108,32 @@ export async function getReportsDashboard(_root: unknown, _args: unknown, contex
     }),
   ]);
 
+  // A gym's day: who joined this week, whose card failed, whose plan ends without renewing.
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const twoWeeks = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const [newMembers, failedPayments, endingSoon] = await Promise.all([
+    prisma.member.findMany({
+      where: { organizationId, joinDate: { gte: weekAgo } },
+      orderBy: [{ joinDate: "desc" }], take: 6,
+      select: { id: true, name: true, joinDate: true, user: { select: { membership: { select: { status: true, tier: { select: { name: true } } } } } } },
+    }),
+    prisma.membershipPayment.findMany({
+      where: { organizationId, status: "failed", paymentDate: { gte: weekAgo } },
+      orderBy: [{ paymentDate: "desc" }], take: 6,
+      select: { id: true, amount: true, paymentDate: true, member: { select: { name: true, email: true } } },
+    }),
+    prisma.membership.findMany({
+      where: { organizationId, status: { in: ["active", "frozen"] }, autoRenew: false, OR: [{ creditPeriodEnd: { gte: now, lte: twoWeeks } }, { creditPeriodEnd: null, nextBillingDate: { gte: now, lte: twoWeeks } }] },
+      orderBy: [{ creditPeriodEnd: "asc" }], take: 6,
+      select: { id: true, creditPeriodEnd: true, nextBillingDate: true, tier: { select: { name: true } }, member: { select: { name: true, email: true } } },
+    }),
+  ]);
+  const day = {
+    newMembers: (newMembers as any[]).map((m) => ({ id: m.id, name: m.name || "Member", joinedAt: m.joinDate, plan: m.user?.membership?.tier?.name ?? null, membershipStatus: m.user?.membership?.status ?? null })),
+    failedPayments: (failedPayments as any[]).map((p) => ({ id: p.id, name: p.member?.name || p.member?.email || "Member", amount: p.amount, at: p.paymentDate })),
+    endingSoon: (endingSoon as any[]).map((m) => ({ id: m.id, name: m.member?.name || m.member?.email || "Member", plan: m.tier?.name ?? null, endsAt: m.creditPeriodEnd ?? m.nextBillingDate })),
+  };
+
   const totalRevenue = (completedPaymentAggregate._sum.amount ?? 0) - (completedPaymentAggregate._sum.refundAmount ?? 0);
   const monthlyRevenue = (monthlyPaymentAggregate._sum.amount ?? 0) - (monthlyPaymentAggregate._sum.refundAmount ?? 0);
   const settledPayments = completedPaymentAggregate._count._all;
@@ -166,5 +192,6 @@ export async function getReportsDashboard(_root: unknown, _args: unknown, contex
     },
     utilization,
     membershipHealth,
+    day,
   };
 }

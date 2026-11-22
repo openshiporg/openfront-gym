@@ -58,6 +58,12 @@ export type ReportsDashboardData = {
   attendance: AttendanceSummary;
   utilization: UtilizationRow[];
   membershipHealth: MembershipHealthRow[];
+  /** The club's day for the dashboard home; absent on servers that predate it. */
+  day?: {
+    newMembers: Array<{ id: string; name: string; joinedAt: string; plan: string | null; membershipStatus: string | null }>;
+    failedPayments: Array<{ id: string; name: string; amount: number; at: string }>;
+    endingSoon: Array<{ id: string; name: string; plan: string | null; endsAt: string }>;
+  };
 };
 
 export async function getReportsDashboardData(): Promise<ReportsDashboardData> {

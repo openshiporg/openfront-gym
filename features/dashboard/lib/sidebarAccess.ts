@@ -20,6 +20,9 @@ export function canUseDashboardNav(user: SidebarUser) {
 
 export function visibleSidebarLists<T extends SidebarList>(lists: T[], user: SidebarUser): T[] {
   if (!canUseDashboardNav(user)) return []
+  // Raw data tables are a developer tool: only a role that can change roles sees them.
+  // Staff work from the platform pages; the list URLs still open for roles Keystone allows.
+  if (user?.role && user.role.canManageRoles !== true) return []
   return lists.filter((list) => !list.isHidden)
 }
 

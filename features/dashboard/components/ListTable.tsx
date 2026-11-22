@@ -140,7 +140,7 @@ export function ListTable({
     if (!field) return null;
 
     // Handle ID field or first field - always linkable for text/string fields
-    if (fieldKey === 'id' || (isFirstField && (field.viewsIndex === 0 || field.viewsIndex === 1))) {
+    if (fieldKey === 'id' || (isFirstField && (fieldKey === list.labelField || field.viewsIndex === 0 || field.viewsIndex === 1))) {
       return (
         <Link 
           href={`${basePath}/${list.path}/${encodeURIComponent(item.id)}`}
@@ -219,7 +219,13 @@ export function ListTable({
   };
 
   // Convert Set to Array for rendering
-  const selectedFieldsArray = Array.from(selectedFields);
+  // Lead with the record's name, not its id: when a label field is shown, the id column steps
+  // aside and the label links to the record. Lists with no label field keep the id link.
+  const allSelected = Array.from(selectedFields);
+  const labelField = list.labelField && allSelected.includes(list.labelField) && list.labelField !== 'id' ? list.labelField : null;
+  const selectedFieldsArray = labelField
+    ? [labelField, ...allSelected.filter((key) => key !== 'id' && key !== labelField)]
+    : allSelected;
 
   return (
     <div className="relative">

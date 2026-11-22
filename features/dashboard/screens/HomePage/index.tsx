@@ -5,7 +5,7 @@
 
 import React from 'react'
 import Link from 'next/link'
-import { CalendarClock, ChevronRight, UserCheck } from 'lucide-react'
+import { CalendarClock, ChevronRight, CreditCard, UserCheck, UserPlus, CalendarX, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PageContainer } from '../../components/PageContainer'
 import { gymGraphql } from '@/features/platform/lib/gym-graphql'
@@ -53,6 +53,47 @@ function Stat({ label, value, detail, href }: { label: string; value: React.Reac
   return href
     ? <Link href={href} className={`${className} transition-colors hover:bg-muted/50`}>{body}</Link>
     : <div className={className}>{body}</div>
+}
+
+function DayList({ icon, title, rows, empty, href, tone }: {
+  icon: LucideIcon
+  title: string
+  rows: Array<{ key: string; name: string; detail: string; href?: string }>
+  empty: string
+  href?: string
+  tone?: 'danger'
+}) {
+  return (
+    <Panel>
+      <PanelHeader
+        icon={icon}
+        title={title}
+        count={rows.length}
+        actions={href ? <Button asChild variant="ghost" size="sm"><Link href={href}>Open<ChevronRight aria-hidden /></Link></Button> : undefined}
+      />
+      {rows.length === 0 ? (
+        <p className="px-4 py-4 text-sm text-muted-foreground sm:px-5">{empty}</p>
+      ) : (
+        <ul className="divide-y">
+          {rows.map((row) => {
+            const body = (
+              <>
+                <span className={`min-w-0 flex-1 truncate text-sm font-medium ${tone === 'danger' ? 'text-destructive' : 'text-foreground'}`}>{row.name}</span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{row.detail}</span>
+              </>
+            )
+            return (
+              <li key={row.key}>
+                {row.href
+                  ? <Link href={row.href} className="flex min-h-11 items-center gap-3 px-4 py-2 transition-colors hover:bg-muted/50 sm:px-5">{body}</Link>
+                  : <div className="flex min-h-11 items-center gap-3 px-4 py-2 sm:px-5">{body}</div>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Panel>
+  )
 }
 
 export async function HomePage() {
@@ -163,6 +204,35 @@ export async function HomePage() {
     </Panel>
   ) : null
 
+  const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone, month: 'short', day: 'numeric' })
+  const day = reports?.day
+  const dayLists = day ? (
+    <div className="grid gap-4 lg:grid-cols-3">
+      <DayList
+        icon={UserPlus}
+        title="New this week"
+        empty="No one joined in the last 7 days."
+        href={manager ? '/dashboard/platform/members' : undefined}
+        rows={day.newMembers.map((m) => ({ key: m.id, name: m.name, detail: [m.plan || 'No plan yet', dayFmt.format(new Date(m.joinedAt))].join(' · '), href: manager ? `/dashboard/members/${m.id}` : undefined }))}
+      />
+      <DayList
+        icon={CreditCard}
+        title="Failed payments"
+        empty="No failed payments in the last 7 days."
+        tone="danger"
+        href="/dashboard/platform/billing#recovery"
+        rows={day.failedPayments.map((p) => ({ key: p.id, name: p.name, detail: `${formatMinorUnits(p.amount, reports!.revenue.currencyCode)} · ${dayFmt.format(new Date(p.at))}` }))}
+      />
+      <DayList
+        icon={CalendarX}
+        title="Ending in 14 days"
+        empty="No membership ends without renewing in the next 14 days."
+        href="/dashboard/platform/billing"
+        rows={day.endingSoon.map((m) => ({ key: m.id, name: m.name, detail: `${m.plan || 'Membership'} · ends ${dayFmt.format(new Date(m.endsAt))}` }))}
+      />
+    </div>
+  ) : null
+
   const workspacePanel = (
     <Panel>
       <PanelHeader title="Go to" />
@@ -217,6 +287,8 @@ export async function HomePage() {
             />
           </div>
         ) : null}
+
+        {dayLists}
 
         {classesPanel ? <SplitLayout asideWidth="narrow" main={classesPanel} aside={workspacePanel} /> : <div className="max-w-xl">{workspacePanel}</div>}
       </PlatformBody>
