@@ -26,6 +26,16 @@ async function record(prisma: any, id: string, status: string, error?: string, m
   await prisma.operationalNotice.update({ where: { id }, data: { message: status, history: [{ action: "confirmation-email", status, at: new Date().toISOString(), ...(messageId ? { messageId: messageId.slice(0, 200) } : {}), ...(response ? { smtpResponse: response.slice(0, 300) } : {}), ...(error ? { error: error.slice(0, 200) } : {}) }] } });
 }
 
+/** The name members know the club by: the storefront name from Store Settings, then the organization. */
+export async function clubName(prisma: any, organizationId: string, fallback?: string | null) {
+  try {
+    const settings = await prisma.gymSettings?.findFirst({ where: { organizationId }, select: { name: true } });
+    return settings?.name?.trim() || fallback?.trim() || "the club";
+  } catch {
+    return fallback?.trim() || "the club";
+  }
+}
+
 async function deliver(prisma: any, input: { organizationId: string; memberId?: string | null; key: string; kind: string; to: string; build: () => ConfirmationMail }, send?: Send) {
   try {
     const notice = await claim(prisma, input);
@@ -56,6 +66,7 @@ export async function deliverBookingConfirmation(prisma: any, bookingId: string,
         classInstance: { select: { date: true, location: { select: { name: true } }, classSchedule: { select: { name: true, location: { select: { name: true } } } } } } },
     });
     if (!booking) return;
+    const club = await clubName(prisma, booking.organizationId, booking.organization?.name);
     await deliver(prisma, {
       organizationId: booking.organizationId, memberId: booking.memberId, key: `confirmation-email:booking:${booking.id}`, kind: "confirmation_email", to: booking.memberEmail,
       build: () => {
@@ -66,7 +77,7 @@ export async function deliverBookingConfirmation(prisma: any, bookingId: string,
         const publicAppUrl = (path: string) => internalOrigin.publicAppUrl(path);
         return {
           to: booking.memberEmail,
-          subject: `${waitlisted ? "You are on the waitlist for" : "Booked:"} ${name} at ${booking.organization?.name || "the club"}`,
+          subject: `${waitlisted ? "You are on the waitlist for" : "Booked:"} ${name} at ${club}`,
           heading: waitlisted ? `You are on the waitlist for ${name}` : `You are booked into ${name}`,
           lines: [when(booking.classInstance.date, zone), ...(place ? [place] : []), ...(waitlisted ? [`Waitlist position ${booking.waitlistPosition ?? ""}. A released place is confirmed automatically.`.trim()] : ["Cancel from your bookings if your plans change."])],
           link: { url: publicAppUrl("/account/bookings"), label: "View your bookings" },
@@ -86,6 +97,7 @@ export async function deliverMembershipConfirmation(prisma: any, input: { organi
       select: { id: true, billingCycle: true, tier: { select: { name: true } }, organization: { select: { name: true } }, member: { select: { id: true, email: true, name: true } } },
     });
     if (!membership) return;
+    const club = await clubName(prisma, input.organizationId, membership.organization?.name);
     const memberRow = membership.member ? await prisma.member.findFirst({ where: { organizationId: input.organizationId, userId: membership.member.id }, select: { id: true } }) : null;
     await deliver(prisma, {
       organizationId: input.organizationId, memberId: memberRow?.id ?? null, key: `confirmation-email:membership:${input.invoiceId}`, kind: "confirmation_email", to: membership.member?.email || "",
@@ -94,7 +106,7 @@ export async function deliverMembershipConfirmation(prisma: any, input: { organi
         const paid = new Intl.NumberFormat("en-US", { style: "currency", currency: input.currencyCode || "USD" }).format(input.amountCents / 100);
         return {
           to: membership.member!.email,
-          subject: `Welcome to ${membership.organization?.name || "the club"}: your membership is active`,
+          subject: `Welcome to ${club}: your membership is active`,
           heading: `Your ${membership.tier?.name || ""} membership is active`.replace("  ", " "),
           lines: [`${membership.billingCycle === "annual" ? "Annual" : "Monthly"} billing, first payment ${paid}.`],
           link: { url: publicAppUrl("/account/membership"), label: "View your membership" },

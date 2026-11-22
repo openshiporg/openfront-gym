@@ -164,7 +164,7 @@ export async function emailGiftCard(prisma: any, giftCardId: string, send?: (mai
     if (!claimed.count) return false;
     const card = await prisma.giftCard.findFirst({ where: { id: giftCardId }, include: { organization: { select: { name: true } } } });
     const sender = send || (await import("../lib/confirmation-mail")).sendConfirmationMail;
-    const club = card.organization?.name || "the club";
+    const club = await (await import("../lib/order-confirmation")).clubName(prisma, card.organizationId, card.organization?.name);
     const from = card.purchaserName && card.purchaserEmail !== card.recipientEmail ? card.purchaserName : "";
     const result = await sender({
       to: card.recipientEmail,

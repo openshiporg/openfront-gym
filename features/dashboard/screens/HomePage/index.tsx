@@ -55,6 +55,12 @@ function Stat({ label, value, detail, href }: { label: string; value: React.Reac
     : <div className={className}>{body}</div>
 }
 
+/** A name typed in all capitals reads as shouting in a list; show it in title case. Mixed case stays as entered. */
+function displayName(name: string) {
+  if (!/[A-Z]/.test(name) || name !== name.toUpperCase()) return name
+  return name.toLowerCase().replace(/(^|[\s'\-])(\p{L})/gu, (_, sep: string, ch: string) => sep + ch.toUpperCase())
+}
+
 function DayList({ icon, title, rows, empty, href, tone }: {
   icon: LucideIcon
   title: string
@@ -78,7 +84,7 @@ function DayList({ icon, title, rows, empty, href, tone }: {
           {rows.map((row) => {
             const body = (
               <>
-                <span className={`min-w-0 flex-1 truncate text-sm font-medium ${tone === 'danger' ? 'text-destructive' : 'text-foreground'}`}>{row.name}</span>
+                <span className={`min-w-0 flex-1 truncate text-sm font-medium ${tone === 'danger' ? 'text-destructive' : 'text-foreground'}`}>{displayName(row.name)}</span>
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{row.detail}</span>
               </>
             )
