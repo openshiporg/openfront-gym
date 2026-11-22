@@ -23,7 +23,7 @@ import {
   humanize,
   type Tone,
 } from "@/features/platform/components/platform-ui";
-import { requireDashboardUser } from "@/features/platform/lib/current-user";
+import { requireDashboardRole } from "@/features/platform/lib/current-user";
 import { CancelPastBookingDialog } from "../components/CancelPastBookingDialog";
 import {
   getRosterDetail,
@@ -173,7 +173,8 @@ function GroupPager({ id, group, page, params }: { id: string; group: "cs" | "ws
 }
 
 export async function RosterDetailPage({ id, searchParams = {} }: { id: string; searchParams?: Record<string, string | string[] | undefined> }) {
-  const user = await requireDashboardUser();
+  // Same roles the roster query accepts; anyone else goes to no-access instead of a server error.
+  const user = await requireDashboardRole((role) => Boolean(role.canManageAllRecords || role.isInstructor));
   const session = await getRosterDetail(id, { confirmedSkip: pageNumber(searchParams.cs), waitlistSkip: pageNumber(searchParams.ws), otherSkip: pageNumber(searchParams.os) });
   if (!session) {
     if (user.role?.canManageAllRecords) notFound();

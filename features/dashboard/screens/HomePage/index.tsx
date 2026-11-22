@@ -201,7 +201,7 @@ export async function HomePage() {
         {reports ? (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Checked in today" value={reports.operator.checkInsToday} href={canCheckIn ? '/dashboard/platform/check-in' : undefined} />
-            <Stat label="Classes today" value={reports.operator.upcomingSessionsToday} detail={reports.operator.liveOrStartingSoon ? `${reports.operator.liveOrStartingSoon} on now or soon` : undefined} href="/dashboard/platform/scheduling" />
+            <Stat label="Classes today" value={reports.operator.upcomingSessionsToday} detail={reports.operator.liveOrStartingSoon ? `${reports.operator.liveOrStartingSoon} on now or soon` : undefined} href={canSeeSchedule ? '/dashboard/platform/scheduling' : undefined} />
             <Stat label="Active members" value={reports.operator.activeMembers} href={manager ? '/dashboard/platform/members' : undefined} />
             <Stat
               label="Paid this month"

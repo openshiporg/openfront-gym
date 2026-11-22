@@ -522,7 +522,7 @@ export function StoreSettingsPage({ initial, loadError, canPublishPolicy = false
                 <FormField label="Subheadline">
                   <FieldInput value={form.heroSubheadline} onChange={set('heroSubheadline')} maxLength={2000} />
                 </FormField>
-                <FormField label="Hero image path" hint="An existing image under /images/.">
+                <FormField label="Hero image link" optional hint="Web address of the photo behind the headline.">
                   <FieldInput value={form.heroImageUrl} onChange={set('heroImageUrl')} maxLength={500} className="font-mono text-xs" />
                 </FormField>
                 <div className="grid gap-4 rounded-lg border p-3.5 sm:grid-cols-2">

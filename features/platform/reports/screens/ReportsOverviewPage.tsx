@@ -217,7 +217,9 @@ export async function ReportsOverviewPage() {
                     items={[
                       ...attendanceRows.map((row) => ({
                         label: row.label,
-                        value: <span className="tabular-nums"><StatusPill tone={row.tone}>{row.value}%</StatusPill> <span className="ml-1 text-xs text-muted-foreground">{row.detail}</span></span>,
+                        value: data.attendance.totalMarked === 0
+                          ? <span className="font-normal text-muted-foreground">No class marked yet</span>
+                          : <span className="tabular-nums"><StatusPill tone={row.tone}>{row.value}%</StatusPill> <span className="ml-1 text-xs text-muted-foreground">{row.detail}</span></span>,
                       })),
                       { label: 'Late arrivals', value: <span className="tabular-nums">{data.attendance.lateCount}</span> },
                     ]}
