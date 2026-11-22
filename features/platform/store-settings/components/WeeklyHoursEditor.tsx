@@ -80,7 +80,7 @@ export function WeeklyHoursEditor({
             <li
               key={day.key}
               className={cn(
-                'grid gap-3 px-4 py-3 sm:px-5 md:grid-cols-[9rem_minmax(0,1fr)_auto] md:items-start',
+                'grid gap-3 px-4 py-3 sm:px-5 md:grid-cols-[7rem_minmax(0,1fr)] md:items-start 2xl:grid-cols-[7rem_minmax(0,1fr)_auto]',
                 isToday && 'bg-muted/30',
               )}
             >
@@ -137,7 +137,7 @@ export function WeeklyHoursEditor({
                 <p className="flex h-9 items-center text-sm text-muted-foreground">Closed all day</p>
               )}
 
-              <div className="flex items-center gap-1 md:h-9">
+              <div className="flex flex-wrap items-center gap-1 md:col-start-2 md:-mt-2 2xl:col-start-auto 2xl:mt-0 2xl:h-9">
                 <Switch checked={schedule.enabled} onCheckedChange={(v) => onSetDayEnabled(day.key, v)} aria-label={`${day.label} open`} className="mr-2 hidden md:inline-flex" />
                 {schedule.enabled ? (
                   <label className="mr-1 inline-flex h-8 items-center gap-1.5 px-1 text-xs">
