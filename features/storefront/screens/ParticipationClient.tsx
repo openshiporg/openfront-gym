@@ -6,6 +6,12 @@ import { ArrowUpRight } from 'lucide-react';
 import { submitOperations } from '@/features/platform/operations/actions';
 import { Banner } from '@/features/storefront/modules/common/ui';
 
+/** A record date in words ("Nov 22, 2026, 8:27 AM"); anything unreadable is shown as given. */
+function when(value: unknown) {
+  const date = new Date(String(value ?? ''))
+  return Number.isNaN(date.getTime()) ? String(value ?? '') : date.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 export function ParticipationClient({ data }: { data: any }) {
   const [message, setMessage] = useState(''); const [busy, setBusy] = useState(false); const router = useRouter();
   async function run(command: string, values: Record<string, unknown>) {
@@ -62,7 +68,7 @@ export function ParticipationClient({ data }: { data: any }) {
       </div></details> : null}
       {!data.evidence?.length ? <p className="sf-text-2">None recorded</p> : null}
       {(data.evidence || []).map((e: any) => <div key={e.id} className="sf-panel" style={{ padding: 16, gap: 8 }}>
-        <div className="sf-titleline"><p className="sf-num">{e.acceptedAt}{e.expiresAt ? ` · expires ${e.expiresAt}` : ''}</p><span className="sf-state" data-tone={e.state === 'current' ? 'ok' : 'neutral'}>{e.kind === 'health_consent' ? 'Health information permission' : e.healthConsent ? 'Acceptance with health permission' : 'Acceptance'} · {stateLabel[e.state] || 'Recorded'}</span></div>
+        <div className="sf-titleline"><p className="sf-num">{when(e.acceptedAt)}{e.expiresAt ? ` · expires ${when(e.expiresAt)}` : ''}</p><span className="sf-state" data-tone={e.state === 'current' ? 'ok' : 'neutral'}>{e.kind === 'health_consent' ? 'Health information permission' : e.healthConsent ? 'Acceptance with health permission' : 'Acceptance'} · {stateLabel[e.state] || 'Recorded'}</span></div>
       </div>)}
       {data.evidenceNextAfterId ? <div><Link className="sf-link" href={`/account/participation?after=${encodeURIComponent(data.evidenceNextAfterId)}`}>Show older records</Link></div> : null}
     </section>
