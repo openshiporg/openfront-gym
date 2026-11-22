@@ -166,7 +166,7 @@ export async function CheckInPage({
               <form method="get" className="grid gap-2 border-b px-4 py-3 sm:px-5">
                 {q ? <input type="hidden" name="q" value={q} /> : null}
                 <SearchField name="vq" defaultValue={visitQuery} label="Search open visits" placeholder="Member name" />
-                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                   <label>
                     <span className="sr-only">Location</span>
                     <NativeSelect name="vloc" defaultValue={visitLocationId}>

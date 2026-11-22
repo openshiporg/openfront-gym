@@ -56,7 +56,7 @@ export default function AccountLayout({ user, photo, children }: AccountLayoutPr
               </div>
             </div>
             <div className="sf-actions">
-              <Link href="/member/check-in-code" className="sf-btn" data-size="sm"><QrCode aria-hidden="true" />Check-in code</Link>
+              <Link href="/member/check-in-code" className="sf-btn sf-account-code" data-size="sm" aria-label="Check-in code"><QrCode aria-hidden="true" /><span>Check-in code</span></Link>
               <form action={signOut}><button type="submit" className="sf-btn" data-variant="ghost" data-size="sm">Sign out</button></form>
             </div>
           </div>

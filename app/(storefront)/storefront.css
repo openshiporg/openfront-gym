@@ -888,6 +888,11 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
     .sf-account-id .sf-titleline { row-gap: 0; }
     .sf-account-id .sf-meta, .sf-account-id .sf-actions form { display: none; }
     .sf-account-id .sf-actions { flex: none; }
+    .sf-account-id > div:first-child > div { flex: 1 1 auto; }
+    .sf-account-id .sf-titleline { display: grid; }
+    .sf-account-id .sf-titleline > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sf-account-code { width: 44px; min-width: 44px; padding-inline: 0; }
+    .sf-account-code span { display: none; }
   }
   @media (min-width: 1024px) { .sf-account-top { padding-top: 40px; } .sf-account-body { gap: 40px; padding-block: 40px 112px; } }
 
