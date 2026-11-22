@@ -3,6 +3,8 @@
 import { cookies, headers } from "next/headers";
 import {
   createKioskSessionValue,
+  getKioskOrganizationId,
+  hasKioskDeviceCredential,
   isKioskConfigured,
   isKioskSessionValueValid,
   isKioskTokenValid,
@@ -10,6 +12,7 @@ import {
   KIOSK_SESSION_COOKIE,
 } from "../../kiosk/auth";
 import { authorizeKioskCredentialGraphQL, executeKioskGraphQL } from "./graphql";
+import { getDashboardUser } from "../lib/current-user";
 import { parseKioskCheckIn, parseKioskGuest, parseKioskSearch, parseKioskUnlock } from "./input";
 
 /**
@@ -40,6 +43,27 @@ export async function unlockKiosk(token: string): Promise<{ authorized: boolean;
   } catch (error) {
     return { authorized: false, error: message(error, "Kiosk credential is invalid") };
   }
+  (await cookies()).set(KIOSK_SESSION_COOKIE, createKioskSessionValue(), kioskSessionCookieOptions());
+  return { authorized: true };
+}
+
+/** Staff who may check members in at the desk may also unlock the kiosk for this club. */
+async function staffMayUnlock() {
+  const user = await getDashboardUser();
+  const role = user?.role;
+  if (!user || !role?.canAccessDashboard) return false;
+  if (!role.canManageAllRecords && !role.canManageCheckIns && !role.canManageFacilities) return false;
+  return Boolean(user.organization?.id && user.organization.id === getKioskOrganizationId());
+}
+
+/** How this screen can be unlocked: by the signed-in member of staff, and/or with the club's device credential. */
+export async function kioskUnlockOptions(): Promise<{ staff: boolean; credential: boolean }> {
+  return { staff: await staffMayUnlock(), credential: hasKioskDeviceCredential() };
+}
+
+export async function unlockKioskAsStaff(): Promise<{ authorized: boolean; error?: string }> {
+  if (!isKioskConfigured()) return { authorized: false, error: "Kiosk is not set up" };
+  if (!(await staffMayUnlock())) return { authorized: false, error: "Sign in as staff who can check members in, then unlock again." };
   (await cookies()).set(KIOSK_SESSION_COOKIE, createKioskSessionValue(), kioskSessionCookieOptions());
   return { authorized: true };
 }

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
+import Link from "next/link"
 import { Check, X } from "lucide-react"
 import { Banner, EmptyState } from "@/features/storefront/modules/common/ui"
 import { formatClassCreditsLeft } from "@/lib/class-credits"
@@ -9,6 +10,7 @@ import {
   checkInGuestAtKiosk,
   searchKioskMembers,
   unlockKiosk,
+  unlockKioskAsStaff,
   type KioskAuthorization,
 } from "@/features/platform/kiosk/actions"
 
@@ -44,7 +46,7 @@ function formatCredits(value?: number | null) {
   return formatClassCreditsLeft(value) ?? "Credits unavailable"
 }
 
-export default function KioskCheckInPage({ brandName = "Front desk", initialAuthorization }: { brandName?: string; initialAuthorization: KioskAuthorization }) {
+export default function KioskCheckInPage({ brandName = "Front desk", initialAuthorization, unlockOptions = { staff: false, credential: true } }: { brandName?: string; initialAuthorization: KioskAuthorization; unlockOptions?: { staff: boolean; credential: boolean } }) {
   const [authorization, setAuthorization] = useState<KioskAuthorization>(initialAuthorization)
   const [unlockToken, setUnlockToken] = useState("")
   const [unlockError, setUnlockError] = useState<string | null>(null)
@@ -114,6 +116,20 @@ export default function KioskCheckInPage({ brandName = "Front desk", initialAuth
         throw new Error(data.error || "Kiosk unlock failed")
       }
       setUnlockToken("")
+      setAuthorization("authorized")
+    } catch (error) {
+      setUnlockError(error instanceof Error ? error.message : "Kiosk unlock failed")
+    } finally {
+      setIsUnlocking(false)
+    }
+  }
+
+  const handleStaffUnlock = async () => {
+    setIsUnlocking(true)
+    setUnlockError(null)
+    try {
+      const data = await unlockKioskAsStaff()
+      if (!data.authorized) throw new Error(data.error || "Kiosk unlock failed")
       setAuthorization("authorized")
     } catch (error) {
       setUnlockError(error instanceof Error ? error.message : "Kiosk unlock failed")
@@ -254,7 +270,15 @@ export default function KioskCheckInPage({ brandName = "Front desk", initialAuth
           <Banner tone="bad" title="Kiosk not set up">
             Check-in at this screen isn’t set up yet. Ask a member of staff to check you in.
           </Banner>
-        ) : (
+        ) : unlockOptions.staff ? (
+          <div className="sf-form">
+            <p className="sf-text-2">Members check themselves in on this screen for the next 12 hours.</p>
+            {unlockError ? <Banner tone="bad">{unlockError}</Banner> : null}
+            <button type="button" className="sf-btn" data-size="lg" data-block disabled={isUnlocking} onClick={handleStaffUnlock}>
+              {isUnlocking ? "Unlocking…" : "Unlock this screen"}
+            </button>
+          </div>
+        ) : unlockOptions.credential ? (
           <form className="sf-form" onSubmit={handleUnlock}>
             <label className="sf-field" htmlFor="kiosk-token">Kiosk credential
               <input
@@ -273,7 +297,14 @@ export default function KioskCheckInPage({ brandName = "Front desk", initialAuth
             <button type="submit" className="sf-btn" data-size="lg" data-block disabled={isUnlocking}>
               {isUnlocking ? "Unlocking…" : "Unlock"}
             </button>
+            <Link className="sf-btn" data-variant="ghost" data-block href="/dashboard/signin?from=%2Fkiosk%2Fcheck-in">Staff sign-in</Link>
           </form>
+        ) : (
+          <div className="sf-form">
+            <p className="sf-text-2">A member of staff signs in to unlock this screen.</p>
+            {unlockError ? <Banner tone="bad">{unlockError}</Banner> : null}
+            <Link className="sf-btn" data-size="lg" data-block href="/dashboard/signin?from=%2Fkiosk%2Fcheck-in">Staff sign-in</Link>
+          </div>
         )}
       </main>
     )

@@ -3,13 +3,29 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export const KIOSK_SESSION_COOKIE = "openfront-gym-kiosk";
 export const KIOSK_SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
 
-function kioskApiToken() {
+/** A kiosk credential the club chose to hand to a device (optional). */
+export function hasKioskDeviceCredential() {
   const token = process.env.KIOSK_API_TOKEN?.trim();
-  return token && token.length >= 32 ? token : null;
+  return Boolean(token && token.length >= 32);
 }
 
+/**
+ * The secret that signs kiosk sessions and authorizes kiosk operations. A club that set its own
+ * device credential uses it; every other club gets one derived from the session secret, so the
+ * kiosk works as soon as a member of staff unlocks the screen.
+ */
+export function kioskCredential() {
+  const token = process.env.KIOSK_API_TOKEN?.trim();
+  if (token && token.length >= 32) return token;
+  const secret = process.env.SESSION_SECRET?.trim();
+  if (!secret || secret.length < 32) return null;
+  return createHmac("sha256", secret).update("openfront-gym-kiosk-credential").digest("hex");
+}
+
+const kioskApiToken = kioskCredential;
+
 export function getKioskOrganizationId() {
-  const organizationId = process.env.KIOSK_ORGANIZATION_ID?.trim();
+  const organizationId = process.env.KIOSK_ORGANIZATION_ID?.trim() || process.env.STOREFRONT_ORGANIZATION_ID?.trim();
   return organizationId && organizationId.length > 0 ? organizationId : null;
 }
 

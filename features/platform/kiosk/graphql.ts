@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { endUserSource, internalGraphqlEndpoint, internalGraphqlFetch } from "@/features/keystone/lib/internal-origin";
-import { getKioskOrganizationId } from "../../kiosk/auth";
+import { getKioskOrganizationId, kioskCredential } from "../../kiosk/auth";
 
 async function deviceSource() {
   try {
@@ -26,7 +26,7 @@ async function execute<T>(query: string, variables: Record<string, unknown>): Pr
 }
 
 export async function executeKioskGraphQL<T>(query: string, variables: Record<string, unknown>): Promise<T> {
-  const credential = process.env.KIOSK_API_TOKEN?.trim();
+  const credential = kioskCredential();
   const organizationId = getKioskOrganizationId();
   if (!credential || !organizationId) throw new Error("Kiosk is not configured");
   return execute<T>(query, { ...variables, credential, organizationId });

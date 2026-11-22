@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import KioskCheckInPage from "@/features/kiosk/screens/KioskCheckInPage"
-import { kioskAuthorization } from "@/features/platform/kiosk/actions"
+import { kioskAuthorization, kioskUnlockOptions } from "@/features/platform/kiosk/actions"
 import { getStorefrontBrandName } from "@/features/storefront/lib/brand"
 import { brandPaletteCss } from "@/features/storefront/lib/brand-palette"
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings"
@@ -19,7 +19,7 @@ export default async function Page() {
   return (
     <div className="sf-root">
       <style>{brandPaletteCss(resolveStorefrontBrand(config).themeHue)}</style>
-      <KioskCheckInPage brandName={getStorefrontBrandName(config)} initialAuthorization={await kioskAuthorization()} />
+      <KioskCheckInPage brandName={getStorefrontBrandName(config)} initialAuthorization={await kioskAuthorization()} unlockOptions={await kioskUnlockOptions()} />
     </div>
   )
 }
