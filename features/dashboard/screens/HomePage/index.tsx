@@ -11,6 +11,7 @@ import { PageContainer } from '../../components/PageContainer'
 import { gymGraphql } from '@/features/platform/lib/gym-graphql'
 import { requireDashboardUser } from '@/features/platform/lib/current-user'
 import { getPlatformNavItemsWithBasePath } from '@/features/platform/lib/navigation'
+import { canOpenPlatformPage } from '../../lib/sidebarAccess'
 import { formatMinorUnits } from '@/features/platform/lib/currency'
 import {
   EmptyBlock,
@@ -88,7 +89,12 @@ export async function HomePage() {
     .sort((a, b) => a.start.localeCompare(b.start))
   const time = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' })
   const dateLabel = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long', month: 'long', day: 'numeric' }).format(now)
-  const workspaces = getPlatformNavItemsWithBasePath('/dashboard', user).filter((item) => item.title !== 'Your account')
+  // Only pages this role's own guard lets in, the same rule the sidebar uses.
+  const workspaces = getPlatformNavItemsWithBasePath('/dashboard', user).filter((item) => {
+    if (item.title === 'Your account') return false
+    const slug = item.href.includes('/platform/') ? item.href.split('/platform/')[1]?.split('/')[0] : null
+    return !slug || !role || canOpenPlatformPage(slug, role)
+  })
   const pastDue = reports?.operator.pastDueMemberships ?? 0
   const firstName = user.name?.trim().split(/\s+/)[0]
 

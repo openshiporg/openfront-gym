@@ -623,6 +623,7 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-facts > div:last-child { border-bottom: 1px solid var(--sf-line); }
   .sf-facts dt { color: var(--sf-ink-3); font-size: 0.875rem; }
   .sf-facts dd { color: var(--sf-ink); font-size: 0.9375rem; font-weight: 500; }
+  .sf-facts dd::first-letter { text-transform: uppercase; }
   .sf-facts[data-plain] > div:last-child { border-bottom: 0; }
 
   .sf-list-plain { display: flex; flex-wrap: wrap; gap: 6px; }

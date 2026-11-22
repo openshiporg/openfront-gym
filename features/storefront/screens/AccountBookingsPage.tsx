@@ -145,7 +145,7 @@ function BookingRow({
         {renamed ? <p className="sf-meta">Now listed as {renamed}</p> : null}
         <p>
           {date ? `${formatOccurrenceDate(date, timeZone)} · ${formatOccurrenceTime(date, timeZone)}` : "Date unavailable"}
-          {instructorName ? ` · ${instructorName}` : ""}
+          {instructorName ? <span style={{ display: "block" }}>with {instructorName}</span> : null}
         </p>
         {locationName ? <p>{locationName}</p> : null}
         {booking.lateCancelled ? <p className="sf-meta">Late cancel: inside the club&apos;s {lateCancelHours || ""}{lateCancelHours ? "-hour " : ""}window, so the {booked?.credit?.basis === "drop_in_paid" ? "drop-in fee wasn't refunded" : "class credit wasn't returned"}.</p> : credit ? <p className="sf-meta">{credit}</p> : null}
