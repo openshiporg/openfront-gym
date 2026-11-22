@@ -97,6 +97,7 @@ export default function Footer({
             <div className="sf-footer-col">
               <h2>Hours</h2>
               {hours.length ? <HoursList hours={hours} timeZone={timeZone} short /> : <p>Not published</p>}
+              {hours.length ? <Link href="/contact" className="sf-footer-hours-link">All opening hours</Link> : null}
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowUpRight, Dumbbell, FileCheck2, GraduationCap, QrCode, UserRound } from "lucide-react";
+import { ArrowRight, Dumbbell, FileCheck2, GraduationCap, QrCode, UserRound } from "lucide-react";
 import { getUser } from "@/features/storefront/lib/data/user";
 import { getUpcomingBookingPage } from "@/features/storefront/lib/data/bookings";
 import { getStorefrontConfig } from "@/features/storefront/lib/data/gym-settings";
@@ -61,7 +61,7 @@ export default async function AccountOverviewPage() {
           <div className="sf-actions"><Link href="/schedule" className="sf-btn" data-variant="accent">Book a class</Link></div>
         </>}
         {waitingCount > 0 ? (
-          <div><Link className="sf-link" data-size="sm" href="/account/bookings?view=waitlist">On {waitingCount} {waitingCount === 1 ? "waitlist" : "waitlists"}<ArrowUpRight aria-hidden="true" /></Link></div>
+          <div><Link className="sf-link" data-size="sm" href="/account/bookings?view=waitlist">On {waitingCount} {waitingCount === 1 ? "waitlist" : "waitlists"}<ArrowRight aria-hidden="true" /></Link></div>
         ) : null}
       </section>
 
@@ -91,7 +91,7 @@ export default async function AccountOverviewPage() {
       {tiles.map(({ href, label, icon: Icon }) => (
         <Link className="sf-tile" key={href} href={href}>
           <Icon aria-hidden="true" />
-          <strong>{label}<ArrowUpRight aria-hidden="true" /></strong>
+          <strong>{label}<ArrowRight aria-hidden="true" /></strong>
         </Link>
       ))}
     </nav>

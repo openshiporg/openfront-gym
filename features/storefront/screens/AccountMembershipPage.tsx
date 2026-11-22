@@ -106,7 +106,7 @@ export default async function AccountMembershipPage({
               )}
               {membership.cancelledAt ? <div><dt>Cancelled</dt><dd>{formatDate(membership.cancelledAt)}</dd></div> : null}
               {membership.creditPeriodStart && membership.creditPeriodEnd && !refreshed.error ? (
-                <div><dt>Credit period</dt><dd>{creditDate(membership.creditPeriodStart)} – {creditDate(membership.creditPeriodEnd)}</dd></div>
+                <div><dt>Classes for</dt><dd>{creditDate(membership.creditPeriodStart)} – {creditDate(membership.creditPeriodEnd)}</dd></div>
               ) : null}
             </dl>
           </section>
@@ -127,7 +127,7 @@ export default async function AccountMembershipPage({
               <h2 id="billing-controls" className="sf-h3">Payment and invoices</h2>
               {hasStripeCustomer ? (
                 <form action={openBillingPortalAction}>
-                  <SubmitButton variant="secondary" block pendingLabel="Opening billing…">Open billing portal</SubmitButton>
+                  <SubmitButton variant="secondary" block pendingLabel="Opening billing…">Update card or see invoices</SubmitButton>
                 </form>
               ) : (
                 <Banner action={<Link href={MEMBERSHIP_CONTACT} className="sf-link">Contact the club</Link>}>Online billing isn’t connected. Contact the front desk for payment changes.</Banner>
@@ -174,7 +174,7 @@ export default async function AccountMembershipPage({
               {membership.status !== "cancelled" ? (
                 hasStripeCustomer ? (
                   <form action={openBillingPortalAction}>
-                    <SubmitButton variant="secondary" pendingLabel="Opening billing…">Keep membership in billing portal</SubmitButton>
+                    <SubmitButton variant="secondary" pendingLabel="Opening billing…">Keep my membership</SubmitButton>
                   </form>
                 ) : (
                   <ArrowLink href={MEMBERSHIP_CONTACT} size="sm">Ask the club to keep your membership</ArrowLink>

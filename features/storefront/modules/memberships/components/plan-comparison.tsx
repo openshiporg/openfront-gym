@@ -72,7 +72,7 @@ export default function PlanComparison({ tiers, currencyCode }: { tiers: Members
               <tr><th scope="row">Monthly</th>{tiers.map(tier => <td key={tier.id}>{formatMajorUnits(tier.monthlyPrice, currencyCode)}</td>)}</tr>
               <tr><th scope="row">Annual</th>{tiers.map(tier => <td key={tier.id}>{formatMajorUnits(tier.annualPrice, currencyCode)}</td>)}</tr>
               <tr><th scope="row">Classes</th>{tiers.map(tier => <td key={tier.id}>{creditLabel(tier.classCreditsPerMonth)}</td>)}</tr>
-              <tr><th scope="row">Access hours</th>{tiers.map(tier => <td key={tier.id} data-muted={!tier.accessHours || undefined}>{tier.accessHours || "Not published"}</td>)}</tr>
+              <tr><th scope="row">Access</th>{tiers.map(tier => <td key={tier.id} data-muted={!tier.accessHours || undefined}>{tier.accessHours || "Not published"}</td>)}</tr>
               <tr><th scope="row">Freeze</th>{tiers.map(tier => <td key={tier.id} data-muted={!tier.freezeAllowed || undefined}>{tier.freezeAllowed ? "Included" : "Not included"}</td>)}</tr>
               <tr><th scope="row">Minimum term</th>{tiers.map(tier => <td key={tier.id} data-muted={!(tier.contractLength > 0) || undefined}>{termLabel(tier.contractLength)}</td>)}</tr>
               <tr><th scope="row">Guest passes</th>{tiers.map(tier => <td key={tier.id} data-muted={!(tier.guestPasses > 0) || undefined}>{tier.guestPasses > 0 ? tier.guestPasses : "None"}</td>)}</tr>

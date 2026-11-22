@@ -248,14 +248,16 @@ export function OperationsClient({ data }: { data: any }) {
               </div>
               <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{n.attempts} attempt{n.attempts === 1 ? '' : 's'}</span>
             </div>
-            <form onSubmit={form('notice.followUp', { id: n.id })} className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-2.5 md:flex-row md:items-center">
-              <label className="min-w-0 flex-1">
-                <span className="sr-only">Contact outcome</span>
-                <FieldInput name="note" required maxLength={1000} placeholder="Contact method and outcome" className="bg-background" />
-              </label>
-              <CheckField name="success" className="shrink-0">Member reached</CheckField>
-              <Button disabled={busy} size="sm" variant="outline">Record attempt</Button>
-            </form>
+            <Disclosure summary="Record a contact attempt">
+              <form onSubmit={form('notice.followUp', { id: n.id })} className="flex flex-col gap-2 md:flex-row md:items-center">
+                <label className="min-w-0 flex-1">
+                  <span className="sr-only">Contact outcome</span>
+                  <FieldInput name="note" required maxLength={1000} placeholder="Contact method and outcome" className="bg-background" />
+                </label>
+                <CheckField name="success" className="shrink-0">Member reached</CheckField>
+                <Button disabled={busy} size="sm" variant="outline">Record attempt</Button>
+              </form>
+            </Disclosure>
             {failure('notice.followUp', n.id)}
           </li>)}
         </ul>

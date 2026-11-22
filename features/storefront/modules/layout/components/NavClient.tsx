@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, CalendarDays, House, Menu, UserRound, WalletCards, X } from "lucide-react";
+import { CalendarDays, ChevronRight, House, Menu, UserRound, WalletCards, X } from "lucide-react";
 import { signOut } from "@/features/storefront/lib/data/user";
 import Wordmark, { type WordmarkBrand } from "./wordmark";
 import ThemeSwitch from "./theme-switch";
@@ -26,6 +26,8 @@ const MOBILE_NAV_LINKS = [
   { label: "Coaches", href: "/instructors" },
   { label: "Facilities", href: "/facilities" },
   { label: "Contact", href: "/contact" },
+  { label: "Gift cards", href: "/gift-cards" },
+  { label: "Policies", href: "/policies" },
 ];
 
 type NavCta = { label: string; href: string };
@@ -178,7 +180,7 @@ export default function NavClient({
                   aria-current={isActive(pathname, link.href) ? "page" : undefined}
                 >
                   {link.label}
-                  <ArrowUpRight aria-hidden="true" />
+                  <ChevronRight aria-hidden="true" />
                 </Link>
               ))}
             </nav>

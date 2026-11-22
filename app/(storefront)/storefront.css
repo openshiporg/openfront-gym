@@ -214,7 +214,8 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   }
   .sf-link:hover { text-decoration-color: currentColor; }
   .sf-link svg { width: 16px; height: 16px; flex: none; transition: transform 160ms var(--sf-ease); }
-  .sf-link:hover svg { transform: translate(2px, -2px); }
+  .sf-link:hover svg { transform: translateX(2px); }
+  .sf-link[target="_blank"]:hover svg { transform: translate(2px, -2px); }
   .sf-link[data-tone="accent"] { color: var(--sf-accent); }
   .sf-link[data-size="sm"] { font-size: 0.875rem; }
 
@@ -287,6 +288,14 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-seg .sf-count { min-width: 1.4em; border-radius: 999px; padding: 1px 6px; background: var(--sf-surface); color: var(--sf-ink-3); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
   .sf-seg > :is([aria-current]:not([aria-current="false"]), [aria-pressed="true"]) .sf-count { background: var(--sf-surface); color: var(--sf-ink-2); }
   .sf-seg[data-tone="night"] { background: rgb(255 255 255 / 0.08); }
+  /* Phones never side-scroll a row of choices: plans stack as a list, account sections sit in a three-column grid. */
+  @media (max-width: 639px) {
+    .sf-seg:is([data-phone="list"], [data-phone="grid"]) { display: grid; width: 100%; overflow: visible; border-radius: 20px; }
+    .sf-seg:is([data-phone="list"], [data-phone="grid"]) > a { border-radius: 16px; }
+    .sf-seg[data-phone="list"] > a { justify-content: flex-start; padding-inline: 14px; }
+    .sf-seg[data-phone="grid"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .sf-seg[data-phone="grid"] > a { min-width: 0; padding-inline: 4px; font-size: 0.8125rem; white-space: normal; text-align: center; line-height: 1.15; }
+  }
 
   /* Date strip variant */
   .sf-dates { gap: 2px; border-radius: 22px; }
@@ -406,8 +415,8 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-drawer-body { display: grid; flex: 1; align-content: start; gap: 28px; overflow-y: auto; padding: 8px var(--sf-gutter) 32px; }
   .sf-drawer-nav { display: grid; }
   .sf-drawer-nav a {
-    display: flex; min-height: 60px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--sf-line);
-    font-size: 1.625rem; font-weight: 600; letter-spacing: -0.03em;
+    display: flex; min-height: 54px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--sf-line);
+    font-size: 1.375rem; font-weight: 600; letter-spacing: -0.03em;
     animation: sf-rise 360ms var(--sf-ease) both; animation-delay: calc(var(--i, 0) * 30ms);
   }
   .sf-drawer-nav a svg { width: 22px; height: 22px; color: var(--sf-ink-3); }
@@ -428,6 +437,17 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-footer-col a:hover { color: var(--sf-ink-2); }
   .sf-footer-col p { color: var(--sf-ink-2); line-height: 1.4; }
   .sf-footer-bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 48px; border-top: 1px solid var(--sf-line); padding-top: 20px; color: var(--sf-ink-3); font-size: 0.8125rem; }
+  /* Phones: the footer shows today's hours only (the full week is on Contact), so it stays short. */
+  .sf-footer-hours-link { display: none; }
+  @media (max-width: 899px) {
+    .sf-footer { padding-block: 40px 20px; }
+    .sf-footer-grid { gap: 28px; }
+    .sf-footer-cols { gap: 24px 20px; }
+    .sf-footer .sf-hours > div:not([data-today]) { display: none; }
+    .sf-footer .sf-hours > div[data-today] { border-bottom: 0; }
+    .sf-footer-col a.sf-footer-hours-link { display: flex; }
+    .sf-footer-bottom { margin-top: 28px; }
+  }
   @media (min-width: 900px) {
     .sf-footer { padding-top: 88px; }
     .sf-footer-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 64px; }
@@ -631,12 +651,14 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-compare tbody th { width: 11rem; color: var(--sf-ink-3); font-weight: 500; }
   .sf-compare td { font-variant-numeric: tabular-nums; }
   .sf-compare td[data-muted] { color: var(--sf-ink-3); }
+  .sf-compare td::first-letter { text-transform: uppercase; }
   /* Phones: each detail label sits above its row, so the plan columns get the full width side by side. */
   @media (max-width: 639px) {
-    .sf-compare { min-width: calc(var(--sf-compare-cols, 2) * 140px); }
+    .sf-compare { min-width: 0; table-layout: fixed; font-size: 0.875rem; }
+    .sf-compare thead th { font-size: 0.875rem; }
     .sf-compare tr { display: grid; grid-template-columns: repeat(var(--sf-compare-cols, 2), minmax(0, 1fr)); border-bottom: 1px solid var(--sf-line); }
     .sf-compare tr:last-child { border-bottom: 0; }
-    .sf-compare th, .sf-compare td { border-bottom: 0; padding: 10px 14px; }
+    .sf-compare th, .sf-compare td { min-width: 0; border-bottom: 0; padding: 10px 10px 10px 0; overflow-wrap: anywhere; }
     .sf-compare thead th:first-child { display: none; }
     .sf-compare tbody th { grid-column: 1 / -1; width: auto; padding-bottom: 0; font-size: 0.8125rem; }
   }
@@ -879,7 +901,7 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
   .sf-tile > svg:first-child { width: 22px; height: 22px; color: var(--sf-ink-2); }
   .sf-tile strong { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 1rem; font-weight: 600; }
   .sf-tile strong svg { width: 18px; height: 18px; color: var(--sf-ink-3); transition: transform 160ms var(--sf-ease); }
-  .sf-tile:hover strong svg { transform: translate(2px, -2px); color: var(--sf-ink); }
+  .sf-tile:hover strong svg { transform: translateX(2px); color: var(--sf-ink); }
 
   .sf-datebox { display: grid; width: 3.5rem; justify-items: center; align-content: start; gap: 0; border-radius: 14px; padding: 8px 4px; background: var(--sf-surface); }
   .sf-datebox span { color: var(--sf-ink-3); font-size: 0.75rem; }
@@ -1281,6 +1303,9 @@ html:not(.dark) body:has(.sf-root) { background: #f9f9fa; }
 
   /* 44px taps for inline name links (class, coach) and small buttons; the phone day strip bleeds to the edge below 360px so seven days stay 44px wide. */
   .sf-btn[data-size="sm"] { min-height: 44px; }
-  .sf-home-sessions strong a, .sf-class-card :is(h2, h3) a, .sf-coach :is(h2, h3) a, .sf-titleline h3 a, .sf-session-meta a { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; }
+  .sf-home-sessions strong a, .sf-class-card :is(h2, h3) a, .sf-coach :is(h2, h3) a, .sf-titleline h3 a { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; }
+  /* A coach name sits inside a line of text: it keeps the line's height and gets its tap area from an invisible pad. */
+  .sf-session-meta a { position: relative; }
+  .sf-session-meta a::after { content: ""; position: absolute; inset: -14px -8px; }
   @media (max-width: 359px) { .sf-home-days { margin-inline: calc(var(--sf-gutter) * -1); } }
 }

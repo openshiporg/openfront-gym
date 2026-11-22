@@ -52,7 +52,7 @@ export default async function JoinPage({ tier, cycle: requestedCycle, checkoutEr
       <div className="sf-join">
         <section className="sf-card" aria-labelledby="join-plan">
           {tiers.length > 1 ? (
-            <nav className="sf-seg" aria-label="Plan">
+            <nav className="sf-seg" data-phone="list" aria-label="Plan">
               {tiers.map(item => <Link key={item.id} href={joinPath(item.id, safeReturnTo, cycle)} aria-current={item.id === selected.id ? "true" : undefined} scroll={false}>{item.name}</Link>)}
             </nav>
           ) : null}

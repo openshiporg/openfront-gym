@@ -182,3 +182,14 @@ h3.tiptap-heading + h2.tiptap-heading {
 	margin: 1.5rem 0;
 	padding-left: 1rem;
 }
+
+/* Phones: every field is 16px so iOS never zooms the page when a field is tapped. Unlayered on purpose, so it wins over size utilities. */
+@media (max-width: 767px) {
+	input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+	select,
+	textarea,
+	[role="combobox"],
+	[contenteditable="true"] {
+		font-size: 16px;
+	}
+}

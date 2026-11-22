@@ -289,12 +289,7 @@ export function BillingDashboardClient({
                     const hasProvider = Boolean(membership.stripeSubscriptionId);
                     return (
                       <li key={membership.id} className="px-4 py-3.5 sm:px-5">
-                        {membership.retained ? <p className="text-xs text-muted-foreground">A plan change for this membership is waiting above; retry or discard it there.</p> : <form action={changeMembershipTierOperatorAction} className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,15rem)] lg:items-start">
-                          <input type="hidden" name="returnQuery" value={returnQuery} />
-                          <input type="hidden" name="membershipId" value={membership.id} />
-                          <input type="hidden" name="operation" value="tierChange" />
-                          <input type="hidden" name="retryScope" value={membership.id} />
-                          <input type="hidden" name="idempotencyKey" value={membership.idempotencyKey || ''} />
+                        {membership.retained ? <p className="text-xs text-muted-foreground">A plan change for this membership is waiting above; retry or discard it there.</p> : <div className="grid gap-3">
                           <div className="flex min-w-0 items-start justify-between gap-3">
                             <PersonCell
                               name={membership.member?.name || 'Unknown member'}
@@ -307,7 +302,14 @@ export function BillingDashboardClient({
                             </div>
                           </div>
                           {hasProvider ? (
-                            <div className="grid gap-2 lg:col-start-2 lg:row-start-1">
+                            <Disclosure summary="Change plan…">
+                              <form action={changeMembershipTierOperatorAction} className="grid gap-3">
+                                <input type="hidden" name="returnQuery" value={returnQuery} />
+                          <input type="hidden" name="membershipId" value={membership.id} />
+                          <input type="hidden" name="operation" value="tierChange" />
+                          <input type="hidden" name="retryScope" value={membership.id} />
+                          <input type="hidden" name="idempotencyKey" value={membership.idempotencyKey || ''} />
+                                <div className="grid gap-2">
                               <label>
                                 <span className="sr-only">New plan for {membership.member?.name || 'member'}</span>
                                 <NativeSelect name="newTierId" required defaultValue={membership.retainedTierId || ''}>
@@ -318,9 +320,7 @@ export function BillingDashboardClient({
                                 </NativeSelect>
                               </label>
                             </div>
-                          ) : null}
-                          {hasProvider ? (
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:col-span-2">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                               <CheckField name="confirmTierChange" value="yes" required confirm className="flex-1">
                                 I reviewed proration and understand the member&apos;s class-credit balance resets to the selected plan allowance.
                               </CheckField>
@@ -328,12 +328,14 @@ export function BillingDashboardClient({
                                 Change plan
                               </Button>
                             </div>
+                              </form>
+                            </Disclosure>
                           ) : (
-                            <p className="text-xs text-muted-foreground lg:col-start-2 lg:row-start-1 lg:text-right">
+                            <p className="text-xs text-muted-foreground">
                               Plan changes require a provider subscription.
                             </p>
                           )}
-                        </form>}
+                        </div>}
                         {hasProvider && !membership.retained ? (
                           <div className="mt-3 grid items-start gap-2 sm:grid-cols-2">
                             {membership.autoRenew !== false ? (

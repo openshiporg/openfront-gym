@@ -13,7 +13,8 @@ import {
   Sparkles,
   Building2,
   Inbox,
-  KeyRound
+  KeyRound,
+  ClipboardList
 } from 'lucide-react';
 
 export interface PlatformNavItem {
@@ -33,12 +34,6 @@ export interface PlatformNavGroup {
 }
 
 export const platformNavItems: PlatformNavItem[] = [
-  { title: 'Retail', href: '/platform/retail', color: 'emerald', description: 'Record settled sales, stock movements, returns and cash close variances.', icon: CreditCard, group: 'management' },
-  { title: 'Contact imports', href: '/platform/imports', color: 'cyan', description: 'Preview contact imports and resolve identity conflicts without changing financial history.', icon: Users, group: 'management' },
-  { title: 'Training', href: '/platform/training', color: 'violet', description: 'Reserve personal training, operate prepaid service credits and review coaching assignments.', icon: Dumbbell, group: 'management' },
-  { title: 'Operations follow-up', href: '/platform/operations', color: 'amber', description: 'Resolve notices, waiver verification, safety closures, privacy and financial exceptions.', icon: UserCheck, group: 'standalone' },
-  { title: 'Messages', href: '/contact-messages', color: 'blue', description: 'Read storefront contact messages and track each reply.', icon: Inbox, group: 'standalone' },
-  { title: 'Your account', href: '/platform/account', color: 'slate', description: 'Change your own sign-in email and password.', icon: KeyRound, group: 'standalone' },
   // Standalone Items
   {
     title: 'Billing',
@@ -130,6 +125,12 @@ export const platformNavItems: PlatformNavItem[] = [
     icon: Users,
     group: 'management'
   },
+  { title: 'Operations follow-up', href: '/platform/operations', color: 'amber', description: 'Resolve notices, waiver verification, safety closures, privacy and financial exceptions.', icon: ClipboardList, group: 'standalone' },
+  { title: 'Messages', href: '/contact-messages', color: 'blue', description: 'Read storefront contact messages and track each reply.', icon: Inbox, group: 'standalone' },
+  { title: 'Your account', href: '/platform/account', color: 'slate', description: 'Change your own sign-in email and password.', icon: KeyRound, group: 'standalone' },
+  { title: 'Retail', href: '/platform/retail', color: 'emerald', description: 'Record settled sales, stock movements, returns and cash close variances.', icon: CreditCard, group: 'management' },
+  { title: 'Contact imports', href: '/platform/imports', color: 'cyan', description: 'Preview contact imports and resolve identity conflicts without changing financial history.', icon: Users, group: 'management' },
+  { title: 'Training', href: '/platform/training', color: 'violet', description: 'Reserve personal training, operate prepaid service credits and review coaching assignments.', icon: Dumbbell, group: 'management' },
 ];
 
 export const platformStandaloneItems = platformNavItems.filter(item => item.group === 'standalone')

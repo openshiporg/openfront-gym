@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertCircle,
+  ArrowRight,
   ArrowUpRight,
   CalendarDays,
   CalendarX2,
@@ -239,7 +240,7 @@ export async function InstructorAccountPage() {
             {canOpenOperations ? (
               <div className="sf-actions">
                 <Link href={`/dashboard/platform/rosters/${nextSession.id}`} className="sf-btn" data-variant="light">
-                  Open roster<ArrowUpRight aria-hidden="true" />
+                  Open roster<ArrowRight aria-hidden="true" />
                 </Link>
               </div>
             ) : null}
@@ -253,7 +254,7 @@ export async function InstructorAccountPage() {
         <section aria-labelledby="upcoming-calendar-heading" className="sf-stack">
           <div className="sf-row" data-between>
             <h2 id="upcoming-calendar-heading" className="sf-h3">Teaching calendar</h2>
-            {canOpenOperations ? <Link href="/dashboard/platform/scheduling" className="sf-link" data-size="sm">Scheduling<ArrowUpRight aria-hidden="true" /></Link> : null}
+            {canOpenOperations ? <Link href="/dashboard/platform/scheduling" className="sf-link" data-size="sm">Scheduling<ArrowRight aria-hidden="true" /></Link> : null}
           </div>
 
           {upcomingInstances.length === 0 ? (
@@ -331,7 +332,7 @@ export async function InstructorAccountPage() {
                     <span className="sf-meta">{session.confirmedBookings}/{session.capacity} confirmed · {session.waitlistCount} waitlisted</span>
                     {canOpenOperations ? (
                       <Link href={`/dashboard/platform/rosters/${session.id}`} className="sf-link" data-size="sm">
-                        Open roster<span className="sr-only"> for {session.classSchedule?.name ?? "class session"}</span><ArrowUpRight aria-hidden="true" />
+                        Open roster<span className="sr-only"> for {session.classSchedule?.name ?? "class session"}</span><ArrowRight aria-hidden="true" />
                       </Link>
                     ) : null}
                   </li>

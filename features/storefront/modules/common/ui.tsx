@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { AlertCircle, ArrowUpRight, CheckCircle2, Info, TriangleAlert } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Info, TriangleAlert } from "lucide-react";
 
 type Tone = "ok" | "warn" | "bad" | "info";
 
@@ -43,5 +43,5 @@ export function SectionHead({ id, title, href, linkLabel }: { id?: string; title
 }
 
 export function ArrowLink({ href, children, size }: { href: string; children: ReactNode; size?: "sm" }) {
-  return <Link href={href} className="sf-link" data-size={size}>{children}<ArrowUpRight aria-hidden="true" /></Link>;
+  return <Link href={href} className="sf-link" data-size={size}>{children}<ArrowRight aria-hidden="true" /></Link>;
 }

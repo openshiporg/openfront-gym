@@ -21,7 +21,7 @@ export default function AccountNav({ user }: { user: any }) {
   ];
 
   return (
-    <nav aria-label="Account sections" className="sf-seg">
+    <nav aria-label="Account sections" className="sf-seg" data-phone="grid">
       {items.map((item) => {
         const active = "exact" in item && item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
