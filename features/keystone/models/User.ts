@@ -124,6 +124,11 @@ export const User = list({
       validation: {
         isRequired: true,
       },
+      ui: {
+        description: 'For an account with a member record, change the name on the member; it is copied here.',
+        // Read-only when a member is linked, so Save never meets a silent refusal.
+        itemView: { fieldMode: async (args: any) => ((await noLinkedMember(args)) ? 'edit' : 'read') },
+      },
     }),
     // The login identity. Generic updates are refused for everyone, including tenant
     // all-record operators: only the signed-in holder changes it (current password, then a link
