@@ -133,9 +133,20 @@ export async function kioskRecordMemberCheckIn(
       reused: result.reused,
       classCreditsRemaining: membership?.classCreditsRemaining ?? null,
     };
-  } catch {
-    return { success: false, error: "Check-in could not be recorded. Please review access and location at the front desk." };
+  } catch (error) {
+    return { success: false, error: kioskRefusal(error) };
   }
+}
+
+/** The reason a member can act on, in plain words; anything else sends them to the desk. */
+function kioskRefusal(error: unknown) {
+  const reason = error instanceof Error ? error.message : "";
+  if (/facility is closed/i.test(reason)) return "The club is closed right now. Check-in opens with the club.";
+  if (/outside the membership access hours/i.test(reason)) return "Your plan doesn't cover this time of day. Please see the front desk.";
+  if (/waiver/i.test(reason)) return "Your waiver needs signing first. Please see the front desk.";
+  if (/facility closure/i.test(reason)) return "The club is closed today. Please see the front desk.";
+  if (/freeze/i.test(reason)) return "Your membership is frozen. Please see the front desk.";
+  return "Check-in could not be recorded. Please see the front desk.";
 }
 
 export async function kioskRecordGuestCheckIn(
